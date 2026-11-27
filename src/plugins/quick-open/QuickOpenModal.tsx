@@ -24,7 +24,7 @@ import { highlightMatches } from '../picker/highlight-matches';
 import { formatHotkey, detectPlatform } from '../command-palette/format-hotkey';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { coApi } from '@/lib/co-api';
-import { useT } from '@/i18n';
+import { translateCount, useT } from '@/i18n';
 import { dirname } from '@/lib/path-cross';
 import { openFileByPath, type OpenFileOptions } from '@/panels/Editor/editor-file-actions';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
@@ -107,6 +107,7 @@ function QuickOpenBody() {
   const selectedIndex = useQuickOpenStore((s) => s.selectedIndex);
   const results = useQuickOpenStore((s) => s.results);
   const resultsRoot = useQuickOpenStore((s) => s.resultsRoot);
+  const skippedDirs = useQuickOpenStore((s) => s.skippedDirs);
   const loading = useQuickOpenStore((s) => s.loading);
   const close = useQuickOpenStore((s) => s.close);
   const setQuery = useQuickOpenStore((s) => s.setQuery);
@@ -147,12 +148,12 @@ function QuickOpenBody() {
     setScanFailed(false);
     void walkWorkspaceFiles({
       rootPath: root,
-      listDir: (p, opts) => coApi.fs.listDir(p, opts),
+      listDir: (p, opts) => coApi.fs.scanFiles(p, opts),
     })
       .then((r) => {
         if (cancelled) return;
         if (r.ok) {
-          setResults(r.data, root);
+          setResults(r.data, root, r.skippedDirs ?? 0);
         } else {
           // walk 失败:置 scanFailed 标志,UI 显式区分"扫描失败 + 重试"与"空 workspace",
           // 不再让失败静默伪装成空列表把用户引向死胡同。见第二十一轮 P1-AY。
@@ -197,10 +198,15 @@ function QuickOpenBody() {
   const recentLabel = t('quick_open.recently_opened');
   // 候选扫描到上限被截断:有结果与无匹配时都提示(第二十四轮:旧实现只在有结果时提示,截断导致的「无匹配」看不出原因)。
   // a11y(A65,A56 同族):动态出现的信息,焦点锁在搜索框时 SR 也须获知搜索范围不完整 → role=status(polite 中性提示)。
+  // 读不了的子目录(无权限 / 路径超长):已跳过,其余文件照常可搜(VSCode / ripgrep 同);一条计数提示,不逐个刷屏。
+  const liveSkippedDirs = resultsRoot === root ? skippedDirs : 0;
   const limitHint =
-    liveResults.length >= QUICK_OPEN_MAX_FILES ? (
+    liveResults.length >= QUICK_OPEN_MAX_FILES || liveSkippedDirs > 0 ? (
       <div role="status" className="px-3 py-1 text-center text-2xs text-fg-dim">
-        {t('quick_open.limit_hint', { max: QUICK_OPEN_MAX_FILES })}
+        {liveResults.length >= QUICK_OPEN_MAX_FILES && (
+          <div>{t('quick_open.limit_hint', { max: QUICK_OPEN_MAX_FILES })}</div>
+        )}
+        {liveSkippedDirs > 0 && <div>{translateCount('quick_open.skipped_unreadable', liveSkippedDirs)}</div>}
       </div>
     ) : null;
 

@@ -13,7 +13,8 @@ import {
 import { FS_PATH_MAX, MAX_WRITE_BYTES } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { ERROR_CODES } from '../../shared/error-codes';
-import { listDir } from './fs/list-dir';
+import { listDir, scanDir } from './fs/list-dir';
+import type { FsScanFilesData } from '../../shared/fs-entry';
 import { FS_IPC_NAME_MAX, ListDirOptionsSchema } from '../../shared/fs-list-dir-schema';
 import { fsError, mapNodeErrnoCode } from './fs/path-utils';
 import { readFile } from './fs/read-file';
@@ -26,6 +27,7 @@ import { renameEntry } from './fs/rename';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
 import { selectTrashItem } from './fs/e2e-trash';
+import { deletePermanently } from './fs/delete-permanently';
 import {
   createRootPresenceTracker,
   createSameTickPathCoalescer,
@@ -114,6 +116,7 @@ export const createDirInputSchema = z
   .strict();
 
 export const trashInputSchema = z.object({ path: fsPath() }).strict();
+export const deletePermanentlyInputSchema = z.object({ path: fsPath() }).strict();
 
 const revealInputSchema = z.object({ path: fsPath() }).strict();
 
@@ -150,6 +153,9 @@ export type CopyInput = z.infer<typeof copyInputSchema>;
 // ────────────────────────────────────────────────────────────
 
 export const listDirHandler = (input: ListDirInput) => listDir(input.path, input.options);
+// fs:scan-files(Quick Open):同一 schema / walker;子目录读不了跳过并计数(根读不了照旧失败)。
+export const scanFilesHandler = async (input: ListDirInput): Promise<FsScanFilesData> =>
+  scanDir(input.path, input.options);
 // fs:read-file 是编辑器打开 / 外部同步 / 会话恢复 / 保存前比对的文本读取入口 → requireUtf8:非法 UTF-8
 // 拒绝(FS_NOT_UTF8),防 U+FFFD 替换后保存写回损坏原文件(独立审计)。插件 fs readFile 不经此处。
 // leaf 为 symlink 时随结果带 realPath(见 FsReadFileData):与保存写穿复用 resolveSymlinkTarget;解析失败 /
@@ -247,9 +253,29 @@ export const makeTrashHandler =
         (e: unknown) => (e as { code?: string }).code === 'ENOENT',
       );
       if (gone) throw fsError(ERROR_CODES.FS_NOT_FOUND, `not found: ${input.path}`);
-      throw err;
+      // 其余失败映射成业务码(renderer 按码本地化,不显示 `EACCES: permission denied, rename '…' -> '…'` 原始串)。
+      throw fsError(await classifyTrashFailure(input.path, err), `trash failed: ${input.path}`);
     }
   };
+
+/**
+ * 移到废纸篓失败的业务码:权限 / 只读卷 → FS_DENIED / FS_READONLY_FS(永久删除同样会失败,只给原因);其它(卷不支持废纸篓、
+ * 废纸篓不可用等)→ FS_TRASH_FAILED,renderer 据此询问是否永久删除(VSCode trashFailed)。shell.trashItem 的失败只有平台
+ * 文案、没有 errno,故再探测父目录可写性(删除 = 改父目录)区分权限类失败。
+ */
+async function classifyTrashFailure(target: string, err: unknown): Promise<string> {
+  const errnoCode = (err as { code?: unknown } | null)?.code;
+  if (typeof errnoCode === 'string' && /^E[A-Z]+$/.test(errnoCode)) {
+    const mapped = mapNodeErrnoCode(err);
+    if (mapped === ERROR_CODES.FS_DENIED || mapped === ERROR_CODES.FS_READONLY_FS) return mapped;
+  }
+  const probe = await fs.promises.access(path.dirname(target), fs.constants.W_OK).then(
+    () => null,
+    (e: unknown) => mapNodeErrnoCode(e),
+  );
+  if (probe === ERROR_CODES.FS_DENIED || probe === ERROR_CODES.FS_READONLY_FS) return probe;
+  return ERROR_CODES.FS_TRASH_FAILED;
+}
 
 export interface SelectDirectoryDeps {
   showOpenDialog: (opts: {
@@ -423,6 +449,7 @@ export const queueDirChangedBroadcast = createSameTickPathCoalescer(broadcastDir
 export function registerFsIpc(): void {
 
   safeHandle(FS_CHANNELS.LIST_DIR, listDirInputSchema, listDirHandler);
+  safeHandle(FS_CHANNELS.SCAN_FILES, listDirInputSchema, scanFilesHandler);
   safeHandleWithCtx(FS_CHANNELS.READ_FILE, readFileInputSchema, (input, { event }) =>
     recordingReadFileHandler(input, BrowserWindow.fromWebContents(event.sender)?.id ?? null),
   );
@@ -443,6 +470,11 @@ export function registerFsIpc(): void {
       // shell.trashItem 在 Electron 38 是 Promise<void>;E2E 模式改挪进 <userData>/e2e-trash,不碰真实废纸篓。
       trashItem: selectTrashItem(process.env, () => app.getPath('userData'), (p) => shell.trashItem(p)),
     }),
+  );
+
+  // 永久删除(不可撤销):只在「无法移到废纸篓,是否永久删除?」确认后调用,见 fs/delete-permanently.ts。
+  safeHandle(FS_CHANNELS.DELETE_PERMANENTLY, deletePermanentlyInputSchema, (input) =>
+    deletePermanently(input.path, { isWorkspaceRoot: isAnyWorkspaceRoot, env: process.env }),
   );
 
   safeHandle(

@@ -71,9 +71,18 @@ export async function renameItem(
 // remove(移到系统回收站)
 // ────────────────────────────────────────────────────────────
 
-export async function removeItems(
+export function removeItems(
   paths: ReadonlyArray<string>,
   deps: MutateDeps,
+  tree: TreeMutationApi,
+): Promise<RemoveResult> {
+  return removeEach(paths, (p) => deps.fs.trash(p), tree);
+}
+
+/** 移到废纸篓 / 永久删除共用的批量删除:remove 是单项 IPC。 */
+async function removeEach(
+  paths: ReadonlyArray<string>,
+  remove: (p: string) => ReturnType<FsApi['trash']>,
   tree: TreeMutationApi,
 ): Promise<RemoveResult> {
   if (paths.length === 0) return { ok: true, removed: [] };
@@ -89,9 +98,7 @@ export async function removeItems(
   // perf:此前逐项 await(N 次串行 IPC 往返 + 串行 shell.trashItem)。outermostPaths 已保证互不
   // 包含(同一实体不会被两项同时删),改为有界并发;结果按下标记录,汇总/刷新顺序与串行一致。
   const targets = outermostPaths(paths);
-  const outcomes = await allSettledWithConcurrency(targets, REMOVE_CONCURRENCY, (p) =>
-    deps.fs.trash(p),
-  );
+  const outcomes = await allSettledWithConcurrency(targets, REMOVE_CONCURRENCY, remove);
   for (let i = 0; i < targets.length; i++) {
     const p = targets[i]!;
     const outcome = outcomes[i]!;
@@ -139,6 +146,21 @@ export async function trashItemsAndCleanup(
   cleanup: (removed: string[]) => void,
 ): Promise<RemoveResult> {
   const result = await removeItems(paths, deps, tree);
+  if (result.removed.length > 0) cleanup(result.removed);
+  return result;
+}
+
+/**
+ * 永久删除 + 清理(不可撤销;只在「无法移到废纸篓,是否永久删除?」确认后调用,VSCode deleteFiles 的 Delete Permanently)。
+ * 失败收集 / 已不存在当成功 / 刷新父目录 / 「路径已删除」清理与 trashItemsAndCleanup 同一套。
+ */
+export async function deleteItemsPermanentlyAndCleanup(
+  paths: ReadonlyArray<string>,
+  deps: { fs: Pick<FsApi, 'deletePermanently'> },
+  tree: TreeMutationApi,
+  cleanup: (removed: string[]) => void,
+): Promise<RemoveResult> {
+  const result = await removeEach(paths, (p) => deps.fs.deletePermanently(p), tree);
   if (result.removed.length > 0) cleanup(result.removed);
   return result;
 }

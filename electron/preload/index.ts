@@ -11,7 +11,7 @@ import {
 import { guardedListener, subscribeAndAnnounce, subscribeIpc } from './subscribe-ipc';
 import { createTerminalDataDemux } from './terminal-data-demux';
 import type { IpcResult } from '../shared/ipc-result';
-import type { FileEntry } from '../shared/fs-entry';
+import type { FileEntry, FsScanFilesData } from '../shared/fs-entry';
 import {
   DIR_CHANGED_FILES_MAX,
   FS_CHANNELS,
@@ -217,6 +217,12 @@ const api = {
       options?: PreloadListDirOptions,
     ): Promise<IpcResult<ReadonlyArray<FileEntry>>> =>
       ipcRenderer.invoke(FS_CHANNELS.LIST_DIR, { path, options }),
+    /** 递归扫描(Quick Open):data.skippedDirs = 读不了而跳过的子目录数;根读不了才失败. */
+    scanFiles: (
+      path: string,
+      options?: PreloadListDirOptions,
+    ): Promise<IpcResult<FsScanFilesData>> =>
+      ipcRenderer.invoke(FS_CHANNELS.SCAN_FILES, { path, options }),
     /** data = 文件内容;realPath = leaf 为符号链接时的真实目标(可选,FS_PATH_MAX 与 PATH_STR_MAX 同值). */
     readFile: async (path: string): Promise<FsReadFileResult> =>
       toFsReadFileResult(
@@ -266,6 +272,9 @@ const api = {
       ipcRenderer.invoke(FS_CHANNELS.CREATE_DIR, { parent, name }),
     trash: (path: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.TRASH, { path }),
+    /** 永久删除(不可撤销):仅在「无法移到废纸篓,是否永久删除?」确认后调用. */
+    deletePermanently: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.DELETE_PERMANENTLY, { path }),
     reveal: (path: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.REVEAL, { path }),
     move: (src: string, dest: string): Promise<IpcResult<void>> =>

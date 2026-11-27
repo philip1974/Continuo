@@ -20,3 +20,9 @@ export interface FileEntry {
   /** ms epoch,sort by ctime 用(列目录时的快照,可能已过期) */
   readonly ctime?: number;
 }
+
+/** fs:scan-files 的结果:递归扫描的条目 + 因无法读取而整棵跳过的子目录数(Quick Open 提示用)。 */
+export interface FsScanFilesData {
+  readonly entries: readonly FileEntry[];
+  readonly skippedDirs: number;
+}

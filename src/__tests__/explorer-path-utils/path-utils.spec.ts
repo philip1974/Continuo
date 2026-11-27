@@ -77,9 +77,12 @@ describe('Explorer path-utils · dirname(跨平台)', () => {
     }
   });
 
-  it('混合分隔符取最后一个', () => {
-    expect(dirname('/a\\b')).toBe('/a');
-    expect(dirname('a/b\\c')).toBe('a/b');
+  // 非 Windows 运行时(本文件 node 环境无 navigator)POSIX 路径里的 `\\` 是文件名字符(见 posix-backslash-filename);
+  // Windows 形态路径(盘符)混用分隔符时取最后一个。
+  it('混合分隔符取最后一个(Windows 形态路径);POSIX 路径里的 `\\` 不是分隔符', () => {
+    expect(dirname('C:\\a/b\\c')).toBe('C:\\a/b');
+    expect(dirname('/a\\b')).toBe('/');
+    expect(dirname('a/b\\c')).toBe('a');
   });
 });
 

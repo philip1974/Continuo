@@ -91,6 +91,8 @@ export const FS_ERROR_CODES = {
   FS_NO_SPACE: 'FS_NO_SPACE',
   // EROFS:只读文件系统(只读挂载的卷 / 镜像)。
   FS_READONLY_FS: 'FS_READONLY_FS',
+  // 移到废纸篓失败且不是权限 / 只读卷原因(卷不支持废纸篓等):资源管理器询问是否永久删除。
+  FS_TRASH_FAILED: 'FS_TRASH_FAILED',
 } as const;
 
 export const ERROR_CODES = {

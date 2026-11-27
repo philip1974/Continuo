@@ -508,14 +508,14 @@ describe('makeTrashHandler · 目标已不存在', () => {
     await expect(handler({ path: missing })).rejects.toMatchObject({ code: 'FS_NOT_FOUND' });
   });
 
-  it('trashItem 失败但路径仍在 → 原错误透传(不误报为不存在)', async () => {
+  it('trashItem 失败但路径仍在 → 按原因映射业务码(不误报为不存在,不透传原始 errno 串)', async () => {
     const err = Object.assign(new Error('denied'), { code: 'EACCES' });
     const handler = makeTrashHandler({
       trashItem: async () => {
         throw err;
       },
     });
-    await expect(handler({ path: tmpdir() })).rejects.toBe(err);
+    await expect(handler({ path: tmpdir() })).rejects.toMatchObject({ code: 'FS_DENIED' });
   });
 });
 

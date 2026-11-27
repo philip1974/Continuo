@@ -28,6 +28,7 @@ const NO_PLURAL_NEEDED: Record<string, string> = {
   'panels.explorer.move_confirm.multiple': '仅多项(≥2)时使用(1 项用 move_confirm.single)',
   'panels.explorer.overwrite_confirm.multiple': '仅多项(≥2)时使用(1 项用 overwrite_confirm.single)',
   'panels.explorer.undo_create_confirm.multiple': '仅多项(≥2)时使用(1 项用 undo_create_confirm.single)',
+  'panels.explorer.delete_permanently.multiple': '仅多项(≥2)时使用(1 项用 delete_permanently.single)',
   'panels.explorer.trash_confirm.more': '无可数名词(…and N more)',
   'panels.explorer.trash_confirm.unsaved': '仅 count > 1 时使用(1 用 unsaved_one / unsaved_single)',
   'panels.explorer.ctx.items_count': '仅多选(> 1)时显示',

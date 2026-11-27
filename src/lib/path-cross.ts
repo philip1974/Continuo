@@ -13,7 +13,7 @@ import { lowerIfNeeded } from '../../electron/shared/lower-if-needed';
 export function joinPath(dir: string, name: string): string {
   const d = trimTrailingSeparators(dir);
   const useBackslash =
-    d.lastIndexOf('\\') > d.lastIndexOf('/') || isBareWindowsDrive(d);
+    (backslashIsSeparator(d) && d.lastIndexOf('\\') > d.lastIndexOf('/')) || isBareWindowsDrive(d);
   return `${d}${useBackslash ? '\\' : '/'}${name}`;
 }
 
@@ -56,6 +56,26 @@ export function isPathSeparatorCode(code: number): boolean {
 
 export function isAsciiAlphaCode(code: number): boolean {
   return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+/**
+ * `p` 里的 `\` 是否算分隔符:Windows 运行时,或路径本身是 Windows 形态(盘符 `C:` / UNC `\\`;跨平台数据与单测)。
+ * macOS / Linux 上 `\` 是合法文件名字符(`a\b.txt` 是一个文件),只按 `/` 切分 —— 否则 tab / 标题只剩反斜杠后半段。
+ */
+export function backslashIsSeparator(p: string): boolean {
+  if (isWindowsRuntime()) return true;
+  return (p.length >= 2 && isAsciiAlphaCode(p.charCodeAt(0)) && p.charCodeAt(1) === 58) || p.charCodeAt(0) === 92;
+}
+
+/** 最后一个路径分隔符的下标(`\` 是否算分隔符见 backslashIsSeparator);没有 → -1。 */
+export function lastSeparatorIndex(p: string): number {
+  const slash = p.lastIndexOf('/');
+  return backslashIsSeparator(p) ? Math.max(slash, p.lastIndexOf('\\')) : slash;
+}
+
+/** 按路径分隔符切段(同 lastSeparatorIndex 的平台口径)。like:据以判断 `\\` 口径的路径(相对路径传其根,缺省 p 本身)。 */
+export function splitPathSegments(p: string, like: string = p): string[] {
+  return backslashIsSeparator(like) ? p.split(/[\\/]/) : p.split('/');
 }
 
 export function isBareWindowsDrive(value: string): boolean {
@@ -189,7 +209,7 @@ export function isAbsolutePath(path: string): boolean {
  */
 export function dirname(p: string): string {
   const trimmed = trimTrailingSeparators(p);
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  const idx = lastSeparatorIndex(trimmed);
   if (idx < 0) return '';
   const head = trimmed.slice(0, idx);
   // Windows 盘根:`C:\foo` 的父是盘根 `C:\`,不是 drive-relative `C:`。与 POSIX `/a → /`
@@ -204,6 +224,6 @@ export function dirname(p: string): string {
  */
 export function basename(p: string): string {
   const trimmed = trimTrailingSeparators(p);
-  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  const idx = lastSeparatorIndex(trimmed);
   return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
 }

@@ -197,6 +197,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.FS_READONLY': '文件是只读的（写保护）',
   'errors.FS_NO_SPACE': '磁盘空间不足',
   'errors.FS_READONLY_FS': '文件系统是只读的',
+  'errors.FS_TRASH_FAILED': '无法移到废纸篓',
 
   // ── topic-19 i18n-strings-r2 ──────────────────────────────────────
 
@@ -494,6 +495,10 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.trash_confirm.multiple': '确定要删除以下 {count} 个文件 / 文件夹吗？',
   'panels.explorer.trash_confirm.more': '…另有 {count} 项未列出',
   'panels.explorer.trash_confirm.detail': '可以从废纸篓恢复。',
+  'panels.explorer.delete_permanently.single': '无法将「{name}」移到废纸篓。是否改为永久删除？',
+  'panels.explorer.delete_permanently.multiple': '无法将以下 {count} 项移到废纸篓。是否改为永久删除？',
+  'panels.explorer.delete_permanently.detail': '此操作不可撤销！永久删除后无法从废纸篓恢复。',
+  'panels.explorer.delete_permanently.confirm': '永久删除',
   'panels.explorer.move_confirm.single': '确定要将「{name}」移到「{dest}」中吗？',
   'panels.explorer.move_confirm.multiple': '确定要将以下 {count} 个文件/文件夹移到「{dest}」中吗？',
   'panels.explorer.move_confirm.move': '移动',
@@ -786,7 +791,8 @@ export const zh: Record<TranslationKey, string> = {
   'errors.dock.layout_save_failed': '保存面板布局失败',
   'errors.folder.move_failed': '移动失败：{src}: {message}',
   'errors.folder.paste_failed': '粘贴失败：{src}: {message}',
-  'errors.folder.trash_failed': '移到废纸篓失败：{path}: {message}',
+  'errors.folder.trash_failed': '无法将「{name}」移到废纸篓：{message}',
+  'errors.folder.delete_failed': '永久删除「{name}」失败：{message}',
   'errors.folder.skipped_dirs': '跳过 {count} 个文件夹（暂不支持目录拖入）',
   'errors.folder.batch_failed': '失败 {count} 个：',
 
@@ -1045,6 +1051,8 @@ export const zh: Record<TranslationKey, string> = {
   'quick_open.list_aria': '文件搜索结果',
   'quick_open.input_aria': '搜索文件',
   'quick_open.scan_failed': '扫描工作区文件失败',
+  'quick_open.skipped_unreadable_one': '已跳过 {count} 个无法读取的目录',
+  'quick_open.skipped_unreadable_other': '已跳过 {count} 个无法读取的目录',
   'quick_open.retry': '重试',
   'quick_open.open_failed': '打开失败',
   'quick_open.recently_opened': '最近打开',
@@ -1084,6 +1092,8 @@ export const zh: Record<TranslationKey, string> = {
   'panels.search.files_limit_hit': '文件过多，只搜索了前 {max} 个文件',
   'panels.search.skipped_large_one': '已跳过 {count} 个超过 1 MiB 的文件（在编辑器中打开后可搜索）',
   'panels.search.skipped_large_other': '已跳过 {count} 个超过 1 MiB 的文件（在编辑器中打开后可搜索）',
+  'panels.search.skipped_unreadable_one': '已跳过 {count} 个无法读取的目录',
+  'panels.search.skipped_unreadable_other': '已跳过 {count} 个无法读取的目录',
   'panels.search.failed': '搜索失败：{reason}',
   'panels.search.message_separator': '。',
   'panels.search.file_aria': '{path}：{results}',

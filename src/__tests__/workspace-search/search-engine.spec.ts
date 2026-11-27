@@ -154,14 +154,14 @@ describe('限额与分批', () => {
     expect(files.every((f) => f.matches.length <= SEARCH_MAX_RESULTS_PER_FILE)).toBe(true);
     expect(files[0]!.truncated).toBe(true);
     expect(files.flatMap((f) => f.matches)).toHaveLength(SEARCH_MAX_RESULTS);
-    expect(summary).toEqual({ limitHit: true, filesLimitHit: false, skippedLargeCount: 0, skippedLargePaths: [] });
+    expect(summary).toEqual({ limitHit: true, filesLimitHit: false, skippedLargeCount: 0, skippedLargePaths: [], skippedUnreadableDirs: 0 });
   });
 
   it('文件数上限:只搜前 N 个文件并标记 filesLimitHit', async () => {
     for (let i = 0; i < 5; i += 1) write(`f${i}.txt`, 'hit');
     const { summary, files } = await search(query('hit'), { maxFiles: 3 });
     expect(files).toHaveLength(3);
-    expect(summary).toEqual({ limitHit: false, filesLimitHit: true, skippedLargeCount: 0, skippedLargePaths: [] });
+    expect(summary).toEqual({ limitHit: false, filesLimitHit: true, skippedLargeCount: 0, skippedLargePaths: [], skippedUnreadableDirs: 0 });
   });
 
   it('分批推送:时间窗内攒批,结果按枚举顺序稳定', async () => {
@@ -180,7 +180,7 @@ describe('限额与分批', () => {
     write('a.txt', 'nothing');
     const { batches, summary } = await search(query('needle'));
     expect(batches).toEqual([]);
-    expect(summary).toEqual({ limitHit: false, filesLimitHit: false, skippedLargeCount: 0, skippedLargePaths: [] });
+    expect(summary).toEqual({ limitHit: false, filesLimitHit: false, skippedLargeCount: 0, skippedLargePaths: [], skippedUnreadableDirs: 0 });
   });
 });
 

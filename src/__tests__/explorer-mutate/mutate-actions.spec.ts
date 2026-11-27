@@ -20,6 +20,7 @@ const fail = (code: string, message = code): IpcResult<never> => ({
 const makeFs = (overrides: Partial<FsApi> = {}): FsApi => ({
   // 默认成功的桩
   listDir: vi.fn(async () => ok([])),
+  scanFiles: vi.fn(async () => ok({ entries: [], skippedDirs: 0 })),
   readFile: vi.fn(async () => ok('')),
   readImage: vi.fn(async () => ok({ dataUrl: '', size: 0 })),
   writeFile: vi.fn(async () => ok(undefined)),
@@ -28,6 +29,7 @@ const makeFs = (overrides: Partial<FsApi> = {}): FsApi => ({
   createFile: vi.fn(async (d, n) => ok({ path: `${d}/${n}`, created: `${d}/${n}` })),
   createDir: vi.fn(async (d, n) => ok({ path: `${d}/${n}`, created: `${d}/${n}` })),
   trash: vi.fn(async () => ok(undefined as void)),
+  deletePermanently: vi.fn(async () => ok(undefined as void)),
   reveal: vi.fn(async () => ok(undefined as void)),
   move: vi.fn(async () => ok(undefined as void)),
   copy: vi.fn(async () => ok(undefined as void)),

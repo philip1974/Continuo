@@ -90,13 +90,34 @@ export async function readFileCappedFd(
   maxBytes: number,
   opts: CappedFdReadOptions = {},
 ): Promise<CappedFdRead> {
-  // open 错误(ENOENT/EACCES 等)透传给调用方
-  const fh = opts.noFollow ? await openNoFollow(filePath) : await openForReadNonBlocking(filePath);
+  // open 错误(ENOENT/EACCES 等)透传给调用方;socket 等特殊文件 open 本身就失败(macOS EOPNOTSUPP,libuv 未映射成
+  // 「Unknown system error -102」;Linux ENXIO)→ 与 FIFO(open 成功、fstat 判出)一样归为 EFTYPE(「不是文件」)。
+  let fh: FileHandle;
+  try {
+    fh = opts.noFollow ? await openNoFollow(filePath) : await openForReadNonBlocking(filePath);
+  } catch (err) {
+    throw await specialFileOpenError(err, filePath, opts.noFollow === true);
+  }
   try {
     return await readCappedFromHandle(fh, filePath, maxBytes, opts);
   } finally {
     await fh.close().catch(() => {});
   }
+}
+
+/** 常见 open 失败原因原样透传;其余(EOPNOTSUPP / ENXIO / 未映射 errno 等)再 stat 一次:是特殊文件 → EFTYPE。 */
+const PASS_THROUGH_OPEN_ERRORS: ReadonlySet<string> = new Set([
+  'ENOENT', 'EACCES', 'EPERM', 'ELOOP', 'ENAMETOOLONG', 'ENOTDIR', 'EISDIR', 'EMFILE', 'ENFILE', 'EFTYPE', 'EMLINK',
+]);
+
+async function specialFileOpenError(err: unknown, filePath: string, noFollow: boolean): Promise<unknown> {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (typeof code === 'string' && PASS_THROUGH_OPEN_ERRORS.has(code)) return err;
+  const st = await (noFollow ? fs.lstat(filePath) : fs.stat(filePath)).catch(() => null);
+  if (st !== null && (st.isSocket() || st.isFIFO() || st.isCharacterDevice() || st.isBlockDevice())) {
+    return unsafeFileError('EFTYPE', filePath);
+  }
+  return err;
 }
 
 /** readFileCappedFd 的读取部分:经调用方已打开的 fd(fstat → 有界读);不关闭 fd。filePath 只用于错误信息。 */

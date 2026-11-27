@@ -1,10 +1,11 @@
 // 工作区文本搜索引擎(在文件中查找,对齐 VSCode Search):在 worker 线程里运行(text-search.worker.ts),也可直接调用(单测)。
 // 枚举复用 fs:list-dir 的 walker 与 Quick Open 同一排除表;逐文件有界读(≤ 1 MiB、只读普通文件、要求合法 UTF-8、含 NUL 视作二进制),
 // 逐行匹配(matchSearchText,renderer 搜已打开编辑器的内存内容用同一实现),命中文件按时间窗攒批经 onFiles 推出;
-// 因过大跳过的文件计数并报告路径(renderer 显示「已跳过 N 个大文件」)。BDD: src/__tests__/workspace-search/
+// 因过大跳过的文件计数并报告路径(renderer 显示「已跳过 N 个大文件」);读不了的子目录跳过并计数(根读不了才整体失败),
+// 单个文件读失败(EACCES / EISDIR / ELOOP / ENAMETOOLONG 等)静默跳过该文件。BDD: src/__tests__/workspace-search/
 
 import path from 'node:path';
-import { listDir } from '../ipc/fs/list-dir';
+import { scanDir } from '../ipc/fs/list-dir';
 import { readFileCappedFd } from '../lib/read-fh-capped';
 import { LIST_DIR_MAX_DEPTH, WORKSPACE_SCAN_EXCLUDE } from '../../shared/fs-limits';
 import {
@@ -39,6 +40,8 @@ export interface TextSearchSummary {
   readonly skippedLargeCount: number;
   /** 被跳过的大文件绝对路径(至多 SEARCH_SKIPPED_LARGE_REPORT_MAX 个;renderer 扣除已在内存搜索的打开文件)。 */
   readonly skippedLargePaths: readonly string[];
+  /** 枚举时因无法读取(无权限 / 路径超长 / I/O 错误)整棵跳过的子目录数(renderer 显示「已跳过 N 个无法读取的目录」)。 */
+  readonly skippedUnreadableDirs: number;
 }
 
 /** 同时读取的文件数(块内并发、块间按序,结果顺序稳定)。 */
@@ -51,7 +54,7 @@ export async function runTextSearch(opts: TextSearchOptions): Promise<TextSearch
   const regex = buildSearchRegExp(query); // 非法正则在此抛出
   const filter = compileSearchPathFilter(query.include, query.exclude);
 
-  const entries = await listDir(root, {
+  const { entries, skippedDirs: skippedUnreadableDirs } = await scanDir(root, {
     maxDepth: LIST_DIR_MAX_DEPTH,
     exclude: WORKSPACE_SCAN_EXCLUDE,
     maxFiles,
@@ -115,7 +118,7 @@ export async function runTextSearch(opts: TextSearchOptions): Promise<TextSearch
     }
   }
   flush();
-  return { limitHit, filesLimitHit, skippedLargeCount, skippedLargePaths };
+  return { limitHit, filesLimitHit, skippedLargeCount, skippedLargePaths, skippedUnreadableDirs };
 }
 
 /** readSearchableText 的「过大而跳过」标记(与其它跳过原因区分,用于「已跳过 N 个大文件」提示)。 */

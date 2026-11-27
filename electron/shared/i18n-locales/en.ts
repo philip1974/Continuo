@@ -211,6 +211,7 @@ export const en = {
   'errors.FS_READONLY': 'File is write-protected',
   'errors.FS_NO_SPACE': 'Not enough disk space',
   'errors.FS_READONLY_FS': 'The file system is read-only',
+  'errors.FS_TRASH_FAILED': 'Could not move to the Trash',
 
   // ── topic-19 i18n-strings-r2 ──────────────────────────────────────
 
@@ -512,6 +513,10 @@ export const en = {
   'panels.explorer.trash_confirm.multiple': 'Are you sure you want to delete the following {count} files/folders?',
   'panels.explorer.trash_confirm.more': '…and {count} more not shown',
   'panels.explorer.trash_confirm.detail': 'You can restore from the Trash.',
+  'panels.explorer.delete_permanently.single': 'Failed to move “{name}” to the Trash. Do you want to permanently delete it instead?',
+  'panels.explorer.delete_permanently.multiple': 'Failed to move the following {count} items to the Trash. Do you want to permanently delete them instead?',
+  'panels.explorer.delete_permanently.detail': 'This action is irreversible! Permanently deleted items cannot be restored from the Trash.',
+  'panels.explorer.delete_permanently.confirm': 'Delete Permanently',
   'panels.explorer.move_confirm.single': 'Are you sure you want to move “{name}” into “{dest}”?',
   'panels.explorer.move_confirm.multiple': 'Are you sure you want to move the following {count} files/folders into “{dest}”?',
   'panels.explorer.move_confirm.move': 'Move',
@@ -817,7 +822,8 @@ export const en = {
   'errors.dock.layout_save_failed': 'Failed to save panel layout',
   'errors.folder.move_failed': 'Move failed: {src}: {message}',
   'errors.folder.paste_failed': 'Paste failed: {src}: {message}',
-  'errors.folder.trash_failed': 'Move to trash failed: {path}: {message}',
+  'errors.folder.trash_failed': 'Could not move “{name}” to the Trash: {message}',
+  'errors.folder.delete_failed': 'Failed to permanently delete “{name}”: {message}',
   'errors.folder.skipped_dirs': 'Skipped {count} folder(s) (directories not supported)',
   'errors.folder.batch_failed': '{count} failed:',
 
@@ -1088,6 +1094,8 @@ export const en = {
   'quick_open.list_aria': 'File search results',
   'quick_open.input_aria': 'Search files',
   'quick_open.scan_failed': 'Failed to scan workspace files',
+  'quick_open.skipped_unreadable_one': 'Skipped {count} folder that could not be read',
+  'quick_open.skipped_unreadable_other': 'Skipped {count} folders that could not be read',
   'quick_open.retry': 'Retry',
   'quick_open.open_failed': 'Failed to open',
   'quick_open.recently_opened': 'recently opened',
@@ -1127,6 +1135,8 @@ export const en = {
   'panels.search.files_limit_hit': 'Too many files: only the first {max} files were searched.',
   'panels.search.skipped_large_one': 'Skipped {count} file larger than 1 MiB (open it in the editor to search it)',
   'panels.search.skipped_large_other': 'Skipped {count} files larger than 1 MiB (open them in the editor to search them)',
+  'panels.search.skipped_unreadable_one': 'Skipped {count} folder that could not be read',
+  'panels.search.skipped_unreadable_other': 'Skipped {count} folders that could not be read',
   'panels.search.failed': 'Search failed: {reason}',
   'panels.search.message_separator': '. ',
   'panels.search.file_aria': '{path}: {results}',

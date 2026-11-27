@@ -43,7 +43,10 @@ interface QuickOpenState extends PickerSlice {
   loading: boolean;
   /** walk 失败标志 —— 与"workspace 真为空"区分,避免静默失败伪装成空列表。 */
   scanFailed: boolean;
-  setResults: (files: readonly QuickOpenFile[], root: string | null) => void;
+  /** 最近一次扫描因无法读取而跳过的子目录数(归属 resultsRoot;Modal 提示用)。 */
+  skippedDirs: number;
+  /** skippedDirs 缺省 0(清空 / 失败时)。 */
+  setResults: (files: readonly QuickOpenFile[], root: string | null, skippedDirs?: number) => void;
   setLoading: (b: boolean) => void;
   setScanFailed: (b: boolean) => void;
   /** 打开并预填查询(⌃G 转到行预填 `:`;已打开则改为该查询)。 */
@@ -71,13 +74,14 @@ export const useQuickOpenStore = create<QuickOpenState>((set) => ({
   resultsRoot: null,
   loading: false,
   scanFailed: false,
+  skippedDirs: 0,
 
   // 组件扫描时显式传当前 root 绑定归属。
-  setResults: (files, root) =>
+  setResults: (files, root, skippedDirs = 0) =>
     set((s) =>
-      s.resultsRoot === root && quickOpenResultsEqual(s.results, files)
+      s.resultsRoot === root && s.skippedDirs === skippedDirs && quickOpenResultsEqual(s.results, files)
         ? s
-        : { results: files, resultsRoot: root },
+        : { results: files, resultsRoot: root, skippedDirs },
     ),
   setLoading: (b) => set((s) => (s.loading === b ? s : { loading: b })),
   setScanFailed: (b) =>

@@ -210,13 +210,16 @@ describe('listDir', () => {
   // 无读权限的目录(EACCES / EPERM):opendir 的原始 errno 须映射成业务码 FS_DENIED(renderer 据此本地化
   // 「拒绝访问」,不显示 `EACCES: permission denied, opendir '<路径>'` 原始诊断串)。root 用户 / Windows 无此语义,跳过。
   const canTestPermissions = process.platform !== 'win32' && process.getuid?.() !== 0;
-  it.skipIf(!canTestPermissions)('目录不可读(EACCES)→ FS_DENIED;递归时子目录不可读同样', async () => {
+  // 递归时子目录不可读:跳过该子树并计数(见 workspace-scan-unreadable),不再整体抛。
+  it.skipIf(!canTestPermissions)('目录不可读(EACCES)→ FS_DENIED;递归时不可读子目录被跳过', async () => {
     const locked = path.join(dir, 'locked');
     await mkdir(locked);
     await chmod(locked, 0o000);
     try {
       await expectErrCode(() => listDir(locked), 'FS_DENIED');
-      await expectErrCode(() => listDir(dir, { maxDepth: 2 }), 'FS_DENIED');
+      const names = (await listDir(dir, { maxDepth: 2 })).map((e) => e.name);
+      expect(names).toContain('locked');
+      expect(names).toContain('a.txt');
     } finally {
       await chmod(locked, 0o755);
     }

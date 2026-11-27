@@ -8,9 +8,9 @@ import path from 'node:path';
 import { walkWorkspaceFiles } from '../../plugins/quick-open/walk-files';
 import { QUICK_OPEN_MAX_FILES } from '../../plugins/quick-open/store';
 import { fuzzyFilter } from '../../plugins/command-palette/fuzzy';
-import { listDir as mainListDir } from '../../../electron/main/ipc/fs/list-dir';
+import { scanDir as mainListDir } from '../../../electron/main/ipc/fs/list-dir';
 import { LIST_DIR_MAX_DEPTH } from '../../../electron/shared/fs-limits';
-import type { FileEntry } from '../../../electron/shared/fs-entry';
+import type { FileEntry, FsScanFilesData } from '../../../electron/shared/fs-entry';
 import type { IpcResult } from '../../../electron/shared/ipc-result';
 
 type ListDirFn = (
@@ -21,14 +21,14 @@ type ListDirFn = (
     maxFiles?: number;
     withStats?: boolean;
   },
-) => Promise<IpcResult<readonly FileEntry[]>>;
+) => Promise<IpcResult<FsScanFilesData>>;
 
 function entry(p: string, name: string, isDirectory: boolean): FileEntry {
   return { path: p, name, isDirectory, mtime: 0, ctime: 0 };
 }
 
 function makeListDir(data: readonly FileEntry[]): ListDirFn {
-  return async () => ({ ok: true, data });
+  return async () => ({ ok: true, data: { entries: data, skippedDirs: 0 } });
 }
 
 describe('walkWorkspaceFiles', () => {
@@ -112,7 +112,7 @@ describe('walkWorkspaceFiles', () => {
     let captured: { maxFiles?: number } | undefined;
     const listDir: ListDirFn = async (_p, options) => {
       captured = options;
-      return { ok: true, data: [] };
+      return { ok: true, data: { entries: [], skippedDirs: 0 } };
     };
     // 默认上限
     await walkWorkspaceFiles({ rootPath: '/r', listDir });
@@ -126,7 +126,7 @@ describe('walkWorkspaceFiles', () => {
     let captured: { withStats?: boolean } | undefined;
     const listDir: ListDirFn = async (_p, options) => {
       captured = options;
-      return { ok: true, data: [] };
+      return { ok: true, data: { entries: [], skippedDirs: 0 } };
     };
     await walkWorkspaceFiles({ rootPath: '/r', listDir });
     expect(captured?.withStats).toBe(false);
@@ -138,7 +138,7 @@ describe('walkWorkspaceFiles', () => {
       | undefined;
     const listDir: ListDirFn = async (_path, options) => {
       captured = options;
-      return { ok: true, data: [] };
+      return { ok: true, data: { entries: [], skippedDirs: 0 } };
     };
     await walkWorkspaceFiles({ rootPath: '/r', listDir });
     expect(captured?.maxDepth).toBe(LIST_DIR_MAX_DEPTH);
@@ -158,7 +158,7 @@ describe('walkWorkspaceFiles', () => {
     let captured: { exclude?: readonly string[] } | undefined;
     const listDir: ListDirFn = async (_p, opts) => {
       captured = opts;
-      return { ok: true, data: [] };
+      return { ok: true, data: { entries: [], skippedDirs: 0 } };
     };
     await walkWorkspaceFiles({
       rootPath: '/r',
@@ -178,7 +178,7 @@ describe('walkWorkspaceFiles', () => {
     const listDir: ListDirFn = async (_p, opts) => {
       if (!defaultExclude) defaultExclude = opts?.exclude;
       else emptyExtraExclude = opts?.exclude;
-      return { ok: true, data: [] };
+      return { ok: true, data: { entries: [], skippedDirs: 0 } };
     };
 
     await walkWorkspaceFiles({ rootPath: '/r', listDir });
@@ -220,7 +220,7 @@ describe('walkWorkspaceFiles', () => {
     let calls = 0;
     const listDir: ListDirFn = async () => {
       calls += 1;
-      return { ok: true, data: [entry('/r/a.ts', 'a.ts', false)] };
+      return { ok: true, data: { entries: [entry('/r/a.ts', 'a.ts', false)], skippedDirs: 0 } };
     };
 
     const r = await walkWorkspaceFiles({

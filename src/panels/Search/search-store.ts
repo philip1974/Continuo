@@ -51,6 +51,8 @@ interface SearchState {
   readonly filesLimitHit: boolean;
   /** 因超过 1 MiB 跳过且未在编辑器中打开的文件数(打开的已在内存里搜过)。 */
   readonly skippedLarge: number;
+  /** 枚举时因无法读取(无权限 / 路径超长等)跳过的子目录数。 */
+  readonly skippedUnreadable: number;
   readonly error: { readonly code: string; readonly message: string } | null;
   readonly collapsed: ReadonlySet<string>;
   /** 结果树当前行(键盘 / F4 共用)。 */
@@ -86,6 +88,7 @@ const INITIAL = {
   limitHit: false,
   filesLimitHit: false,
   skippedLarge: 0,
+  skippedUnreadable: 0,
   error: null,
   collapsed: new Set<string>() as ReadonlySet<string>,
   activeKey: null,
@@ -170,6 +173,7 @@ const EMPTY_RESULTS = {
   limitHit: false,
   filesLimitHit: false,
   skippedLarge: 0,
+  skippedUnreadable: 0,
   error: null,
   activeKey: null,
   collapsed: new Set<string>() as ReadonlySet<string>,
@@ -258,6 +262,7 @@ function applyEvent(e: SearchEvent): void {
     limitHit: e.limitHit || mergedLimitHit,
     filesLimitHit: e.filesLimitHit,
     skippedLarge: Math.max(0, skippedLarge),
+    skippedUnreadable: e.skippedUnreadableDirs ?? 0,
   });
 }
 

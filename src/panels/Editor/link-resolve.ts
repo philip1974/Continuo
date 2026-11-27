@@ -23,6 +23,7 @@ import {
   isPathSeparatorCode,
   isUncPath,
   isWindowsDriveAbsolute,
+  lastSeparatorIndex,
 } from '@/lib/path-cross';
 
 export type LinkTarget =
@@ -93,7 +94,7 @@ function uncShareKey(p: string): string | null {
 
 /** 取 currentFilePath 所在目录(`/` 或 `\\` 作分隔符);裸文件名返 null. */
 function dirnameOf(p: string): string | null {
-  const idx = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+  const idx = lastSeparatorIndex(p);
   if (idx < 0) return null;
   return p.slice(0, idx);
 }

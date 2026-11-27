@@ -1,13 +1,13 @@
 // 同名文件 tab 的区分后缀(对齐 VSCode 编辑器标签 labelFormat=default):basename 重复时,在文件名后显示能把它与
 // 其它同名 tab 区分开的**最短**父路径后缀(`a` / `a/src`);不重名的 tab 不显示。父链用尽仍不能区分(一个是
 // 另一个的后缀路径、或同一路径重复)时显示完整父目录。
-import { basename, dirname } from '@/lib/path-cross';
+import { backslashIsSeparator, basename, dirname, splitPathSegments } from '@/lib/path-cross';
 
 /** 父目录各段(不含空段与文件名)及该路径使用的分隔符。 */
 function parentSegments(filePath: string): { segs: string[]; sep: string } {
-  const segs = filePath.split(/[\\/]/).filter((s) => s !== '');
+  const segs = splitPathSegments(filePath).filter((s) => s !== '');
   segs.pop();
-  return { segs, sep: filePath.includes('\\') ? '\\' : '/' };
+  return { segs, sep: backslashIsSeparator(filePath) && filePath.includes('\\') ? '\\' : '/' };
 }
 
 const suffix = (segs: readonly string[], k: number, sep: string): string => segs.slice(-k).join(sep);

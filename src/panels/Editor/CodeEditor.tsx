@@ -65,6 +65,7 @@ import { registerEditorFocus } from './editor-focus-registry';
 import { useEditorGroupId } from './editor-group-context';
 import { applySourceModeAnchor, sourceModeAnchor } from './codemirror-mode-anchor';
 import { navigationHistoryExtension } from './codemirror-navigation-history';
+import { lastSeparatorIndex } from '@/lib/path-cross';
 
 interface CodeEditorProps {
   tabId: string;
@@ -186,7 +187,7 @@ const FILENAME_ALIASES: ReadonlyArray<readonly [RegExp, string]> = [
 export function languageDescriptionFor(fileName: string): LanguageDescription | null {
   const ext = fileExtensionLower(fileName);
   if (ext !== undefined && BUILTIN_LANGUAGES.has(ext)) return null;
-  const base = fileName.slice(Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\')) + 1);
+  const base = fileName.slice(lastSeparatorIndex(fileName) + 1);
   for (const [pattern, name] of FILENAME_ALIASES) {
     if (pattern.test(base)) return LanguageDescription.matchLanguageName(languages, name, false);
   }

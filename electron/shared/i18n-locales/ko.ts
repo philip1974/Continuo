@@ -199,6 +199,7 @@ export const ko: Record<TranslationKey, string> = {
   'errors.FS_READONLY': '파일이 쓰기 보호되어 있습니다',
   'errors.FS_NO_SPACE': '디스크 공간이 부족합니다',
   'errors.FS_READONLY_FS': '파일 시스템이 읽기 전용입니다',
+  'errors.FS_TRASH_FAILED': '휴지통으로 이동할 수 없습니다',
 
   // ── topic-19 i18n-strings-r2 ──────────────────────────────────────
 
@@ -497,6 +498,10 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.trash_confirm.multiple': '다음 {count}개 파일/폴더를 삭제하시겠습니까?',
   'panels.explorer.trash_confirm.more': '…외 {count}개 항목은 표시되지 않음',
   'panels.explorer.trash_confirm.detail': '휴지통에서 복원할 수 있습니다.',
+  'panels.explorer.delete_permanently.single': "'{name}'을(를) 휴지통으로 이동하지 못했습니다. 대신 영구적으로 삭제하시겠습니까?",
+  'panels.explorer.delete_permanently.multiple': '다음 {count}개 항목을 휴지통으로 이동하지 못했습니다. 대신 영구적으로 삭제하시겠습니까?',
+  'panels.explorer.delete_permanently.detail': '이 작업은 되돌릴 수 없습니다! 영구적으로 삭제한 항목은 휴지통에서 복원할 수 없습니다.',
+  'panels.explorer.delete_permanently.confirm': '영구적으로 삭제',
   'panels.explorer.move_confirm.single': '“{name}”을(를) “{dest}”(으)로 이동하시겠습니까?',
   'panels.explorer.move_confirm.multiple': '다음 {count}개 파일/폴더를 “{dest}”(으)로 이동하시겠습니까?',
   'panels.explorer.move_confirm.move': '이동',
@@ -789,7 +794,8 @@ export const ko: Record<TranslationKey, string> = {
   'errors.dock.layout_save_failed': '패널 레이아웃 저장 실패',
   'errors.folder.move_failed': '이동 실패: {src}: {message}',
   'errors.folder.paste_failed': '붙여넣기 실패: {src}: {message}',
-  'errors.folder.trash_failed': '휴지통으로 이동 실패: {path}: {message}',
+  'errors.folder.trash_failed': "'{name}'을(를) 휴지통으로 이동할 수 없습니다: {message}",
+  'errors.folder.delete_failed': "'{name}'을(를) 영구적으로 삭제하지 못했습니다: {message}",
   'errors.folder.skipped_dirs': '{count}개의 폴더를 건너뛰었습니다 (디렉터리 드롭은 아직 지원되지 않음)',
   'errors.folder.batch_failed': '{count}개 실패:',
 
@@ -1051,6 +1057,8 @@ export const ko: Record<TranslationKey, string> = {
   'quick_open.list_aria': '파일 검색 결과',
   'quick_open.input_aria': '파일 검색',
   'quick_open.scan_failed': '워크스페이스 파일 스캔 실패',
+  'quick_open.skipped_unreadable_one': '읽을 수 없는 폴더 {count}개를 건너뛰었습니다',
+  'quick_open.skipped_unreadable_other': '읽을 수 없는 폴더 {count}개를 건너뛰었습니다',
   'quick_open.retry': '다시 시도',
   'quick_open.open_failed': '열기 실패',
   'quick_open.recently_opened': '최근에 연 항목',
@@ -1090,6 +1098,8 @@ export const ko: Record<TranslationKey, string> = {
   'panels.search.files_limit_hit': '파일이 너무 많아 처음 {max}개 파일만 검색했습니다.',
   'panels.search.skipped_large_one': '1 MiB를 넘는 파일 {count}개를 건너뛰었습니다(편집기에서 열면 검색됩니다)',
   'panels.search.skipped_large_other': '1 MiB를 넘는 파일 {count}개를 건너뛰었습니다(편집기에서 열면 검색됩니다)',
+  'panels.search.skipped_unreadable_one': '읽을 수 없는 폴더 {count}개를 건너뛰었습니다',
+  'panels.search.skipped_unreadable_other': '읽을 수 없는 폴더 {count}개를 건너뛰었습니다',
   'panels.search.failed': '검색 실패: {reason}',
   'panels.search.message_separator': '. ',
   'panels.search.file_aria': '{path}: {results}',

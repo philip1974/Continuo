@@ -83,6 +83,7 @@ export function SearchPanel() {
       limitHit: st.limitHit,
       filesLimitHit: st.filesLimitHit,
       skippedLarge: st.skippedLarge,
+      skippedUnreadable: st.skippedUnreadable,
       error: st.error,
       collapsed: st.collapsed,
       activeKey: st.activeKey,
@@ -420,6 +421,8 @@ interface StatusInput {
   readonly limitHit: boolean;
   readonly filesLimitHit: boolean;
   readonly skippedLarge: number;
+  /** 缺省 0(旧调用方 / 测试未传)。 */
+  readonly skippedUnreadable?: number;
   readonly error: { readonly code: string; readonly message: string } | null;
 }
 
@@ -448,5 +451,9 @@ export function searchStatusText(s: StatusInput, t: ReturnType<typeof useT>): st
   // 文件数上限 / 跳过大文件:无结果时同样提示(否则「未找到结果」看不出搜索范围不完整)。
   if (s.filesLimitHit) parts.push(t('panels.search.files_limit_hit', { max: SEARCH_MAX_FILES }));
   if (s.skippedLarge > 0) parts.push(translateCount('panels.search.skipped_large', s.skippedLarge));
+  // 读不了的子目录(无权限 / 路径超长):已跳过,其余结果照常给出(VSCode / ripgrep 同);合成一条计数,不逐个刷屏。
+  if ((s.skippedUnreadable ?? 0) > 0) {
+    parts.push(translateCount('panels.search.skipped_unreadable', s.skippedUnreadable ?? 0));
+  }
   return parts.join(t('panels.search.message_separator'));
 }

@@ -58,6 +58,27 @@ export async function listDir(
   dirPath: string,
   opts: ListDirOptions = {},
 ): Promise<FileEntry[]> {
+  return (await scanDir(dirPath, opts)).entries;
+}
+
+/** scanDir 结果:条目 + 递归中因读不了而跳过的子目录数。 */
+export interface ScanDirResult {
+  readonly entries: FileEntry[];
+  /**
+   * 递归扫描(maxDepth > 1)时,子目录 opendir / 读取 / 子项 lstat 失败(EACCES / EPERM / ENAMETOOLONG / ELOOP / EIO 等)
+   * 被整棵跳过的个数(对齐 VSCode:ripgrep 遇到读不了的目录只报到输出通道、照常给其余结果)。根目录本身读不了仍抛错。
+   */
+  readonly skippedDirs: number;
+}
+
+/**
+ * 同 listDir,另报跳过的子目录数(Quick Open / 在文件中查找据此提示「已跳过 N 个无法读取的目录」)。
+ * 只有根(调用方给的 dirPath)失败才抛;子目录失败跳过该子树并计数,不让一个不可读目录让整次扫描失败。
+ */
+export async function scanDir(
+  dirPath: string,
+  opts: ListDirOptions = {},
+): Promise<ScanDirResult> {
   const requested = opts.maxDepth ?? 1;
   const maxDepth = Math.min(Math.max(requested, 1), MAX_DEPTH_HARD_LIMIT);
   // 边界(E21,perf):exclude 转 Set,大目录下每个目录项的排除判断从 O(N) includes 降为 O(1) has
@@ -94,8 +115,8 @@ export async function listDir(
 
   // 共享文件计数:达到 maxFiles 即停止遍历/递归。maxFiles=Infinity(默认)时
   // 守卫永不触发,walk 行为与历史逐字节一致。
-  const state = { fileCount: 0, totalCount: 0 };
-  return walk(
+  const state: WalkState = { fileCount: 0, totalCount: 0, skippedDirs: 0 };
+  const entries = await walk(
     dirPath,
     1,
     maxDepth,
@@ -105,6 +126,24 @@ export async function listDir(
     maxTotalEntries,
     state,
   );
+  return { entries, skippedDirs: state.skippedDirs };
+}
+
+interface WalkState {
+  fileCount: number;
+  totalCount: number;
+  skippedDirs: number;
+}
+
+function isFsDirTooLarge(err: unknown): boolean {
+  return (err as { code?: unknown } | null)?.code === ERROR_CODES.FS_DIR_TOO_LARGE;
+}
+
+/** 已带业务码(FS_*)的错误原样抛;原始 errno 映射成业务码(renderer 按码本地化,不显示原始串)。 */
+function toFsError(err: unknown, message: string): unknown {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (typeof code === 'string' && code.startsWith('FS_')) return err;
+  return fsError(mapNodeErrnoCode(err), message);
 }
 
 // perf P3:同一层目录的 lstat 并发度。旧实现 for 循环逐项 `await lstat` 串行,
@@ -156,8 +195,12 @@ async function resolveEntry(
     let lst;
     try {
       lst = await lstat(full);
-    } catch {
-      return null; // 边读边删的竞态:跳过
+    } catch (err) {
+      // 目录有读权限、无执行(搜索)权限(如 644):能读出名字,逐项 lstat 全部 EACCES。旧实现当作「边读边删」逐项跳过 →
+      // 资源管理器展开后显示为空、没有错误行。权限错误按该目录读取失败上抛(资源管理器显示读取失败行;递归扫描跳过该目录)。
+      const code = (err as { code?: unknown }).code;
+      if (code === 'EACCES' || code === 'EPERM') throw fsError(ERROR_CODES.FS_DENIED, `lstat failed: ${full}`);
+      return null; // 边读边删的竞态(ENOENT)/ 单项名字过长等:跳过该项
     }
     isSymlink = lst.isSymbolicLink();
     isDirectory = lst.isDirectory();
@@ -196,7 +239,7 @@ async function walk(
   withStats: boolean,
   maxFiles: number,
   maxTotalEntries: number,
-  state: { fileCount: number; totalCount: number },
+  state: WalkState,
 ): Promise<FileEntry[]> {
   if (state.fileCount >= maxFiles) return []; // cap 后进入的子树:不 opendir/lstat
   const out: FileEntry[] = [];
@@ -271,22 +314,39 @@ async function walk(
   };
 
   // for await 流式遍历:非排除项累积到 LSTAT_CHUNK 即成块处理;break/throw/完成自动 close Dir。
-  for await (const dirent of dirHandle) {
-    if (state.fileCount >= maxFiles) break;
-    if (exclude.has(dirent.name)) continue;
-    chunk[chunkCount] = dirent; // 保留 dirent 类型(withStats:false 免 lstat)
-    chunkCount += 1;
-    if (chunkCount >= LSTAT_CHUNK) {
-      await flushChunk(); // 抛 FS_DIR_TOO_LARGE 时 for await 经迭代器 return() 关闭 Dir
-      if (stop) break;
+  // 读目录项中途失败(EIO 等)同 opendir 失败映射成业务码。
+  try {
+    for await (const dirent of dirHandle) {
+      if (state.fileCount >= maxFiles) break;
+      if (exclude.has(dirent.name)) continue;
+      chunk[chunkCount] = dirent; // 保留 dirent 类型(withStats:false 免 lstat)
+      chunkCount += 1;
+      if (chunkCount >= LSTAT_CHUNK) {
+        await flushChunk(); // 抛 FS_DIR_TOO_LARGE 时 for await 经迭代器 return() 关闭 Dir
+        if (stop) break;
+      }
     }
+    // 处理流末尾的残块(for await 正常结束时 Dir 已自动关闭;flushChunk 不依赖 Dir 句柄)。
+    if (!stop) await flushChunk();
+  } catch (err) {
+    throw toFsError(err, `readdir failed: ${dir}`);
   }
-  // 处理流末尾的残块(for await 正常结束时 Dir 已自动关闭;flushChunk 不依赖 Dir 句柄)。
-  if (!stop) await flushChunk();
 
   for (const sub of subdirs) {
     if (state.fileCount >= maxFiles) break;
-    const children = await walk(sub, depth + 1, maxDepth, exclude, withStats, maxFiles, maxTotalEntries, state);
+    // 子目录读不了(无权限 / 路径超长 / I/O 错误…)只跳过该子树并计数,不让整次递归扫描失败(VSCode / ripgrep 同)。
+    // 计数回滚到进入前:被丢弃子树里已计入的文件 / 条目不占 maxFiles 与总条目名额。总条目超限照旧整体抛(滥用 backstop)。
+    const before = { fileCount: state.fileCount, totalCount: state.totalCount, skippedDirs: state.skippedDirs };
+    let children: FileEntry[];
+    try {
+      children = await walk(sub, depth + 1, maxDepth, exclude, withStats, maxFiles, maxTotalEntries, state);
+    } catch (err) {
+      if (isFsDirTooLarge(err)) throw err;
+      state.fileCount = before.fileCount;
+      state.totalCount = before.totalCount;
+      state.skippedDirs = before.skippedDirs + 1;
+      continue;
+    }
     for (let i = 0; i < children.length; i++) {
       out[out.length] = children[i]!;
     }

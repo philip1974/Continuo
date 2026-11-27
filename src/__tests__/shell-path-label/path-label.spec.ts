@@ -5,10 +5,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { basenameForChrome } from '@/lib/path-label';
 
 describe('shell path-label · basenameForChrome', () => {
-  it('取最后一段(/ 与 \\ 都吃)', () => {
+  it('取最后一段(`/`;Windows 形态路径另吃 `\\`;POSIX 路径里的 `\\` 是文件名字符)', () => {
     expect(basenameForChrome('/a/b/c')).toBe('c');
     expect(basenameForChrome('C:\\x\\y')).toBe('y');
-    expect(basenameForChrome('/a\\b')).toBe('b');
+    expect(basenameForChrome('/a\\b')).toBe('a\\b');
   });
 
   it('无分隔符 → 返回原串', () => {

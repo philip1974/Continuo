@@ -8,7 +8,7 @@ import {
   renameTarget,
   sameNameKey,
 } from './path-utils';
-import { joinPath, stripRootPrefix, isSameOrInsidePath } from '@/lib/path-cross';
+import { joinPath, stripRootPrefix, isSameOrInsidePath, splitPathSegments } from '@/lib/path-cross';
 import { useTree } from '@headless-tree/react';
 import { useVirtualizer, type Range, type Virtualizer } from '@tanstack/react-virtual';
 import { rangeWithPinnedIndex } from '@/lib/virtual-range';
@@ -51,7 +51,14 @@ import {
   type DirLoadFailure,
   type TreeRow,
 } from './DirLoadErrorRow';
-import { createNewDir, createNewFile, renameItem, trashItemsAndCleanup } from './mutate-actions';
+import {
+  createNewDir,
+  createNewFile,
+  deleteItemsPermanentlyAndCleanup,
+  renameItem,
+  trashItemsAndCleanup,
+  type RemoveFailure,
+} from './mutate-actions';
 import { cleanupAfterPathMoved, cleanupAfterPathsRemoved } from './path-gone-cleanup';
 import { resolveDropTarget, type DropTargetEntry } from './drop-handlers';
 import {
@@ -199,6 +206,17 @@ const AUTO_REVEAL_EXCLUDED_DIRS: ReadonlySet<string> = new Set(['node_modules', 
 const EMPTY_SELECTED_PATHS: ReadonlySet<string> = new Set();
 const EMPTY_EXPANDED_ITEMS: readonly string[] = [];
 const EMPTY_PATH_LIST: string[] = [];
+
+/** 删除失败 toast:名字 + 按码本地化的原因(不带完整路径与原始 errno 串)。 */
+function notifyRemoveFailure(
+  key: 'errors.folder.trash_failed' | 'errors.folder.delete_failed',
+  f: RemoveFailure,
+): void {
+  notify.error(
+    t(key, { name: basenamePreserveTrailing(f.path), message: localizeErrorByCode(f.code, f.message) }),
+    { code: f.code, mirror: false },
+  );
+}
 const EMPTY_DIR_ERRORS: ReadonlyMap<string, DirLoadFailure> = new Map();
 
 /** 子目录读取结果写回失败表(成功删除、失败记录);无变化返回原表。 */
@@ -412,6 +430,8 @@ export function FolderTree({ root }: { root: string }) {
   const confirmDeleteRef = useRef(confirmDelete);
   confirmDeleteRef.current = confirmDelete;
   const [trashConfirm, setTrashConfirm] = useState<TrashConfirmState | null>(null);
+  // 移到废纸篓失败(非权限原因,如卷不支持废纸篓)待确认的永久删除(VSCode trashFailed → Delete Permanently)。
+  const [permanentDeleteConfirm, setPermanentDeleteConfirm] = useState<string[] | null>(null);
   const confirmDragAndDrop = useSettingValue(
     EXPLORER_CONFIRM_DRAG_AND_DROP.id,
     EXPLORER_CONFIRM_DRAG_AND_DROP.default,
@@ -1085,7 +1105,7 @@ export function FolderTree({ root }: { root: string }) {
     const path = activeEditorPath;
     if (isSameOrInsidePath(path, root) || !isWithinRoot(path, root)) return;
     if (!showHiddenRef.current && isHiddenWithinRoot(root, path)) return;
-    if (stripRootPrefix(root, path).split(/[\\/]/).some((seg) => AUTO_REVEAL_EXCLUDED_DIRS.has(seg))) return;
+    if (splitPathSegments(stripRootPrefix(root, path), root).some((seg) => AUTO_REVEAL_EXCLUDED_DIRS.has(seg))) return;
     const t = treeRef.current;
     if (t?.getState().selectedItems?.includes(path)) return;
     expandAncestors(path);
@@ -1140,15 +1160,34 @@ export function FolderTree({ root }: { root: string }) {
         // 不越过它去撤销更早的新建 / 复制(那会把另一个文件静默移进废纸篓)。见 file-undo.ts。
         if (result.removed.length > 0) recordFileOp(root, { kind: 'delete' });
         if (!result.ok) {
+          // 卷不支持废纸篓等(FS_TRASH_FAILED):询问是否永久删除(VSCode deleteFiles:trashFailed → Delete Permanently);
+          // 权限 / 只读卷等原因永久删除同样会失败 → 只给本地化原因(不带原始 errno 串与完整路径)。
+          const offerPermanent: string[] = [];
           for (const f of result.failures) {
             console.warn('[explorer] trash failed', f.path, f.code, f.message);
-            notify.error(
-              t('errors.folder.trash_failed', {
-                path: f.path,
-                message: localizeErrorByCode(f.code, f.message),
-              }),
-              { code: f.code, mirror: false },
-            );
+            if (f.code === ERROR_CODES.FS_TRASH_FAILED) offerPermanent.push(f.path);
+            else notifyRemoveFailure('errors.folder.trash_failed', f);
+          }
+          if (offerPermanent.length > 0) setPermanentDeleteConfirm(offerPermanent);
+        }
+      })();
+    },
+    [mutateDeps, onPathsRemoved, root, treeApi],
+  );
+
+  // 永久删除(确认框里明确选择后;不可撤销,不进 ⌘Z 栈 —— 删除屏障已由上面的 trash 记录或在这里补上)。
+  const runPermanentDelete = useCallback(
+    (paths: string[]) => {
+      const releaseAutoSave = holdAutoSave(paths);
+      void (async () => {
+        const result = await deleteItemsPermanentlyAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved).finally(
+          releaseAutoSave,
+        );
+        if (result.removed.length > 0) recordFileOp(root, { kind: 'delete' });
+        if (!result.ok) {
+          for (const f of result.failures) {
+            console.warn('[explorer] permanent delete failed', f.path, f.code, f.message);
+            notifyRemoveFailure('errors.folder.delete_failed', f);
           }
         }
       })();
@@ -1552,6 +1591,41 @@ export function FolderTree({ root }: { root: string }) {
     );
   };
 
+  // 无法移到废纸篓 → 是否永久删除(VSCode fileActions.deleteFiles trashFailed:「…Do you want to permanently delete instead?」+
+  // 「This action is irreversible!」+ 主按钮 Delete Permanently)。不可撤销:默认焦点在「取消」,回车不直接删除。
+  const renderPermanentDeleteConfirm = () => {
+    const paths = permanentDeleteConfirm ?? EMPTY_PATH_LIST;
+    const title =
+      paths.length === 1
+        ? tt('panels.explorer.delete_permanently.single', { name: basenamePreserveTrailing(paths[0]!) })
+        : tt('panels.explorer.delete_permanently.multiple', { count: paths.length });
+    return (
+      <ConfirmDialog
+        open={permanentDeleteConfirm !== null}
+        title={title}
+        description={
+          <>
+            {paths.length > 1 && <ConfirmNameList names={paths.map(basenamePreserveTrailing)} />}
+            <p className="text-fg">{tt('panels.explorer.delete_permanently.detail')}</p>
+          </>
+        }
+        confirmLabel={tt('panels.explorer.delete_permanently.confirm')}
+        destructive
+        defaultAction="cancel"
+        onCancel={() => {
+          setPermanentDeleteConfirm(null);
+          tree.updateDomFocus();
+        }}
+        onConfirm={() => {
+          const pending = permanentDeleteConfirm;
+          setPermanentDeleteConfirm(null);
+          tree.updateDomFocus();
+          if (pending !== null) runPermanentDelete(pending);
+        }}
+      />
+    );
+  };
+
   // 拖动移动确认框(VSCode explorer.confirmDragAndDrop):单项「确定要将 'x' 移到 'y' 中吗?」,多项列出名字;
   // 「不再询问」勾选后确认 → 设置写回 false。关闭后焦点还给树(被拖项仍是焦点 / 选中项)。
   const renderMoveConfirm = () => {
@@ -1908,6 +1982,7 @@ export function FolderTree({ root }: { root: string }) {
         </div>
       </ContextMenu>
       {renderTrashConfirm()}
+      {renderPermanentDeleteConfirm()}
       {renderMoveConfirm()}
       {renderOverwriteConfirm()}
       {renderUndoCreateConfirm()}

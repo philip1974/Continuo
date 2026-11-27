@@ -71,7 +71,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // Explorer:+FS_MOVE_INTO_SELF(57→58),批量移动目标是源本身或其子文件夹时明确报错(此前落成 FS_IO)。
     // 保存:+FS_READONLY / FS_NO_SPACE / FS_READONLY_FS(58→61),写保护文件拒绝覆盖、ENOSPC / EROFS 不再笼统归 FS_IO。
     // 在文件中查找:+SEARCH_FAILED(61→62),搜索 worker 崩溃 / 异常退出。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(62);
+    // Explorer:+FS_TRASH_FAILED(62→63),移到废纸篓失败且非权限原因 → 询问是否永久删除。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(63);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

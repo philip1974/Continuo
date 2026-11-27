@@ -1,12 +1,13 @@
 // Quick Open 文件扫描(纯函数)。
 //
-// 调注入的 listDir 拉 workspace 全量文件,过滤目录,slice 上限,转 relPath。
+// 调注入的 listDir(fs:scan-files)拉 workspace 全量文件,过滤目录,slice 上限,转 relPath;读不了的子目录由 main 跳过并计数
+// (skippedDirs,Modal 提示「已跳过 N 个无法读取的目录」),根读不了才失败。
 // 不缓存(每次 ⌘P 重 walk 是策略 b — 简单,大 workspace 第一次稍慢但够用)。
 //
 // BDD: src/__tests__/quick-open/walk-files.spec.ts
 
-import type { FileEntry } from '../../../electron/shared/fs-entry';
-import type { IpcResult } from '../../../electron/shared/ipc-result';
+import type { FsScanFilesData } from '../../../electron/shared/fs-entry';
+import type { IpcFail, IpcOk, IpcResult } from '../../../electron/shared/ipc-result';
 import { QUICK_OPEN_MAX_FILES, type QuickOpenFile } from './store';
 import { stripRootPrefix } from '@/lib/path-cross';
 import { LIST_DIR_MAX_DEPTH, WORKSPACE_SCAN_EXCLUDE } from '../../../electron/shared/fs-limits';
@@ -37,7 +38,7 @@ export type ListDirFn = (
     maxFiles?: number;
     withStats?: boolean;
   },
-) => Promise<IpcResult<readonly FileEntry[]>>;
+) => Promise<IpcResult<FsScanFilesData>>;
 
 export interface WalkOptions {
   /** workspace 根. 空 → fail WORKSPACE_NOT_OPEN. */
@@ -49,7 +50,8 @@ export interface WalkOptions {
   readonly extraExclude?: readonly string[];
 }
 
-export type WalkResult = IpcResult<readonly QuickOpenFile[]>;
+/** data = 候选文件;skippedDirs = 扫描时因无法读取(无权限 / 路径超长等)整棵跳过的子目录数(缺省 0)。 */
+export type WalkResult = (IpcOk<readonly QuickOpenFile[]> & { readonly skippedDirs?: number }) | IpcFail;
 
 /**
  * 遍历 workspace 文件,只返文件(不要目录),按 listDir 自带顺序保留。
@@ -80,16 +82,17 @@ export async function walkWorkspaceFiles(
     withStats: false,
   });
   if (!r.ok) return r;
-  if (r.data.length === 0) return { ok: true, data: EMPTY_QUICK_OPEN_FILES };
+  const { entries, skippedDirs } = r.data;
+  if (entries.length === 0) return { ok: true, data: EMPTY_QUICK_OPEN_FILES, ...(skippedDirs > 0 && { skippedDirs }) };
 
   // 分隔符无关地剥 rootPath 前缀 → 复用单一来源 path-cross.stripRootPrefix(X6:含路径边界
   // 保护 + 平台感知大小写)。跨平台审计 P2:此前手写 `e.path.startsWith(rootPath)`
   // 仍是大小写敏感且无边界 → Windows 上 rootPath 与 FileEntry.path 仅大小写不同 / canonical
   // 形式时 relPath 退化为绝对路径 → Quick Open 路径显示 + 相对片段搜索失真。
-  const capacity = Math.min(maxFiles, r.data.length); // 非正 / NaN 的 maxFiles 已在上方早返
+  const capacity = Math.min(maxFiles, entries.length); // 非正 / NaN 的 maxFiles 已在上方早返
   const files = new Array<QuickOpenFile>(capacity);
   let fileCount = 0;
-  for (const e of r.data) {
+  for (const e of entries) {
     if (e.isDirectory) continue;
     // 显示与匹配用 NFC(VSCode macOS 上 pfs.readdir 即 normalizeNFC):磁盘上 NFD 的名字(如从 HFS+ / 部分工具来的
     // `회의록.md`)与输入法键入的 NFC 查询码元不同,不归一则一个字也搜不到。打开仍用磁盘原样的 absPath。
@@ -107,5 +110,6 @@ export async function walkWorkspaceFiles(
   return {
     ok: true,
     data: fileCount === 0 ? EMPTY_QUICK_OPEN_FILES : files,
+    ...(skippedDirs > 0 && { skippedDirs }),
   };
 }

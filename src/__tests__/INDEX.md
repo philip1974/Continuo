@@ -928,6 +928,11 @@
 - [`nested-selection.spec.ts`](./explorer-transfer-integrity/nested-selection.spec.ts)
 - [`rename-hardlink-eexist.spec.ts`](./explorer-transfer-integrity/rename-hardlink-eexist.spec.ts)
 
+## [explorer-trash-failure(移到废纸篓失败:本地化原因 / 永久删除出路)](./explorer-trash-failure/README.md)
+
+- [`trash-failure-main.spec.ts`](./explorer-trash-failure/trash-failure-main.spec.ts)
+- [`trash-failure-ui.spec.tsx`](./explorer-trash-failure/trash-failure-ui.spec.tsx)
+
 ## [explorer-tree (M-Explorer Step 4)](./explorer-tree/README.md)
 
 - [`file-row-focus-style.spec.ts`](./explorer-tree/file-row-focus-style.spec.ts)
@@ -1657,6 +1662,10 @@
 - [`popout-picker.spec.tsx`](./popout-picker/popout-picker.spec.tsx)
 - [`window-focus-ipc.spec.ts`](./popout-picker/window-focus-ipc.spec.ts)
 
+## [posix-backslash-filename(macOS / Linux 上文件名含 `\`)](./posix-backslash-filename/README.md)
+
+- [`posix-backslash.spec.ts`](./posix-backslash-filename/posix-backslash.spec.ts)
+
 ## [preload-no-zod(preload sandbox zod 泄漏守卫)](./preload-no-zod/README.md)
 
 - [`channels-zod-free.spec.ts`](./preload-no-zod/channels-zod-free.spec.ts)
@@ -1891,6 +1900,10 @@
 ## [spec-object-guard(E273,E271 registry 族)](./spec-object-guard/README.md)
 
 - [`spec-object-guard.spec.ts`](./spec-object-guard/spec-object-guard.spec.ts)
+
+## [special-file-open(打开 FIFO / socket 等特殊文件)](./special-file-open/README.md)
+
+- [`special-file-open.spec.ts`](./special-file-open/special-file-open.spec.ts)
 
 ## [splash-terminal-ready-barrier](./splash-terminal-ready-barrier/README.md)
 
@@ -2262,6 +2275,12 @@
 ## [workspace-root-selection-guard](./workspace-root-selection-guard/)
 
 - [`shared-guard.spec.ts`](./workspace-root-selection-guard/shared-guard.spec.ts)
+
+## [workspace-scan-unreadable(工作区里有读不了的目录:搜索 / ⌘P 跳过并提示)](./workspace-scan-unreadable/README.md)
+
+- [`quick-open-skip-hint.spec.tsx`](./workspace-scan-unreadable/quick-open-skip-hint.spec.tsx)
+- [`scan-unreadable.spec.ts`](./workspace-scan-unreadable/scan-unreadable.spec.ts)
+- [`search-skip-hint.spec.tsx`](./workspace-scan-unreadable/search-skip-hint.spec.tsx)
 
 ## [workspace-search — 工作区文本搜索视图(在文件中查找 ⇧⌘F)](./workspace-search/README.md)
 

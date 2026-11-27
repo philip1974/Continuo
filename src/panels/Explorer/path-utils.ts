@@ -6,6 +6,7 @@ import {
   containmentFold,
   containmentKey,
   isSameOrInsidePath,
+  lastSeparatorIndex,
   someContainmentCandidate,
   stripRootPrefix,
 } from '@/lib/path-cross';
@@ -91,7 +92,7 @@ export { basename } from '@/lib/path-cross';
  * 实际结果与 basename 一致,命名只为显式标差异。
  */
 export function basenamePreserveTrailing(p: string): string {
-  const idx = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+  const idx = lastSeparatorIndex(p);
   return idx >= 0 ? p.slice(idx + 1) : p;
 }
 

@@ -9,6 +9,8 @@ import { IPC_ERR, type IpcFail, type IpcOk, type IpcResult } from './ipc-result'
 
 export const FS_CHANNELS = {
   LIST_DIR: 'fs:list-dir',
+  /** 递归扫描(Quick Open):同 list-dir 选项,另报读不了而跳过的子目录数(data = FsScanFilesData). */
+  SCAN_FILES: 'fs:scan-files',
   READ_FILE: 'fs:read-file',
   /** 只读图片预览 / Markdown 图片:读为 data URL(格式白名单 + 50 MiB 上限;workspaceOnly 时限发送窗口工作区内). */
   READ_IMAGE: 'fs:read-image',
@@ -20,6 +22,8 @@ export const FS_CHANNELS = {
   CREATE_FILE: 'fs:create-file',
   CREATE_DIR: 'fs:create-dir',
   TRASH: 'fs:trash',
+  /** 永久删除(不可撤销;移到废纸篓失败后经用户确认). 不跟随符号链接. */
+  DELETE_PERMANENTLY: 'fs:delete-permanently',
   /** 在系统文件管理器(Finder/资源管理器)中显示并选中. */
   REVEAL: 'fs:reveal',
   /** 移动(rename 跨目录;跨盘 fallback cp+rm). */

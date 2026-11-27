@@ -11,7 +11,7 @@ import { openRecentItems } from '../../plugins/open-recent/OpenRecentModal';
 import { normalizeSearchQuery } from '../../lib/search-query';
 import { findTypeAheadIndex } from '../../panels/Explorer/tree-keyboard';
 import { searchOpenEditors, searchRelPath } from '../../panels/Search/open-editor-search';
-import { listDir } from '../../../electron/main/ipc/fs/list-dir';
+import { listDir, scanDir } from '../../../electron/main/ipc/fs/list-dir';
 import { runTextSearch } from '../../../electron/main/search/text-search';
 import {
   buildSearchRegExp,
@@ -39,7 +39,7 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-const ipcListDir = async (p: string, o?: Parameters<typeof listDir>[1]) => ({ ok: true as const, data: await listDir(p, o) });
+const ipcListDir = async (p: string, o?: Parameters<typeof listDir>[1]) => ({ ok: true as const, data: await scanDir(p, o) });
 
 describe('Quick Open(⌘P)', () => {
   it('NFD 文件名:键入 NFC 查询能搜到;显示 NFC,打开用磁盘原样路径', async () => {

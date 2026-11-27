@@ -80,6 +80,8 @@ export type SearchEvent =
       readonly skippedLargeCount?: number;
       /** 被跳过的大文件绝对路径(至多 SEARCH_SKIPPED_LARGE_REPORT_MAX 个)。 */
       readonly skippedLargePaths?: readonly string[];
+      /** 枚举时因无法读取而跳过的子目录数(缺省 0)。 */
+      readonly skippedUnreadableDirs?: number;
     }
   | { readonly searchId: string; readonly kind: 'error'; readonly code: string; readonly message: string };
 
@@ -122,6 +124,7 @@ export function isSearchEvent(v: unknown): v is SearchEvent {
         typeof v.limitHit === 'boolean' &&
         typeof v.filesLimitHit === 'boolean' &&
         (v.skippedLargeCount === undefined || isNonNegInt(v.skippedLargeCount)) &&
+        (v.skippedUnreadableDirs === undefined || isNonNegInt(v.skippedUnreadableDirs)) &&
         (v.skippedLargePaths === undefined ||
           (Array.isArray(v.skippedLargePaths) &&
             v.skippedLargePaths.length <= SEARCH_SKIPPED_LARGE_REPORT_MAX &&

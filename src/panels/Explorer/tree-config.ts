@@ -11,7 +11,7 @@ import {
   type RenameInputError,
 } from './path-utils';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225,E224 兄弟):共享早停 hasFiles 替代 types.includes('Files')
-import { stripRootPrefix } from '@/lib/path-cross';
+import { splitPathSegments, stripRootPrefix } from '@/lib/path-cross';
 import { setExplorerDragData } from '@/lib/explorer-drag';
 import { isImeComposing } from '@/design/ime';
 import {
@@ -144,7 +144,7 @@ export function filterHiddenEntries(
  */
 export function isHiddenWithinRoot(root: string, path: string): boolean {
   const rel = stripRootPrefix(root, path);
-  for (const seg of rel.split(/[\\/]/)) if (seg.startsWith('.')) return true;
+  for (const seg of splitPathSegments(rel, root)) if (seg.startsWith('.')) return true;
   return false;
 }
 
