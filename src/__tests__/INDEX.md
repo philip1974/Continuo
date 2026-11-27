@@ -656,6 +656,10 @@
 - [`json-format.spec.ts`](./editor-language-commands/json-format.spec.ts)
 - [`language-commands.spec.ts`](./editor-language-commands/language-commands.spec.ts)
 
+## [editor-markdown-autolink-edit](./editor-markdown-autolink-edit/README.md)
+
+- [`autolink-edit.spec.tsx`](./editor-markdown-autolink-edit/autolink-edit.spec.tsx)
+
 ## [editor-markdown-ime-composition](./editor-markdown-ime-composition/README.md)
 
 - [`ime-composition.spec.ts`](./editor-markdown-ime-composition/ime-composition.spec.ts)
