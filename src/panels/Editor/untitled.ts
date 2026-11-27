@@ -4,7 +4,8 @@
 // BDD: src/__tests__/editor-save-as/
 import { t } from '@/i18n';
 import { basenameForChrome } from '@/lib/path-label';
-import { createTab, useEditorStore, type EditorTab } from '@/stores/editor.store';
+import { createTab, groupTabsOf, useEditorStore, type EditorTab } from '@/stores/editor.store';
+import { requestEditorFocus } from './editor-focus-registry';
 import { untitledNumberOf, untitledPath } from '../../../electron/shared/untitled';
 
 export { isUntitledPath } from '../../../electron/shared/untitled';
@@ -21,11 +22,18 @@ export function nextUntitledNumber(tabs: readonly Pick<EditorTab, 'filePath'>[])
   return n;
 }
 
-/** 新建无标题文本文件并激活(落在编辑器组 groupId,缺省活动组;常驻,不是预览)。返回新 tab id。 */
+/**
+ * 新建无标题文本文件并激活(落在编辑器组 groupId,缺省活动组;常驻,不是预览)并聚焦它的编辑器(VSCode ⌘N 后可直接打字;
+ * 从终端 / 资源管理器 / 命令面板 / 菜单触发同样 —— 聚焦在下一帧兑现,晚于命令面板关闭时的焦点还原)。返回新 tab id。
+ */
 export function newUntitledFile(groupId?: string): string {
   const store = useEditorStore.getState();
   const id = untitledPath(nextUntitledNumber(store.tabs));
   store.openTab(createTab(id, ''), groupId === undefined ? { preview: false } : { preview: false, groupId });
+  // openTab 可能拒开(tab 数上限)→ 不聚焦
+  const after = useEditorStore.getState();
+  const gid = groupId ?? after.activeGroupId;
+  if (groupTabsOf(after, gid).some((t) => t.id === id)) requestEditorFocus(id, gid);
   return id;
 }
 

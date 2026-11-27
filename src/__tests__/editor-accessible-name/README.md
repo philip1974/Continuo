@@ -9,7 +9,8 @@ VSCode 编辑器文本区名称是「<文件名>, Editor Group N」(多组时);C
 
 - 代码文件与 Markdown 源码模式(CodeMirror `.cm-content`):`aria-label` =「<basename>，编辑器」(en `<name>, Editor`,
   ko `<name>, 편집기`);无文件名退回「编辑器」。名称放在 Compartment 里:改名(文件名变)或切换界面语言时就地
-  reconfigure,不重建编辑器。
+  reconfigure,不重建编辑器。文件名与 tab / 标题栏同一来源(`editorTabTitle`):无标题文件念「无标题-N」(三语),不念内部标识
+  `untitled:Untitled-N`(见 `src/__tests__/editor-save-as/`)。
 - 多个编辑器组(所在窗口 ≥ 2 组;`useDockLocaleSync` 按 `editorGroupNumbers` 发布,`editor-group-number.ts`):名称
   「<basename>，编辑器组 N」(en `<name>, Editor Group N`,ko `<name>, 편집기 그룹 N`),无文件名「编辑器组 N」;N 从 1 起
   (第一组也带号,同 VSCode)。拖动换位 / 增删组使组号变化时就地更新(CodeMirror reconfigure、Milkdown setProps,不重建);

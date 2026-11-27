@@ -26,6 +26,11 @@ const createMainT =
   };
 
 beforeEach(() => {
+  // newUntitledFile 请求聚焦新编辑器(下一帧兑现;node 环境无 rAF)
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    cb(0);
+    return 0;
+  });
   useEditorStore.setState({
     tabs: [],
     activeTabId: null,
@@ -36,7 +41,10 @@ beforeEach(() => {
     mode: 'source',
   });
 });
-afterEach(() => setLocale('en'));
+afterEach(() => {
+  setLocale('en');
+  vi.unstubAllGlobals();
+});
 
 describe('标识', () => {
   it('untitled:Untitled-N;只认正整数编号', () => {

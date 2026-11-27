@@ -736,6 +736,7 @@
 - [`save-as.spec.ts`](./editor-save-as/save-as.spec.ts)
 - [`save-dialog-ipc.spec.ts`](./editor-save-as/save-dialog-ipc.spec.ts)
 - [`save-failure-actions.spec.tsx`](./editor-save-as/save-failure-actions.spec.tsx)
+- [`untitled-focus-and-name.spec.tsx`](./editor-save-as/untitled-focus-and-name.spec.tsx)
 - [`untitled.spec.ts`](./editor-save-as/untitled.spec.ts)
 
 ## [editor-save-conflict-compare](./editor-save-conflict-compare/README.md)

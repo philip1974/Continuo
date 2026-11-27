@@ -6,8 +6,8 @@
 
 import { EditorState, type Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { basename } from '@/lib/path-cross';
 import { t, type TranslationKey } from '@/i18n';
+import { editorTabTitle } from './untitled';
 
 /** CodeMirror 原文 → catalog key。键集覆盖 @codemirror/search 的全部 phrase(BDD 从已安装包源码核对)+ 折叠提示。 */
 export const CODEMIRROR_PHRASE_KEYS: Readonly<Record<string, TranslationKey>> = {
@@ -50,11 +50,11 @@ export function codeMirrorPhrases(): Extension {
 
 /**
  * 编辑区文本框的可访问名称(WCAG 4.1.2;对齐 VSCode 编辑器「<文件名>, Editor Group N」):「<文件名>，编辑器」,
- * 无文件名退回「编辑器」;所在窗口有多个编辑器组时(group = 组号,同 dock 标题「编辑器 N」的来源)为「<文件名>，编辑器组 N」/
+ * 无文件名退回「编辑器」;文件名同 tab / 标题栏(editorTabTitle:无标题文件念「无标题-N」,不念内部标识);所在窗口有多个编辑器组时(group = 组号,同 dock 标题「编辑器 N」的来源)为「<文件名>，编辑器组 N」/
  *「编辑器组 N」。CodeEditor 与 Milkdown(ProseMirror)共用。BDD: src/__tests__/editor-accessible-name/
  */
 export function editorContentLabel(fileName: string | undefined, group?: number): string {
-  const name = fileName ? basename(fileName) : '';
+  const name = fileName ? editorTabTitle(fileName) : '';
   if (group !== undefined) {
     const n = String(group);
     return name ? t('editor.aria.content_group', { name, n }) : t('editor.aria.group', { n });
@@ -67,7 +67,7 @@ export function editorContentLabel(fileName: string | undefined, group?: number)
  * 预览不是可编辑的编辑器,不能念成「编辑器」。BDD: src/__tests__/editor-accessible-name/
  */
 export function previewContentLabel(fileName: string | undefined): string {
-  const name = fileName ? basename(fileName) : '';
+  const name = fileName ? editorTabTitle(fileName) : '';
   return name ? t('editor.aria.preview', { name }) : t('panels.editor.mode.preview');
 }
 

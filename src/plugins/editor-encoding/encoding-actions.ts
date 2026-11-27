@@ -9,7 +9,6 @@
 import { t } from '@/i18n';
 import { notify } from '@/notifications/notify';
 import { fileFailureText, notifySaveFailed } from '@/notifications/notify-open-failed';
-import { basenameForChrome } from '@/lib/path-label';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { useEditorStore } from '@/stores/editor.store';
 import { activeGroupTab, saveHotkeyLabel } from '@/panels/Editor/editor-commands';
@@ -18,6 +17,7 @@ import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
 import { isImagePreviewPath } from '@/panels/Editor/editor-image';
 import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import { flushEditorWriteBacks } from '@/panels/Editor/editor-writeback-registry';
+import { editorTabTitle, isUntitledPath } from '@/panels/Editor/untitled';
 import { convertLineEndings, lineEndingOf, tabEncodingOf, type LineEnding } from '@/panels/Editor/editor-encoding';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { isTextEncodingId, TEXT_ENCODINGS, type TextEncodingId } from '../../../electron/shared/text-encoding';
@@ -35,9 +35,17 @@ function textTab(tabId: string | undefined) {
 }
 
 /** 更改文件编码(tabId 缺省 = 触发窗口编辑器组的活动 tab;无文本 tab → 无操作)。 */
+// 无标题文件没有磁盘内容可重新读:跳过第一步,直接选「通过编码保存」的编码(VSCode ChangeEncodingAction 对 untitled 同),
+// 选定 = 设成 tab 的编码,首次另存为按它写盘(saveWithEncoding)。
 export function openChangeEncoding(tabId?: string): void {
   const tab = textTab(tabId);
-  if (tab) show({ kind: 'action', tabId: tab.id });
+  if (!tab) return;
+  if (!isUntitledPath(tab.filePath)) {
+    show({ kind: 'action', tabId: tab.id });
+    return;
+  }
+  const request = { kind: 'save', tabId: tab.id } as const;
+  show(request, encodingPickItems(request, { encoding: tabEncodingOf(tab) }).selectedIndex);
 }
 
 /** 更改行尾序列(同上),选中行落在当前行尾。 */
@@ -92,16 +100,21 @@ export async function runReopen(tabId: string, encoding: TextEncodingId): Promis
   if (!tab) return;
   const r = await reopenWithEncoding(tabId, encoding, editorFileDeps);
   if (r.ok) return;
-  notify.error(fileFailureText(t('encoding_picker.reopen_failed'), basenameForChrome(tab.filePath), r), { code: r.code });
+  notify.error(fileFailureText(t('encoding_picker.reopen_failed'), editorTabTitle(tab.filePath), r), { code: r.code });
 }
 
 async function saveWithEncoding(tabId: string, encoding: TextEncodingId): Promise<void> {
   flushEditorWriteBacks([tabId]);
   const tab = textTab(tabId);
   if (!tab) return;
+  // 无标题文件:只改编码,不弹另存为(VSCode untitled setEncoding(Encode) 同);之后另存为按该编码写
+  if (isUntitledPath(tab.filePath)) {
+    useEditorStore.getState().setEncoding(tabId, encoding);
+    return;
+  }
   const r = await saveFile(tabId, editorFileDeps, { encoding });
   if (r.ok) return;
-  const name = basenameForChrome(tab.filePath);
+  const name = editorTabTitle(tab.filePath);
   if (r.code === ERROR_CODES.FS_UNENCODABLE) {
     notify.error(
       t('common.label_detail', {

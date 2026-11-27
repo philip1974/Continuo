@@ -351,12 +351,17 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
 
   // 另存为(⇧⌘S;无标题文件的保存同样走这里;BDD: src/__tests__/editor-save-as/):取消 → false,不提示;失败 → 「保存失败
   // <文件名>:<原因>」附「另存为…」(重新选位置)。返回保存到的路径(= tab 的新 id);未保存 → null。
-  const saveAsTab = useStableCallback(async (tabId: string): Promise<string | null> => {
+  // 焦点:成功 → 新 id 的编辑器获焦(换 id 后视图重挂载,原生对话框关闭后焦点回不到已卸载的旧视图;视图状态随 retargetTab 迁移);
+  // 取消 → 回原编辑器。refocus: false = 来自关闭时的「保存」(tab 随后关闭,由关闭流程交接焦点)。
+  const saveAsTab = useStableCallback(async (tabId: string, refocus = true): Promise<string | null> => {
     const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
     if (!tab) return null;
     try {
       const r = await saveTabAs(tabId, saveAsDeps);
-      if (r.ok) return r.data;
+      if (r.ok) {
+        if (refocus) focusAfterSaveAs(r.data ?? tabId);
+        return r.data;
+      }
       notifySaveFailed(editorTabTitle(tab.filePath), r, [
         { label: translate('editor.save_as_action'), run: () => void saveAsTab(tabId) },
       ]);
@@ -364,6 +369,14 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       notifyThrownError(err);
     }
     return null;
+  });
+
+  // 只聚焦本组仍在显示的那个 tab(全部保存时另存的可能是后台 tab —— 不为它抢焦点);焦点已被移到面板外(非模态对话框期间点了
+  // 终端等)→ 不抢。焦点停在本面板 / 已丢到 body(旧视图卸载、通知按钮随通知移除)才交给编辑器。
+  const focusAfterSaveAs = useStableCallback((tabId: string) => {
+    const root = rootRef.current;
+    if (root === null || !focusWithinOrLost(root.ownerDocument, root)) return;
+    if (groupActiveTabIdOf(useEditorStore.getState(), groupId) === tabId) requestEditorFocus(tabId, groupId);
   });
 
   // 另存为本组的活动文件 tab(无 → 无操作)。
@@ -383,7 +396,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     ) => {
       if (r.code === EDITOR_UNTITLED) {
         const batch = flags.batch;
-        void saveAsTab(target.id).then((saved) => {
+        void saveAsTab(target.id, !batch).then((saved) => {
           // 另存后 tab 换了 id:这批关闭里的旧 id 换成新 id 再推进
           if (saved === null || !batch) return;
           const remap = (ids: readonly string[]) => ids.map((id) => (id === target.id ? saved : id));

@@ -7,7 +7,7 @@ import { Input, Modal } from '@/design';
 import { useLocale, useT } from '@/i18n';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { normalizeSearchQuery } from '@/lib/search-query';
-import { basenameForChrome } from '@/lib/path-label';
+import { editorTabTitle } from '@/panels/Editor/untitled';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { useEditorStore } from '@/stores/editor.store';
 import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
@@ -81,7 +81,7 @@ function EncodingPickerBody({ request }: { readonly request: EncodingPickRequest
   });
   const fileName = useEditorStore((s) => {
     const tab = tabId === null ? null : findEditorFileTabById(s.tabs, tabId);
-    return tab ? basenameForChrome(tab.filePath) : null;
+    return tab ? editorTabTitle(tab.filePath) : null;
   });
 
   const items = useMemo(
