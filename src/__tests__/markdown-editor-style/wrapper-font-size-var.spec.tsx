@@ -8,7 +8,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 vi.mock('@milkdown/crepe', () => ({
   CrepeFeature: {},
-  Crepe: vi.fn().mockImplementation(() => ({ setReadonly: vi.fn(), editor: { config: () => {}, use: () => {} }, on: () => {} })),
+  Crepe: vi.fn().mockImplementation(() => ({ setReadonly: vi.fn(), editor: { config: () => {}, use: () => {}, remove: async () => {} }, on: () => {} })),
 }));
 vi.mock('@milkdown/react', () => ({
   Milkdown: () => <div data-testid="milkdown" />,

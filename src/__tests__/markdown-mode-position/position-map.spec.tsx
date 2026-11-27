@@ -117,4 +117,36 @@ describe('源码行 ↔ Milkdown 位置(真实 Crepe)', () => {
     expect(locateSourceLine(doc, tree, 20)!.md.position!.start.line).toBe(20);
     expect(locateSourceLine(doc, tree, 21)!.md.position!.start.line).toBe(21);
   });
+
+  it('编辑中插入的空段落(序列化时丢弃)不打乱其后块的对齐', async () => {
+    render(<MilkdownEditor tabId="/r/empty.md" defaultValue={'# Title\n\nfirst\n\nsecond\n\nthird\n'} />);
+    let crepe: CrepeType | undefined;
+    for (let i = 0; i < 200 && !crepe; i++) {
+      try {
+        if (instances.at(-1)?.editor.ctx.get<{ state?: unknown }, 'editorView'>('editorView').state) crepe = instances.at(-1);
+      } catch {
+        /* 尚未就绪 */
+      }
+      if (!crepe) {
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 10));
+        });
+      }
+    }
+    const view = crepe!.editor.ctx.get<
+      { state: { doc: PmNode & { content: unknown }; schema: { nodes: Record<string, { create(): unknown }> }; tr: { insert(pos: number, nodes: unknown[]): unknown } }; dispatch(tr: unknown): void },
+      'editorView'
+    >('editorView');
+    // 「first」之后插两个空段落(连按两次回车)
+    const afterFirst = view.state.doc.child(0).nodeSize + view.state.doc.child(1).nodeSize;
+    const p = view.state.schema.nodes.paragraph!;
+    view.dispatch(view.state.tr.insert(afterFirst, [p.create(), p.create()]));
+    const markdown = crepe!.getMarkdown();
+    expect(markdown).toBe('# Title\n\nfirst\n\nsecond\n\nthird\n');
+    const doc = view.state.doc;
+    const tree = parseMarkdownTree(crepe!.editor.ctx.get<RemarkLike, 'remark'>('remark'), markdown);
+    expect(locateSourceLine(doc, tree, 7)!.pm.textContent).toBe('third');
+    expect(locateSourceLine(doc, tree, 5)!.pm.textContent).toBe('second');
+    expect(sourceLineAtPos(doc, tree, posForSourceLine(doc, tree, 7)!)).toBe(7);
+  });
 });

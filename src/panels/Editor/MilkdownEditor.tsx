@@ -62,6 +62,8 @@ import { codeMirrorContentLabel, codeMirrorPhrases, editorContentLabel, previewC
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { MARKDOWN_EDITOR_ATTR } from '@/lib/editor-text-focus';
 import { markdownImageNodeView } from './markdown-image-view';
+import { configureMarkdownStyle } from './milkdown-markdown-style';
+import { markdownWritingKeys } from './milkdown-writing-keys';
 import {
   escapeRegExp,
   forgetMarkdownFindSession,
@@ -368,7 +370,8 @@ function CrepeEditor({
         [CrepeFeature.Toolbar]: true,
         [CrepeFeature.Placeholder]: true,
         [CrepeFeature.Table]: true,
-        [CrepeFeature.Latex]: false, // MVP 不接 KaTeX
+        // MVP 不接 KaTeX:含公式的文档编辑模式会改坏公式(`x_1` → `x\_1`),由 isMilkdownUnsafe 锁在源码模式
+        [CrepeFeature.Latex]: false,
       },
       featureConfigs: {
         [CrepeFeature.Placeholder]: {
@@ -410,6 +413,11 @@ function CrepeEditor({
         },
       },
     });
+    // 序列化风格跟随原文件(列表符号 / 分隔线 / 标题 / 代码块 / 表格对齐),不写 `<br />` 空行占位,少转义;
+    // 选中文字粘贴 URL 成链接、⌘K 链接框、表格 Tab。BDD: src/__tests__/editor-milkdown-roundtrip-style/、
+    // src/__tests__/editor-markdown-writing-keys/
+    configureMarkdownStyle(crepe, defaultValue);
+    crepe.editor.use(markdownWritingKeys);
 
     // Markdown 图片:image 节点换成自定义视图 —— 相对路径按文档目录解析、经受控通道(仅工作区内)加载,失败给 alt 占位;
     // 只换 DOM 视图,src 原样留在文档里(序列化不变)。按 slice 名 'nodeView' 注册(@milkdown/kit 非直接依赖,

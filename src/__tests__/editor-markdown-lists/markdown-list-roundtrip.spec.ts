@@ -4,6 +4,7 @@
 // "true"/"false",prosemirror-model 1.25 校验失败 → 列表节点整段丢失(显示空白,保存后文件里的列表消失)。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Crepe } from '@milkdown/crepe';
+import { configureMarkdownStyle } from '../../panels/Editor/milkdown-markdown-style';
 
 const editors: Crepe[] = [];
 
@@ -16,6 +17,7 @@ async function open(markdown: string): Promise<{ crepe: Crepe; root: HTMLElement
     // 与 MilkdownEditor 一致:不启用图片 / 公式
     features: { [Crepe.Feature.ImageBlock]: false, [Crepe.Feature.Latex]: false },
   });
+  configureMarkdownStyle(crepe, markdown); // 与 MilkdownEditor 一致:列表符号跟随原文件(这里是 `-`)
   editors.push(crepe);
   await crepe.create();
   return { crepe, root };
@@ -48,14 +50,14 @@ describe('Markdown 列表经 Milkdown 渲染与往返', () => {
   it('紧凑列表往返后仍是紧凑列表,内容与嵌套层级都在', async () => {
     const { crepe } = await open(TIGHT);
     const out = crepe.getMarkdown();
-    expect(out).toMatch(/^\* apple\n\* banana\n {2}\* nested one\n {2}\* nested two\n\* cherry$/m);
+    expect(out).toMatch(/^- apple\n- banana\n {2}- nested one\n {2}- nested two\n- cherry$/m);
     expect(out).toMatch(/^1\. first\n2\. second\n3\. third$/m);
   });
 
   it('松散列表(项之间空行)往返后仍松散', async () => {
     const { crepe } = await open(LOOSE);
     const out = crepe.getMarkdown();
-    expect(out).toMatch(/^\* alpha\n\n\* beta\n\n\* gamma$/m);
+    expect(out).toMatch(/^- alpha\n\n- beta\n\n- gamma$/m);
     expect(out).toContain('tail paragraph');
   });
 
@@ -63,7 +65,7 @@ describe('Markdown 列表经 Milkdown 渲染与往返', () => {
     const { crepe, root } = await open('- [ ] todo\n- [x] done\n');
     expect(root.querySelectorAll('.ProseMirror li').length).toBe(2);
     const out = crepe.getMarkdown();
-    expect(out).toMatch(/^\* \[ \] todo\n\* \[x\] done$/m);
+    expect(out).toMatch(/^- \[ \] todo\n- \[x\] done$/m);
   });
 
   it('输入后再序列化(保存路径)列表不丢', async () => {
@@ -75,7 +77,7 @@ describe('Markdown 列表经 Milkdown 渲染与往返', () => {
     view.dispatch(view.state.tr.insertText('X', 3));
     const out = crepe.getMarkdown();
     expect(out).toMatch(/apple/);
-    expect(out).toMatch(/^\* /m);
+    expect(out).toMatch(/^- /m);
     expect(out).toMatch(/^1\. first$/m);
   });
 });

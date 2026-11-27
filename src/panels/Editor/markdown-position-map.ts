@@ -37,6 +37,34 @@ function mdChildren(node: MdNode): readonly MdNode[] {
   return kids.some((k) => UNMAPPED_TYPES.has(k.type)) ? kids.filter((k) => !UNMAPPED_TYPES.has(k.type)) : kids;
 }
 
+/**
+ * 空段落(连按两次回车留下的空行):序列化时丢弃(见 milkdown-markdown-style),mdast 里没有对应块,同层对齐时跳过。
+ * 文档末尾 Milkdown 补的空段落同理。
+ */
+function isUnmappedPm(node: PmNode): boolean {
+  return node.type.name === 'paragraph' && node.childCount === 0;
+}
+
+/** 同层第 `logical` 个(不计空段落)子节点的下标;超出 → 最后一个这样的子节点(都没有 → 最后一个子节点)。 */
+function physicalIndex(pm: PmNode, logical: number): number {
+  let last = pm.childCount - 1;
+  let seen = 0;
+  for (let k = 0; k < pm.childCount; k++) {
+    if (isUnmappedPm(pm.child(k))) continue;
+    if (seen === logical) return k;
+    seen += 1;
+    last = k;
+  }
+  return last;
+}
+
+/** 下标 `physical` 之前不是空段落的子节点数(= 它在 mdast 同层里的下标;空段落本身对到下一个块)。 */
+function logicalIndex(pm: PmNode, physical: number): number {
+  let n = 0;
+  for (let k = 0; k < physical; k++) if (!isUnmappedPm(pm.child(k))) n += 1;
+  return n;
+}
+
 function startLine(md: MdNode): number {
   return md.position?.start.line ?? 1;
 }
@@ -82,7 +110,7 @@ export function locateSourceLine(doc: PmNode, tree: MdNode, line: number, firstO
     }
     const cur = kids[i]!;
     if (cur.position && line > cur.position.end.line && i + 1 < kids.length) i += 1;
-    const index = Math.min(i, pm.childCount - 1);
+    const index = physicalIndex(pm, i);
     let before = contentStart;
     for (let k = 0; k < index; k++) before += pm.child(k).nodeSize;
     pm = pm.child(index);
@@ -105,8 +133,8 @@ function blockAtPos(doc: PmNode, tree: MdNode, pos: number): { block: LocatedBlo
     let before = contentStart;
     let k = 0;
     for (; k < pm.childCount - 1 && pos >= before + pm.child(k).nodeSize; k++) before += pm.child(k).nodeSize;
+    md = kids[Math.min(logicalIndex(pm, k), kids.length - 1)]!;
     pm = pm.child(k);
-    md = kids[Math.min(k, kids.length - 1)]!;
     found = { block: { before, pm, md }, offset: pos - before - 1 };
     if (pos <= before) break;
     contentStart = before + 1;
@@ -155,9 +183,11 @@ function textblockText(block: PmNode): string {
 function eachTextblock(pm: PmNode, md: MdNode, contentStart: number, visit: (before: number, pm: PmNode, md: MdNode) => boolean): boolean {
   const kids = mdChildren(md);
   let before = contentStart;
+  let logical = 0;
   for (let k = 0; k < pm.childCount; k++) {
     const child = pm.child(k);
-    const childMd = kids[Math.min(k, kids.length - 1)] ?? md;
+    const childMd = kids[Math.min(logical, kids.length - 1)] ?? md;
+    if (!isUnmappedPm(child)) logical += 1;
     if (child.isTextblock) {
       if (!visit(before, child, childMd)) return false;
     } else if (child.childCount > 0 && !eachTextblock(child, childMd, before + 1, visit)) {

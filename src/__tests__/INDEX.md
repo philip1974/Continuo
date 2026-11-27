@@ -657,6 +657,10 @@
 
 - [`markdown-list-roundtrip.spec.ts`](./editor-markdown-lists/markdown-list-roundtrip.spec.ts)
 
+## [editor-markdown-writing-keys](./editor-markdown-writing-keys/README.md)
+
+- [`writing-keys.spec.tsx`](./editor-markdown-writing-keys/writing-keys.spec.tsx)
+
 ## [editor-mermaid-preview](./editor-mermaid-preview/README.md)
 
 - [`mermaid-directive-css.spec.ts`](./editor-mermaid-preview/mermaid-directive-css.spec.ts)
@@ -674,6 +678,10 @@
 - [`effective-mode.spec.ts`](./editor-milkdown-roundtrip-safety/effective-mode.spec.ts)
 - [`milkdown-preview.spec.tsx`](./editor-milkdown-roundtrip-safety/milkdown-preview.spec.tsx)
 - [`milkdown-roundtrip-safety.spec.ts`](./editor-milkdown-roundtrip-safety/milkdown-roundtrip-safety.spec.ts)
+
+## [editor-milkdown-roundtrip-style](./editor-milkdown-roundtrip-style/README.md)
+
+- [`roundtrip-style.spec.tsx`](./editor-milkdown-roundtrip-style/roundtrip-style.spec.tsx)
 
 ## [editor-milkdown-writeback](./editor-milkdown-writeback/README.md)
 
