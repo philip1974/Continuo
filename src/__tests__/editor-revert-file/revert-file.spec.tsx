@@ -90,6 +90,8 @@ describe('磁盘冲突:覆盖 / 放弃更改并重新加载 / 取消', () => {
     await saveIntoConflict();
     const labels = Array.from(screen.getByRole('alertdialog').querySelectorAll('button')).map((b) => b.textContent);
     expect(labels).toEqual([
+      // 「比较」见 src/__tests__/editor-save-conflict-compare/
+      t('panels.editor.disk_changed_compare'),
       t('panels.editor.disk_changed_revert'),
       t('panels.explorer.confirm.cancel'),
       t('panels.editor.disk_changed_confirm'),

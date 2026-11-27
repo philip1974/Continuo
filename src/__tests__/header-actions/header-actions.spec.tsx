@@ -220,6 +220,22 @@ describe('HeaderActions — 更多操作菜单', () => {
     expect(menu!.textContent).toContain('Terminal');
   });
 
+  it('hidden 面板类型(如保存冲突差异 tab,只由代码带 params 打开)不列进菜单', () => {
+    coApp.panels.register({ type: 'explorer', title: 'Explorer', factory: () => null });
+    coApp.panels.register({ type: 'conflict-diff', title: 'Resolve Save Conflict', factory: () => null, hidden: true });
+    const props = makeProps();
+    const { container } = render(
+      <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
+    );
+    fireEvent.click(
+      container.querySelector(
+        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+      ) as HTMLButtonElement,
+    );
+    const items = Array.from(document.querySelectorAll('[role=menuitem]')).map((el) => el.textContent);
+    expect(items).toEqual(['Explorer']);
+  });
+
   it('点 menu item(多实例类型)→ addPanel({id,component,title,position}) + 关菜单', () => {
     coApp.panels.register({
       type: 'explorer',

@@ -116,6 +116,17 @@ describe('app.dock.openPanel raw namespace', () => {
     expect(api.addPanel).not.toHaveBeenCalled();
   });
 
+  it('T2.5 hidden 面板类型(只由代码带 params 打开,如保存冲突差异 tab)→ 按 type 打开忽略', () => {
+    const api = fakeApi();
+    disposables.push(coApp.panels.register({ type: 'sdk-dock-hidden', title: 'Hidden', factory: () => null, hidden: true }));
+    setDockApi(api as never);
+
+    coApp.dock.openPanel('sdk-dock-hidden');
+
+    expect(api.getPanel).not.toHaveBeenCalled();
+    expect(api.addPanel).not.toHaveBeenCalled();
+  });
+
   it('T2 silently no-ops for an unknown panel id', () => {
     const api = fakeApi();
     setDockApi(api as never);

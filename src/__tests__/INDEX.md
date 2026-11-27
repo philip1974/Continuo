@@ -729,6 +729,14 @@
 
 - [`revert-file.spec.tsx`](./editor-revert-file/revert-file.spec.tsx)
 
+## [editor-save-conflict-compare](./editor-save-conflict-compare/README.md)
+
+- [`conflict-compare.spec.ts`](./editor-save-conflict-compare/conflict-compare.spec.ts)
+- [`conflict-dialog.spec.tsx`](./editor-save-conflict-compare/conflict-dialog.spec.tsx)
+- [`conflict-diff-model.spec.ts`](./editor-save-conflict-compare/conflict-diff-model.spec.ts)
+- [`conflict-diff-panel.spec.tsx`](./editor-save-conflict-compare/conflict-diff-panel.spec.tsx)
+- [`conflict-diff-persistence.spec.ts`](./editor-save-conflict-compare/conflict-diff-persistence.spec.ts)
+
 ## [editor-search-git-decorations(编辑器 tab 标题 / 搜索结果文件名按 git 状态着色)](./editor-search-git-decorations/README.md)
 
 - [`contrast.spec.ts`](./editor-search-git-decorations/contrast.spec.ts)

@@ -45,6 +45,7 @@ import { dirtyTabsInBatch, nextBatchCloseStep, type BatchClose } from './tab-bat
 import { useStableCallback } from '@/lib/use-stable-callback';
 import { rebindEditorRoots } from './editor-root-registry';
 import { applyEditorWriteBack, EDITOR_DISK_CHANGED, revertFile } from './editor-file-actions';
+import { openConflictCompare } from './conflict-compare';
 import { editorFileDeps } from './editor-file-deps';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { NO_ACTIVE_TAB, useEditorFile } from './useEditorFile';
@@ -460,6 +461,14 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     }
   }, [overwriteCandidate, advanceBatchClose]);
 
+  // 冲突时「比较」(VSCode Compare):打开差异 tab(左磁盘当前内容 ↔ 右你的版本),不写盘、tab 仍脏;来自关闭时的「保存」→
+  // 这批关闭结束(同取消)。BDD: src/__tests__/editor-save-conflict-compare/
+  const compareOverwriteCandidate = useCallback(() => {
+    const candidate = overwriteCandidate;
+    setOverwriteCandidate(null);
+    if (candidate) openConflictCompare(candidate.id, groupId);
+  }, [overwriteCandidate, groupId]);
+
   const onTabsCloseRequest = useCallback(
     (ids: readonly string[]) => {
       // TabChrome 的 dirty 是快照,store 可能落后编辑器(Milkdown 自适应延迟上抛,单次最长约 2s、持续输入最长 5s):
@@ -749,6 +758,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         onConfirm={() => void confirmOverwrite()}
         alternativeLabel={translate('panels.editor.disk_changed_revert')}
         onAlternative={() => void revertOverwriteCandidate()}
+        extraActions={[{ label: translate('panels.editor.disk_changed_compare'), onClick: compareOverwriteCandidate }]}
         onCancel={() => setOverwriteCandidate(null)}
       />
       <ConfirmDialog

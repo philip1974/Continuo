@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { IconButton, MenuItem } from '@/design';
 import { MoreActionsIcon } from '@/lib/ui-icons';
@@ -54,7 +54,8 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const popoutLabel = t('shell.dock.popout_title');
   const moreActionsLabel = t('panels.explorer.btn.more_actions');
   // 动态读取已注册 panel 类型(含内置 + 未来第三方插件)
-  const panelChoices = useRegistry(coApp.panels);
+  const registeredPanels = useRegistry(coApp.panels);
+  const panelChoices = useMemo(() => registeredPanels.filter((p) => p.hidden !== true), [registeredPanels]);
   // 键位提示:改键 / 命令注册变化后跟随
   const overrides = useKeybindingsStore((s) => s.overrides);
   useRegistry(coApp.commands);

@@ -8,18 +8,32 @@ import { editorGroupNumbers } from './editor-group-order';
 
 const EDITOR_TITLE_KEY = 'panels.editor.title';
 
-function panelTitle(titleKey: string, current: string, n: number | undefined): string {
+function panelTitle(
+  titleKey: string,
+  current: string,
+  n: number | undefined,
+  args: Readonly<Record<string, string>> | undefined,
+): string {
   if (titleKey === EDITOR_TITLE_KEY && n !== undefined && n > 1) {
     return tWithFallback('panels.editor.title_numbered', current, { n: String(n) });
   }
-  return tWithFallback(titleKey, current);
+  return tWithFallback(titleKey, current, args);
+}
+
+/** params.titleArgs:标题文案的占位参数(如保存冲突差异 tab 的 {name});只取字符串值。 */
+function titleArgsOf(params: { titleArgs?: unknown } | undefined): Record<string, string> | undefined {
+  const raw = params?.titleArgs;
+  if (raw === null || typeof raw !== 'object') return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) if (typeof v === 'string') out[k] = v;
+  return out;
 }
 
 /**
  * Dockview panel title 与 locale 同步（topic-19 P0-2）。
  *
  * DockShell mount 后跑：useLocale() 订阅 locale change → 遍历 api.panels
- * → 若 panel.params?.titleKey 存在则 setTitle(tWithFallback(titleKey, currentTitle))。
+ * → 若 panel.params?.titleKey 存在则 setTitle(tWithFallback(titleKey, currentTitle, params.titleArgs))。
  *
  * SharedTab 已订阅 onDidTitleChange，setTitle 后 tab 自动 re-render。
  *
@@ -49,11 +63,11 @@ export function useDockLocaleSync(api: DockviewApi | null): void {
           live.add(panel);
           if (!locationSubs.has(panel)) locationSubs.set(panel, panel.api.onDidLocationChange(syncSoon));
         }
-        const params = panel.params as { titleKey?: string } | undefined;
+        const params = panel.params as { titleKey?: string; titleArgs?: unknown } | undefined;
         const titleKey = params?.titleKey;
         if (!titleKey) continue;
         const current = panel.api.title ?? '';
-        const next = panelTitle(titleKey, current, numbers.get(panel.api.id)?.n);
+        const next = panelTitle(titleKey, current, numbers.get(panel.api.id)?.n, titleArgsOf(params));
         if (next !== current) panel.api.setTitle(next);
       }
       for (const [panel, sub] of locationSubs) {

@@ -1,5 +1,12 @@
 import type { SerializedDockview } from 'dockview-react';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
+import { CONFLICT_DIFF_PANEL_TYPE } from '@/panels/Editor/conflict-diff-constants';
+
+/**
+ * 不进持久化布局的面板类型:终端(由 DockReconciler 依 live session 重建)、保存冲突差异 tab(冲突是一次性的会话状态,
+ * 重启后磁盘 / 文档都已不同,不恢复;BDD: src/__tests__/editor-save-conflict-compare/)。下文「终端」泛指这些面板。
+ */
+const NON_PERSISTED_PANEL_TYPES: ReadonlySet<string> = new Set([TERMINAL_PANEL_TYPE, CONFLICT_DIFF_PANEL_TYPE]);
 
 // dockview 序列化布局的局部窄化类型(toJSON 产出 JSON,字段松散,故就地窄化而非依赖
 // dockview 内部类型)。leaf.data 为 group 状态(views/activeView/id/tabGroups),
@@ -60,7 +67,7 @@ export function stripTerminalPanelsFromLayout(
   for (const id in panels) {
     if (!Object.prototype.hasOwnProperty.call(panels, id)) continue;
     const p = panels[id];
-    if (p?.contentComponent === TERMINAL_PANEL_TYPE) terminalIds.add(id);
+    if (p?.contentComponent !== undefined && NON_PERSISTED_PANEL_TYPES.has(p.contentComponent)) terminalIds.add(id);
   }
   if (terminalIds.size === 0) return layout; // 无终端,原样返回(引用不变)
 

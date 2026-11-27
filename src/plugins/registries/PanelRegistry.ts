@@ -31,6 +31,11 @@ export interface PanelSpec {
    * 「⋯」遇已存在的同 id 面板只聚焦,不另开(否则 ⌘, 关不掉、两个 EditorPanel 互相覆盖内容)。
    */
   readonly multiInstance?: boolean;
+  /**
+   * true = 只由代码按带 params 的面板 id 打开(如保存冲突差异 tab):不在 Dock「⋯」菜单里列出,app.dock.openPanel 按 type
+   * 打开也忽略(缺 params 的空面板没有意义)。
+   */
+  readonly hidden?: boolean;
 }
 
 // 边界(E37,E35/E36 兄弟 registry):register 接受插件 PanelSpec 无运行时校验。type/title/titleKey

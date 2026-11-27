@@ -20,10 +20,11 @@ afterEach(async () => {
 });
 
 describe('bootCorePlugins', () => {
-  it('注册 editor / terminal / debug / search / output / settings 六个 panel 类型', () => {
+  it('注册 editor / terminal / debug / search / output / settings 六个 panel 类型 + 保存冲突差异 tab(隐藏)', () => {
     bootCorePlugins();
     const types = coApp.panels.getAll().map((p) => p.type).sort();
-    expect(types).toEqual(['debug', 'editor', 'output', 'search', 'settings', 'terminal']);
+    expect(types).toEqual(['conflict-diff', 'debug', 'editor', 'output', 'search', 'settings', 'terminal']);
+    expect(coApp.panels.get('conflict-diff')?.hidden).toBe(true);
   });
 
   it('每个 panel 含 title 与 factory', () => {
@@ -46,7 +47,7 @@ describe('bootCorePlugins', () => {
 describe('shutdownCorePlugins', () => {
   it('全部反序 _deactivate,registry 清空', async () => {
     bootCorePlugins();
-    expect(coApp.panels.getAll().length).toBe(6);
+    expect(coApp.panels.getAll().length).toBe(7);
     await shutdownCorePlugins();
     expect(coApp.panels.getAll().length).toBe(0);
   });

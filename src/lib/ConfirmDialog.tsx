@@ -24,6 +24,11 @@ interface ConfirmDialogProps {
    */
   alternativeLabel?: string;
   onAlternative?: () => void;
+  /**
+   * 可选的更多按钮,依次排在 alternative 左侧、ghost 样式(如保存冲突的「比较」:[比较, 放弃更改并重新加载, 取消, 覆盖])。
+   * 同样不参与初始焦点。
+   */
+  extraActions?: readonly { readonly label: string; readonly onClick: () => void }[];
 }
 
 // 通用确认对话框(design Modal):编辑器关闭 / 覆盖确认、插件卸载、状态栏撤销授权、Explorer 删除确认共用(原在 panels/Explorer 下,
@@ -48,6 +53,7 @@ function ConfirmDialogBody({
   onCancel,
   alternativeLabel,
   onAlternative,
+  extraActions,
 }: Omit<ConfirmDialogProps, 'open'>) {
   const t = useT();
   // 标题 id 每个实例唯一(此前写死 confirm-dialog-title,同时挂载多个时 aria-labelledby 指向错乱)。
@@ -80,6 +86,11 @@ function ConfirmDialogBody({
         {description}
       </div>
       <div className="flex justify-end gap-2">
+        {extraActions?.map((a) => (
+          <Button key={a.label} variant="ghost" size="sm" onClick={a.onClick}>
+            {a.label}
+          </Button>
+        ))}
         {alternativeLabel !== undefined && onAlternative !== undefined && (
           <Button variant="ghost" size="sm" onClick={onAlternative}>
             {alternativeLabel}

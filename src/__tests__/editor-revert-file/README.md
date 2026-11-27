@@ -9,7 +9,7 @@
   - 读盘失败(如文件已不存在)→ 按 code 提示错误,tab 内容与脏态不变。
   - 没有活动文件 tab → 什么也不做。
 - 与外部同步同一出口(`reloadFromDisk`,带 `discardChanges`):递增 `reloadEpoch`,Markdown 编辑视图重挂拿新内容;尚未上抛的编辑器输入先回写再丢弃,卸载回写不会把丢弃的输入写回。
-- 保存遇磁盘已被外部修改(EDITOR_DISK_CHANGED)的确认框按钮 [放弃更改并重新加载, 取消, 覆盖]:
+- 保存遇磁盘已被外部修改(EDITOR_DISK_CHANGED)的确认框按钮 [比较, 放弃更改并重新加载, 取消, 覆盖](比较见 editor-save-conflict-compare):
   - 放弃更改并重新加载 → 不写盘,tab 换成磁盘版本且不再脏,确认框关闭;
   - 若确认框来自关闭脏 tab 时选的「保存」→ 还原后关闭该 tab;
   - 覆盖 / 取消行为不变(见 editor-dirty-close)。

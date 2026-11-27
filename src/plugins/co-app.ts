@@ -255,7 +255,7 @@ async function openInEditor(
 const dock: CoDockApi = {
   openPanel(panelId) {
     const spec = coApp.panels.get(panelId);
-    if (!spec) return;
+    if (!spec || spec.hidden === true) return;
     openOrFocusPanel(spec.type, spec.type, spec.title, spec.titleKey);
   },
 };
