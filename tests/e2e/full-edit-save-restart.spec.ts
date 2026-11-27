@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { openWorkspaceFile } from './helpers/editor';
+import { EDITOR_UNSAVED_CHANGES_SELECTOR, openWorkspaceFile } from './helpers/editor';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
 
@@ -34,6 +34,11 @@ test('编辑 a.ts + Cmd+S + 关 → 重启同 ud + ws → 磁盘新值在', asyn
       const c = readFileSync(path.join(ws, 'src/a.ts'), 'utf8');
       expect(c).toContain('saved-full');
     }).toPass({ timeout: 5_000 });
+    // 磁盘出现新内容 ≠ 保存已完成:已有文件原地写(b07031dd)先把超出原长度的尾部追加到文件末尾,
+    // 本例新内容恰是「原内容 + 追加」,所以写到一半磁盘就已是最终内容,之后还有覆盖 + fsync,
+    // 保存返回后 tab 才变干净。此时关窗 main 仍记为有未保存修改 → 弹原生确认框(e2e 无人应答,close 永远等)。
+    // 等未保存标记消失再关:这里要测的是「保存完成后关闭重启」。
+    await expect(win1.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toHaveCount(0, { timeout: 5_000 });
 
     await app1.close();
 
