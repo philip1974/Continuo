@@ -299,6 +299,15 @@ export const zh: Record<TranslationKey, string> = {
   'commands.editor.text.unfold_all.title': '全部展开',
   'commands.editor.text.jump_to_bracket.title': '转到括号',
   'commands.editor.text.cursor_undo.title': '光标撤消',
+  'commands.editor.text.cursor_redo.title': '光标重做',
+  'commands.editor.text.trigger_suggest.title': '触发建议',
+  'commands.editor.text.smart_select_expand.title': '扩大选区',
+  'commands.editor.text.smart_select_shrink.title': '缩小选区',
+  'commands.editor.text.format_document.title': '格式化文档',
+  'commands.editor.text.rename.title': '重命名符号',
+  'commands.editor.text.reveal_definition.title': '转到定义',
+  'commands.editor.text.quick_fix.title': '快速修复...',
+  'commands.editor.text.next_problem.title': '转到文件中的下一个问题（错误、警告、信息）',
   'commands.preferences.category': '首选项',
   'commands.preferences.open_keybindings.title': '打开键盘快捷方式',
   'commands.preferences.select_theme.title': '颜色主题',
@@ -337,6 +346,7 @@ export const zh: Record<TranslationKey, string> = {
   'commands.markdown.edit_mode.title': '切换到编辑模式',
   'commands.markdown.source_mode.title': '切换到源码模式',
   'commands.markdown.preview_mode.title': '切换到预览模式',
+  'commands.markdown.toggle_preview.title': '切换预览',
 
   // panels.*
   'panels.terminal.title': '终端',
@@ -449,6 +459,13 @@ export const zh: Record<TranslationKey, string> = {
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
   'editor.aria.content': '{name}，编辑器',
+  'editor.format.no_formatter': '此语言暂无格式化程序（「{name}」文件）。',
+  'editor.format.json_syntax_error': '无法格式化：此 JSON 文档有语法错误，文档未改动。',
+  'editor.rename.no_result': '重命名符号：无结果。',
+  'editor.definition.none': '未找到定义',
+  'editor.definition.none_for': '未找到「{name}」的定义',
+  'editor.quick_fix.none': '没有可用的代码操作',
+  'editor.problems.none': '未在工作区检测到问题。',
   'editor.aria.content_group': '{name}，编辑器组 {n}',
   'editor.aria.group': '编辑器组 {n}',
   'editor.aria.preview': '{name}，预览',

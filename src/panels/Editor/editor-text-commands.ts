@@ -24,12 +24,17 @@ interface TextCommandDef {
   /** Windows / Linux 默认键(缺省同 mac)。 */
   readonly other?: string;
   /** mac 的附加默认键(VSCode mac secondary)。 */
-  readonly macAlso?: string;
+  readonly macAlso?: readonly string[];
+  /** Windows / Linux 的附加默认键(VSCode secondary)。 */
+  readonly otherAlso?: readonly string[];
   /** 上下文条件(缺省 editorTextFocus;查找类为 editorFocus —— 查找面板里同样生效,VSCode 同)。 */
   readonly when?: CommandWhen;
 }
 
-/** 命令表(VSCode 默认键:mac / Windows;查找下一个 / 上一个在 mac 另有 F3 / ⇧F3,其余每个命令一个默认键)。 */
+/**
+ * 命令表(VSCode 默认键:mac / Windows;附加默认键同 VSCode secondary:查找下一个 / 上一个在 mac 另有 F3 / ⇧F3,触发建议另有
+ * ⌘I(mac 还有 ⌥Esc)/ Ctrl+I,扩展 / 收缩选区在 mac 另有 ⌃⇧→ / ⌃⇧←)。
+ */
 export const EDITOR_TEXT_COMMANDS: readonly TextCommandDef[] = [
   { id: 'editor.action.commentLine', key: 'comment_line', title: 'Toggle Line Comment', mac: 'mod+/' },
   { id: 'editor.action.blockComment', key: 'block_comment', title: 'Toggle Block Comment', mac: 'shift+alt+a' },
@@ -71,6 +76,44 @@ export const EDITOR_TEXT_COMMANDS: readonly TextCommandDef[] = [
   { id: 'editor.unfoldAll', key: 'unfold_all', title: 'Unfold All' },
   { id: 'editor.action.jumpToBracket', key: 'jump_to_bracket', title: 'Go to Bracket', mac: 'mod+shift+\\' },
   { id: 'cursorUndo', key: 'cursor_undo', title: 'Cursor Undo', mac: 'mod+u' },
+  // VSCode cursorRedo 无默认键(CodeMirror 自带的 ⇧⌘U / Alt+U 去掉:⇧⌘U 归「显示输出」)
+  { id: 'cursorRedo', key: 'cursor_redo', title: 'Cursor Redo' },
+  // 触发建议 / 扩展·收缩选区 / 语言功能(BDD: src/__tests__/editor-language-commands/)。⌘I 原是 CodeMirror 的扩展到父语法节点,
+  // VSCode 里是触发建议;扩展选区挪到 VSCode 的 ⌃⇧⌘→(Windows / Linux ⇧Alt+→,原是 CodeMirror 的按语法选择)。
+  {
+    id: 'editor.action.triggerSuggest',
+    key: 'trigger_suggest',
+    title: 'Trigger Suggest',
+    mac: 'ctrl+space',
+    macAlso: ['alt+escape', 'mod+i'],
+    otherAlso: ['mod+i'],
+  },
+  {
+    id: 'editor.action.smartSelect.expand',
+    key: 'smart_select_expand',
+    title: 'Expand Selection',
+    mac: 'ctrl+shift+mod+right',
+    macAlso: ['ctrl+shift+right'],
+    other: 'shift+alt+right',
+  },
+  {
+    id: 'editor.action.smartSelect.shrink',
+    key: 'smart_select_shrink',
+    title: 'Shrink Selection',
+    mac: 'ctrl+shift+mod+left',
+    macAlso: ['ctrl+shift+left'],
+    other: 'shift+alt+left',
+  },
+  { id: 'editor.action.formatDocument', key: 'format_document', title: 'Format Document', mac: 'shift+alt+f' },
+  { id: 'editor.action.rename', key: 'rename', title: 'Rename Symbol', mac: 'f2' },
+  { id: 'editor.action.revealDefinition', key: 'reveal_definition', title: 'Go to Definition', mac: 'f12' },
+  { id: 'editor.action.quickFix', key: 'quick_fix', title: 'Quick Fix...', mac: 'mod+.' },
+  {
+    id: 'editor.action.marker.nextInFiles',
+    key: 'next_problem',
+    title: 'Go to Next Problem in Files (Error, Warning, Info)',
+    mac: 'f8',
+  },
   // 查找 / 替换 / 查找下一个·上一个(VSCode actions.find ⌘F、startFindReplaceAction ⌥⌘F / Ctrl+H、nextMatchFindAction ⌘G + F3 /
   // F3、previousMatchFindAction ⇧⌘G + ⇧F3 / ⇧F3):键已从 CodeMirror 键表去掉,经注册表分发(可改键);when: editorFocus ——
   // 查找面板里同样生效(面板里再按 ⌘F 全选查找词)。Markdown 编辑 / 预览(及其查找条)里 editorFocus 同样成立,查找 / 查找下一个·
@@ -89,7 +132,7 @@ export const EDITOR_TEXT_COMMANDS: readonly TextCommandDef[] = [
     key: 'find_next',
     title: 'Find Next',
     mac: 'mod+g',
-    macAlso: 'f3',
+    macAlso: ['f3'],
     other: 'f3',
     when: 'editorFocus',
   },
@@ -98,7 +141,7 @@ export const EDITOR_TEXT_COMMANDS: readonly TextCommandDef[] = [
     key: 'find_previous',
     title: 'Find Previous',
     mac: 'mod+shift+g',
-    macAlso: 'shift+f3',
+    macAlso: ['shift+f3'],
     other: 'shift+f3',
     when: 'editorFocus',
   },
@@ -158,12 +201,13 @@ export function runTextCommand(id: string): void {
 export function editorTextCommandSpecs(platform: Platform): CommandSpec[] {
   return EDITOR_TEXT_COMMANDS.map((c) => {
     const hotkey = platform === 'mac' ? c.mac : (c.other ?? c.mac);
+    const also = platform === 'mac' ? c.macAlso : c.otherAlso;
     return {
       id: c.id,
       title: c.title,
       titleKey: `commands.editor.text.${c.key}.title`,
       ...(hotkey ? { hotkey } : {}),
-      ...(platform === 'mac' && c.macAlso ? { secondaryHotkeys: [c.macAlso] } : {}),
+      ...(also ? { secondaryHotkeys: also } : {}),
       when: c.when ?? 'editorTextFocus',
       fn: () => runTextCommand(c.id),
     };

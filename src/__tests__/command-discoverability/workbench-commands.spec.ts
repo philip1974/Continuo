@@ -38,6 +38,8 @@ const NEW_COMMANDS: Record<string, readonly [string, string | null]> = {
 };
 
 const ZOOM_COMMANDS = new Set(['workbench.action.zoomIn', 'workbench.action.zoomOut', 'workbench.action.zoomReset']);
+// 显示输出 / 显示调试后来补上 VSCode 默认键 ⇧⌘U / ⇧⌘D(见 src/__tests__/workbench-vscode-default-keys/)
+const KEYED_COMMANDS = new Set([...ZOOM_COMMANDS, 'workbench.view.output', 'workbench.view.debug']);
 
 describe('常用动作注册为命令', () => {
   it('核心插件注册全部新命令:三语标题 + 分类,无默认键', () => {
@@ -45,8 +47,8 @@ describe('常用动作注册为命令', () => {
     for (const [id, [title, category]] of Object.entries(NEW_COMMANDS)) {
       const spec = coApp.commands.get(id);
       expect(spec, id).toBeDefined();
-      // 缩放命令带 VSCode 默认键(见 src/__tests__/window-zoom/)
-      if (!ZOOM_COMMANDS.has(id)) expect(spec!.hotkey, id).toBeUndefined();
+      // 缩放命令带 VSCode 默认键(见 src/__tests__/window-zoom/);显示输出 / 调试同(见 workbench-vscode-default-keys)
+      if (!KEYED_COMMANDS.has(id)) expect(spec!.hotkey, id).toBeUndefined();
       const titleKey = spec!.titleKey as Key;
       expect(en[titleKey], id).toBe(title);
       expect(zh[titleKey], id).toBeTruthy();

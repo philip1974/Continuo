@@ -17,7 +17,9 @@ import {
   insertBlankLine,
   moveLineDown,
   moveLineUp,
+  redoSelection,
   selectLine,
+  selectParentSyntax,
   toggleBlockComment,
   toggleComment,
   undoSelection,
@@ -30,6 +32,7 @@ import {
   foldEffect,
   foldedRanges,
   foldState,
+  language,
   unfoldAll,
   unfoldCode,
 } from '@codemirror/language';
@@ -41,8 +44,20 @@ import {
   selectSelectionMatches,
 } from '@codemirror/search';
 import { findNextMatch, findPreviousMatch, openFindPanel, openReplacePanel } from './codemirror-find';
-import { TEXT_EDITOR_ATTR } from '@/lib/editor-text-focus';
+import { MARKDOWN_SOURCE_ATTR, TEXT_EDITOR_ATTR } from '@/lib/editor-text-focus';
 import { registerTextCommandRunner } from './editor-text-commands';
+import {
+  expandSelection,
+  formatDocument,
+  languageCommandsExtension,
+  nextDiagnosticCommand,
+  nextProblem,
+  quickFix,
+  renameSymbol,
+  revealDefinition,
+  shrinkSelection,
+  startCompletionCommand,
+} from './codemirror-language-commands';
 
 /** 在每个光标所在行的上方插入一行(沿用该行缩进),光标落到新行(VSCode insertLineBefore;CodeMirror 无对应命令)。 */
 export const insertLineBefore: Command = (view) => {
@@ -159,6 +174,17 @@ const RUNNERS: Readonly<Record<string, Command>> = {
   'editor.unfoldAll': unfoldAll,
   'editor.action.jumpToBracket': cursorMatchingBracket,
   cursorUndo: undoSelection,
+  // VSCode cursorRedo 无默认键:CodeMirror 的 ⇧⌘U(mac)/ Alt+U 让出(⇧⌘U 归「显示输出」)
+  cursorRedo: redoSelection,
+  // 语言功能 / 建议 / 扩展·收缩选区(BDD: src/__tests__/editor-language-commands/)
+  'editor.action.formatDocument': formatDocument,
+  'editor.action.rename': renameSymbol,
+  'editor.action.revealDefinition': revealDefinition,
+  'editor.action.quickFix': quickFix,
+  'editor.action.marker.nextInFiles': nextProblem,
+  'editor.action.triggerSuggest': startCompletionCommand,
+  'editor.action.smartSelect.expand': expandSelection,
+  'editor.action.smartSelect.shrink': shrinkSelection,
   // 查找 / 替换 / 查找下一个·上一个(when: editorFocus,查找面板里同样生效;BDD: src/__tests__/editor-find-keybindings/)
   'actions.find': openFindPanel,
   'editor.action.startFindReplaceAction': openReplacePanel,
@@ -169,7 +195,8 @@ const RUNNERS: Readonly<Record<string, Command>> = {
 /**
  * basicSetup 键表里改由注册表分发的命令(其键从键表去掉):selectSelectionMatches / selectLine / foldCode 由 selectHighlights /
  * expandLineSelection / foldEnclosing 取代,openSearchPanel(⌘F)由 openFindPanel 取代,findNext / findPrevious(⌘G / F3)由
- * findNextMatch / findPreviousMatch 取代。
+ * findNextMatch / findPreviousMatch 取代,selectParentSyntax(⌘I)由扩展选区(⌃⇧⌘→)取代 —— ⌘I 归触发建议(VSCode),
+ * nextDiagnostic(F8)由 nextProblem(无诊断时提示)取代。
  */
 export const ROUTED_KEYMAP_COMMANDS: ReadonlySet<Command> = new Set([
   ...Object.values(RUNNERS),
@@ -179,6 +206,8 @@ export const ROUTED_KEYMAP_COMMANDS: ReadonlySet<Command> = new Set([
   openSearchPanel,
   findNext,
   findPrevious,
+  selectParentSyntax,
+  nextDiagnosticCommand,
 ]);
 
 function runTextCommand(id: string, view: EditorView): void {
@@ -187,8 +216,14 @@ function runTextCommand(id: string, view: EditorView): void {
 
 const textEditorMarker = EditorView.editorAttributes.of({ [TEXT_EDITOR_ATTR]: '' });
 
-/** CodeEditor 的扩展:登记命令实现 + CodeEditor 标记。 */
+/** 语言为 Markdown(源码模式;frontmatter 包装语言 yaml-frontmatter 只用于 Markdown)→ 另打 Markdown 标记(markdownEditorFocus)。 */
+const MARKDOWN_LANGUAGE_NAMES: ReadonlySet<string> = new Set(['markdown', 'yaml-frontmatter']);
+const markdownSourceMarker = EditorView.editorAttributes.of((view) =>
+  MARKDOWN_LANGUAGE_NAMES.has(view.state.facet(language)?.name ?? '') ? { [MARKDOWN_SOURCE_ATTR]: '' } : null,
+);
+
+/** CodeEditor 的扩展:登记命令实现 + CodeEditor 标记(Markdown 另带标记)+ 收缩选区用的历史。 */
 export function codeEditorTextCommands(): Extension {
   registerTextCommandRunner(runTextCommand);
-  return textEditorMarker;
+  return [textEditorMarker, markdownSourceMarker, languageCommandsExtension];
 }

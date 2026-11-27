@@ -70,8 +70,14 @@ export const WORKBENCH_RECENT_EDITOR_COMMANDS = [
 /**
  * 切换终端(VSCode workbench.action.terminal.toggleTerminal,各平台 ⌃`;在 commandsToSkipShell 默认列表里 → 终端里胜出即让出:
  * 焦点在终端时按它回到编辑器)。BDD: src/__tests__/terminal-toggle/
+ * 附加默认键 ⌘J / Ctrl+J:VSCode 的「切换面板」(workbench.action.togglePanel,终端所在的面板;同在 commandsToSkipShell 默认列表)。
+ * 本项目没有独立的底部面板,终端即面板 → 并到切换终端。BDD: src/__tests__/workbench-vscode-default-keys/
  */
-export const TERMINAL_TOGGLE_COMMAND = { id: 'workbench.action.terminal.toggleTerminal', hotkey: 'ctrl+`' } as const;
+export const TERMINAL_TOGGLE_COMMAND = {
+  id: 'workbench.action.terminal.toggleTerminal',
+  hotkey: 'ctrl+`',
+  secondaryHotkeys: ['mod+j'] as readonly string[],
+} as const;
 /**
  * 新建终端:主键 ⌘T / Ctrl+T,附加默认键 ⌃⇧`(VSCode workbench.action.terminal.new,在 commandsToSkipShell 默认列表里 →
  * 终端里胜出即让出,不再既发给 shell 又新建终端)。BDD: src/__tests__/workbench-missing-commands/

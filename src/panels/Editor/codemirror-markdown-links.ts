@@ -1,6 +1,6 @@
 // Markdown 源码模式(CodeMirror):Cmd/Ctrl+click 链接跳转(VSCode Markdown 文档链接同;编辑 / 预览模式见 MilkdownEditor)。
 // 按 lang-markdown 语法树取链接地址:`[文字](地址)`、`![alt](地址)`、`<地址>` 自动链接、裸 URL;引用式链接等无地址的不处理。
-// 命中链接时吞掉这次按下(否则 CodeMirror 把 Cmd/Ctrl+click 当成添加光标),地址交给 onLink(EditorPanel 的 resolveLink 路由)。
+// 命中链接时吞掉这次按下(不移动光标;添加光标是 ⌥ 单击,见 editor-mouse-multicursor),地址交给 onLink(EditorPanel 的 resolveLink 路由)。
 // BDD: src/__tests__/markdown-anchor-links/
 
 import { syntaxTree } from '@codemirror/language';

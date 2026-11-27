@@ -4,7 +4,7 @@
 不能改键 / 解绑,命令面板搜 comment / select / fold 为空;⌘L(VSCode 选中整行)无反应(CodeMirror 是 ⌃L),⇧⌘Enter(在上方插入行)
 在编辑器里执行的是「切换终端缩放」。
 
-1. **命令**(三语标题,与 VSCode 英文标题一致;每个命令一个默认键,Windows / Linux 取 VSCode Windows 默认键):
+1. **命令**(三语标题,与 VSCode 英文标题一致;Windows / Linux 取 VSCode Windows 默认键;附加默认键同 VSCode secondary):
 
    | id | 标题 | mac | Windows / Linux |
    |---|---|---|---|
@@ -23,6 +23,8 @@
    | `editor.foldAll` / `editor.unfoldAll` | Fold All / Unfold All | 无(VSCode 为 ⌘K 和弦,项目不支持和弦) | 无 |
    | `editor.action.jumpToBracket` | Go to Bracket | ⇧⌘\ | Ctrl+Shift+\ |
    | `cursorUndo` | Cursor Undo | ⌘U | Ctrl+U |
+   | `cursorRedo` | Cursor Redo | 无(同 VSCode;CodeMirror 的 ⇧⌘U / Alt+U 去掉,⇧⌘U 归显示输出) | 无 |
+   | 触发建议 / 扩展·收缩选区 / 格式化 / 重命名 / 转到定义 / 快速修复 / 下一个问题 | 见 `editor-language-commands` | | |
    | `actions.find` / `editor.action.startFindReplaceAction` | Find / Replace | ⌘F / ⌥⌘F | Ctrl+F / Ctrl+H |
    | `editor.action.nextMatchFindAction` / `previousMatchFindAction` | Find Next / Find Previous | ⌘G / ⇧⌘G(另有 F3 / ⇧F3) | F3 / ⇧F3 |
 

@@ -651,6 +651,11 @@
 - [`indentation-guess.spec.ts`](./editor-indentation/indentation-guess.spec.ts)
 - [`indentation-statusbar-commands.spec.tsx`](./editor-indentation/indentation-statusbar-commands.spec.tsx)
 
+## [语言功能类编辑器命令:格式化 / 重命名 / 转到定义 / 快速修复 / 下一个问题 / 触发建议 / 扩展·收缩选区](./editor-language-commands/README.md)
+
+- [`json-format.spec.ts`](./editor-language-commands/json-format.spec.ts)
+- [`language-commands.spec.ts`](./editor-language-commands/language-commands.spec.ts)
+
 ## [editor-markdown-ime-composition](./editor-markdown-ime-composition/README.md)
 
 - [`ime-composition.spec.ts`](./editor-markdown-ime-composition/ime-composition.spec.ts)
@@ -697,6 +702,10 @@
 
 - [`milkdown-ctx-contract.spec.tsx`](./editor-milkdown-writeback/milkdown-ctx-contract.spec.tsx)
 - [`milkdown-writeback.spec.tsx`](./editor-milkdown-writeback/milkdown-writeback.spec.tsx)
+
+## [鼠标多光标修饰键对齐 VSCode(⌥ 单击添加光标)](./editor-mouse-multicursor/README.md)
+
+- [`multicursor-modifier.spec.ts`](./editor-mouse-multicursor/multicursor-modifier.spec.ts)
 
 ## [后退 / 前进(⌃- / ⌃⇧-)](./editor-navigation-history/README.md)
 
@@ -2352,6 +2361,10 @@
 - [`open-recent.spec.tsx`](./workbench-missing-commands/open-recent.spec.tsx)
 - [`save-all.spec.ts`](./workbench-missing-commands/save-all.spec.ts)
 - [`toggle-word-wrap.spec.tsx`](./workbench-missing-commands/toggle-word-wrap.spec.tsx)
+
+## [已有命令补上 VSCode 默认键(⌘J / ⇧⌘D / ⇧⌘U / ⇧⌘V)](./workbench-vscode-default-keys/README.md)
+
+- [`default-keys.spec.ts`](./workbench-vscode-default-keys/default-keys.spec.ts)
 
 ## [workspace-root-selection-guard](./workspace-root-selection-guard/)
 

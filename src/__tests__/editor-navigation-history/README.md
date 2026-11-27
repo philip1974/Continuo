@@ -6,8 +6,8 @@
 1. **命令**:id 同 VSCode,三语标题「返回 / 前进」。默认键 mac `ctrl+-` / `ctrl+shift+-`(⌃- / ⌃⇧-,Control 不是 ⌘);
    Windows / Linux `alt+left` / `alt+right`(VSCode Windows 默认值;VSCode Linux 默认是 Ctrl+Alt+- / Ctrl+Shift+-,Continuo
    的平台模型不区分 Windows 与 Linux,按 Windows 取)。经命令注册表接入快捷键页、命令面板键位与冲突判定。
-   CodeMirror 在 Windows / Linux 上把 Alt+← / Alt+→ 当「按语法跳」(会吞掉按键)→ 去掉,⇧Alt+← / ⇧Alt+→ 按语法选择保留;
-   mac 的 ⌃← / ⌃→ 不变。
+   CodeMirror 在 Windows / Linux 上把 Alt+← / Alt+→ 当「按语法跳」(会吞掉按键)→ 去掉;mac 的 ⌃← / ⌃→ 不变。其 Shift 变体
+   (⇧Alt+← / ⇧Alt+→,mac ⌃⇧← / ⌃⇧→)按 VSCode 归收缩 / 扩展选区(见 `editor-language-commands`)。
 2. **什么时候记一条**(VSCode 语义):
    - **换编辑器**:活动编辑器(活动编辑器组 + 该组的活动 tab)换成另一个 —— ⌘P、资源管理器、搜索结果、终端链接、⇧⌘T、
      ⌃Tab、tab 点击、点进另一个编辑器组、关掉当前 tab 后相邻 tab 接替 —— 都经 editor.store 的活动 tab 变化统一记录;

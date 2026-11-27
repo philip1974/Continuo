@@ -91,7 +91,10 @@ function popoutActiveGroup(): void {
 export function dockCommandSpecs(): CommandSpec[] {
   return [
     {
+      // 默认键对齐 VSCode(workbench.action.output.toggleOutput ⇧⌘U / Ctrl+Shift+U;Linux 为和弦 Ctrl+K Ctrl+H,项目不支持和弦、
+      // 也不区分 Linux → 同 Windows)。BDD: src/__tests__/workbench-vscode-default-keys/
       id: 'workbench.view.output',
+      hotkey: 'mod+shift+u',
       title: 'Show Output',
       titleKey: 'commands.view.show_output.title',
       category: 'View',
@@ -99,7 +102,9 @@ export function dockCommandSpecs(): CommandSpec[] {
       fn: () => showPanelOfType('output'),
     },
     {
+      // VSCode「运行和调试」视图 ⇧⌘D / Ctrl+Shift+D
       id: 'workbench.view.debug',
+      hotkey: 'mod+shift+d',
       title: 'Show Debug',
       titleKey: 'commands.view.show_debug.title',
       category: 'View',

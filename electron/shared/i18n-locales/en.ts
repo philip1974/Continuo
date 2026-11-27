@@ -313,6 +313,15 @@ export const en = {
   'commands.editor.text.unfold_all.title': 'Unfold All',
   'commands.editor.text.jump_to_bracket.title': 'Go to Bracket',
   'commands.editor.text.cursor_undo.title': 'Cursor Undo',
+  'commands.editor.text.cursor_redo.title': 'Cursor Redo',
+  'commands.editor.text.trigger_suggest.title': 'Trigger Suggest',
+  'commands.editor.text.smart_select_expand.title': 'Expand Selection',
+  'commands.editor.text.smart_select_shrink.title': 'Shrink Selection',
+  'commands.editor.text.format_document.title': 'Format Document',
+  'commands.editor.text.rename.title': 'Rename Symbol',
+  'commands.editor.text.reveal_definition.title': 'Go to Definition',
+  'commands.editor.text.quick_fix.title': 'Quick Fix...',
+  'commands.editor.text.next_problem.title': 'Go to Next Problem in Files (Error, Warning, Info)',
   'commands.preferences.category': 'Preferences',
   'commands.preferences.open_keybindings.title': 'Open Keyboard Shortcuts',
   'commands.preferences.select_theme.title': 'Color Theme',
@@ -350,6 +359,7 @@ export const en = {
   'commands.markdown.edit_mode.title': 'Switch to Edit Mode',
   'commands.markdown.source_mode.title': 'Switch to Source Mode',
   'commands.markdown.preview_mode.title': 'Switch to Preview Mode',
+  'commands.markdown.toggle_preview.title': 'Toggle Preview',
 
   // panels.* (5)
   'panels.terminal.title': 'Terminal',
@@ -463,6 +473,13 @@ export const en = {
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
   'editor.aria.content': '{name}, Editor',
+  'editor.format.no_formatter': 'There is no formatter for “{name}” files installed.',
+  'editor.format.json_syntax_error': 'Cannot format: this JSON document has syntax errors. The document was not changed.',
+  'editor.rename.no_result': 'Rename Symbol: No result.',
+  'editor.definition.none': 'No definition found',
+  'editor.definition.none_for': 'No definition found for “{name}”',
+  'editor.quick_fix.none': 'No code actions available',
+  'editor.problems.none': 'No problems have been detected in the workspace.',
   'editor.aria.content_group': '{name}, Editor Group {n}',
   'editor.aria.group': 'Editor Group {n}',
   'editor.aria.preview': '{name}, Preview',

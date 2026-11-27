@@ -29,6 +29,7 @@
 import {
   editorGroupIdsOf,
   findEditorTabIndexById,
+  getEffectiveMode,
   groupActiveTabIdOf,
   groupTabsOf,
   useEditorStore,
@@ -73,6 +74,7 @@ import {
 } from './editor-recent-cycle';
 import { flushEditorWriteBacks } from './editor-writeback-registry';
 import { isImagePreviewPath } from './editor-image';
+import { isMarkdownPath } from './editor-path-utils';
 import { EDITOR_WORD_WRAP } from '@/plugins/settings/core-setting-specs';
 import { getStoredSettingValue, useSettingsValuesStore } from '@/plugins/settings/values-store';
 import {
@@ -182,6 +184,28 @@ export function registerMarkdownModeAction(fn: (mode: EditorMode) => void, group
   return () => {
     if (markdownModeActions.get(groupId) === fn) markdownModeActions.delete(groupId);
   };
+}
+
+/**
+ * 切换预览(VSCode markdown.togglePreview,⇧⌘V / Ctrl+Shift+V,when: Markdown 编辑器获焦):活动 Markdown tab 不在预览 → 切到预览,
+ * 并记下原模式;在预览 → 回到原模式(未记过 → 源码,VSCode 预览回到文本编辑器)。切换后焦点进入新视图(再按一次即切回)。
+ * BDD: src/__tests__/workbench-vscode-default-keys/
+ */
+export const MARKDOWN_TOGGLE_PREVIEW_COMMAND = { id: 'markdown.togglePreview', hotkey: 'mod+shift+v' } as const;
+let modeBeforePreview: EditorMode = 'source';
+
+function toggleMarkdownPreview(): void {
+  const groupId = commandEditorGroupId();
+  const action = groupId === undefined ? undefined : markdownModeActions.get(groupId);
+  const tab = activeGroupTab();
+  if (!action || !tab || !isMarkdownPath(tab.filePath)) return;
+  const current = getEffectiveMode(tab);
+  if (current === 'preview') action(modeBeforePreview);
+  else {
+    modeBeforePreview = current;
+    action('preview');
+  }
+  requestEditorFocus(tab.id, groupId);
 }
 
 /** 触发窗口的编辑器组面板的动作(该组面板未挂载 → 任一已挂载的组面板;该窗口没有编辑器组 → undefined)。 */
@@ -585,6 +609,15 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
         },
       }),
     ),
+    {
+      ...MARKDOWN_TOGGLE_PREVIEW_COMMAND,
+      title: 'Toggle Preview',
+      titleKey: 'commands.markdown.toggle_preview.title',
+      category: 'Markdown',
+      categoryKey: 'commands.markdown.category',
+      when: 'markdownEditorFocus',
+      fn: toggleMarkdownPreview,
+    },
     ...FOCUS_EDITOR_GROUP_COMMANDS.map(
       (c): CommandSpec => ({
         id: c.id,

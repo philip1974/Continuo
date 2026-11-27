@@ -79,7 +79,8 @@ afterEach(() => {
 
 describe('命令注册与按键', () => {
   it('默认键 ctrl+`(两平台相同),三语标题;常量与注册一致', () => {
-    expect(TERMINAL_TOGGLE_COMMAND).toEqual({ id: ID, hotkey: 'ctrl+`' });
+    // 附加默认键 ⌘J / Ctrl+J(VSCode 切换面板)见 src/__tests__/workbench-vscode-default-keys/
+    expect(TERMINAL_TOGGLE_COMMAND).toEqual({ id: ID, hotkey: 'ctrl+`', secondaryHotkeys: ['mod+j'] });
     const spec = coApp.commands.get(ID);
     expect(spec?.hotkey).toBe('ctrl+`');
     const k = spec!.titleKey as keyof typeof en;

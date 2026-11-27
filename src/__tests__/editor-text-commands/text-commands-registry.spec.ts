@@ -37,6 +37,16 @@ const EXPECTED: readonly (readonly [string, string, string | undefined, string |
   ['editor.unfoldAll', 'Unfold All', undefined, undefined],
   ['editor.action.jumpToBracket', 'Go to Bracket', 'mod+shift+\\', 'mod+shift+\\'],
   ['cursorUndo', 'Cursor Undo', 'mod+u', 'mod+u'],
+  // 以下见 src/__tests__/editor-language-commands/(附加默认键在该处校验)
+  ['cursorRedo', 'Cursor Redo', undefined, undefined],
+  ['editor.action.triggerSuggest', 'Trigger Suggest', 'ctrl+space', 'ctrl+space'],
+  ['editor.action.smartSelect.expand', 'Expand Selection', 'ctrl+shift+mod+right', 'shift+alt+right'],
+  ['editor.action.smartSelect.shrink', 'Shrink Selection', 'ctrl+shift+mod+left', 'shift+alt+left'],
+  ['editor.action.formatDocument', 'Format Document', 'shift+alt+f', 'shift+alt+f'],
+  ['editor.action.rename', 'Rename Symbol', 'f2', 'f2'],
+  ['editor.action.revealDefinition', 'Go to Definition', 'f12', 'f12'],
+  ['editor.action.quickFix', 'Quick Fix...', 'mod+.', 'mod+.'],
+  ['editor.action.marker.nextInFiles', 'Go to Next Problem in Files (Error, Warning, Info)', 'f8', 'f8'],
   // 查找类:条件 editorFocus(查找面板里同样生效);查找下一个 / 上一个 mac 另有 F3 / ⇧F3(见 editor-find-keybindings)
   ['actions.find', 'Find', 'mod+f', 'mod+f', 'editorFocus'],
   ['editor.action.startFindReplaceAction', 'Replace', 'mod+alt+f', 'ctrl+h', 'editorFocus'],

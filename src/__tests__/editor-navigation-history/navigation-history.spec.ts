@@ -3,7 +3,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorView } from '@codemirror/view';
 import { EditorSelection, EditorState } from '@codemirror/state';
-import { cursorSyntaxLeft, cursorSyntaxRight, defaultKeymap, selectSyntaxLeft } from '@codemirror/commands';
+import { cursorSyntaxLeft, cursorSyntaxRight, defaultKeymap, selectSyntaxLeft, selectSyntaxRight } from '@codemirror/commands';
 
 const mocks = vi.hoisted(() => ({ readFile: vi.fn(), notifyFailure: vi.fn() }));
 vi.mock('../../panels/Editor/editor-file-deps', () => ({
@@ -159,15 +159,17 @@ describe('命令与键位', () => {
     expect(POPOUT_HOTKEY_COMMAND_IDS.has(FORWARD)).toBe(true);
   });
 
-  it('CodeMirror:Windows / Linux 去掉 Alt+← / Alt+→ 按语法跳,⇧Alt 按语法选择与 mac 的 ⌃← / ⌃→ 保留', () => {
+  it('CodeMirror:Windows / Linux 去掉 Alt+← / Alt+→ 按语法跳,mac 的 ⌃← / ⌃→ 保留;按语法选择(⇧)让给扩展 / 收缩选区', () => {
     const out = withoutAltArrowSyntaxKeys(defaultKeymap);
     const syntax = out.filter((b) => b.run === cursorSyntaxLeft || b.run === cursorSyntaxRight);
     expect(syntax.every((b) => b.key === undefined)).toBe(true);
     expect(syntax.map((b) => b.mac)).toEqual(['Ctrl-ArrowLeft', 'Ctrl-ArrowRight']);
-    expect(out.find((b) => b.run === selectSyntaxLeft)).toMatchObject({ key: 'Shift-Alt-ArrowLeft', mac: 'Shift-Ctrl-ArrowLeft' });
+    // ⇧Alt+← / ⇧Alt+→(mac ⌃⇧← / ⌃⇧→)是 VSCode 的收缩 / 扩展选区(见 src/__tests__/editor-language-commands/)
+    expect(syntax.some((b) => b.shift !== undefined)).toBe(false);
+    expect(out.some((b) => b.run === selectSyntaxLeft || b.run === selectSyntaxRight)).toBe(false);
   });
 
-  it('CodeMirror 编辑区里按 Alt+← / Alt+→ 不被吞掉(jsdom 非 mac),⇧Alt+← 仍按语法选择', () => {
+  it('CodeMirror 编辑区里按 Alt+← / Alt+→ / ⇧Alt+← 不被 CodeMirror 吞掉(jsdom 非 mac;⇧Alt+← 经注册表分发为收缩选区)', () => {
     const parent = document.createElement('div');
     document.body.appendChild(parent);
     const view = new EditorView({
@@ -182,7 +184,7 @@ describe('命令与键位', () => {
     try {
       expect(press({ key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37, altKey: true })).toBe(false);
       expect(press({ key: 'ArrowRight', code: 'ArrowRight', keyCode: 39, altKey: true })).toBe(false);
-      expect(press({ key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37, altKey: true, shiftKey: true })).toBe(true);
+      expect(press({ key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37, altKey: true, shiftKey: true })).toBe(false);
     } finally {
       view.destroy();
       parent.remove();

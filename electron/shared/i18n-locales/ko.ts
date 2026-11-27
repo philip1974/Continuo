@@ -301,6 +301,15 @@ export const ko: Record<TranslationKey, string> = {
   'commands.editor.text.unfold_all.title': '모두 펼치기',
   'commands.editor.text.jump_to_bracket.title': '대괄호로 이동',
   'commands.editor.text.cursor_undo.title': '커서 실행 취소',
+  'commands.editor.text.cursor_redo.title': '커서 다시 실행',
+  'commands.editor.text.trigger_suggest.title': '제안 트리거',
+  'commands.editor.text.smart_select_expand.title': '선택 영역 넓히기',
+  'commands.editor.text.smart_select_shrink.title': '선택 영역 좁히기',
+  'commands.editor.text.format_document.title': '문서 서식',
+  'commands.editor.text.rename.title': '기호 이름 바꾸기',
+  'commands.editor.text.reveal_definition.title': '정의로 이동',
+  'commands.editor.text.quick_fix.title': '빠른 수정...',
+  'commands.editor.text.next_problem.title': '파일의 다음 문제로 이동(오류, 경고, 정보)',
   'commands.preferences.category': '기본 설정',
   'commands.preferences.open_keybindings.title': '바로 가기 키 열기',
   'commands.preferences.select_theme.title': '색 테마',
@@ -338,6 +347,7 @@ export const ko: Record<TranslationKey, string> = {
   'commands.markdown.edit_mode.title': '편집 모드로 전환',
   'commands.markdown.source_mode.title': '소스 모드로 전환',
   'commands.markdown.preview_mode.title': '미리보기 모드로 전환',
+  'commands.markdown.toggle_preview.title': '미리 보기 전환',
 
   // panels.*
   'panels.terminal.title': '터미널',
@@ -450,6 +460,13 @@ export const ko: Record<TranslationKey, string> = {
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
   'editor.aria.content': '{name}, 편집기',
+  'editor.format.no_formatter': '“{name}” 파일에 사용할 수 있는 포맷터가 설치되어 있지 않습니다.',
+  'editor.format.json_syntax_error': '서식을 지정할 수 없습니다. 이 JSON 문서에 구문 오류가 있어 문서를 변경하지 않았습니다.',
+  'editor.rename.no_result': '기호 이름 바꾸기: 결과가 없습니다.',
+  'editor.definition.none': '정의를 찾을 수 없음',
+  'editor.definition.none_for': '“{name}”에 대한 정의를 찾을 수 없음',
+  'editor.quick_fix.none': '사용 가능한 코드 작업이 없습니다.',
+  'editor.problems.none': '작업 영역에서 문제가 감지되지 않았습니다.',
   'editor.aria.content_group': '{name}, 편집기 그룹 {n}',
   'editor.aria.group': '편집기 그룹 {n}',
   'editor.aria.preview': '{name}, 미리보기',
