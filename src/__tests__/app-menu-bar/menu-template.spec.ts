@@ -16,7 +16,7 @@ vi.mock('../../../electron/main/lib/menu-command', () => ({ sendMenuCommand: moc
 
 import { appMenuTemplate, type AppMenuActions } from '../../../electron/main/app-menu';
 import { setMenuKeybindings } from '../../../electron/main/menu-keybindings';
-import { MENU_COMMAND_IDS } from '../../../electron/shared/window-channels';
+import { EDITOR_CONTEXT_MENU_COMMAND_IDS, MENU_COMMAND_IDS } from '../../../electron/shared/window-channels';
 import { en } from '@shared/i18n-locales/en';
 import { zh } from '@shared/i18n-locales/zh';
 import { ko } from '@shared/i18n-locales/ko';
@@ -178,10 +178,11 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
     ]);
   });
 
-  it('菜单用到的命令都已登记为菜单命令、并在命令注册表里注册', () => {
+  it('菜单用到的命令都已登记为菜单命令、并在命令注册表里注册(编辑器右键菜单专用的除外)', () => {
     bootCorePlugins();
     const used = new Set(flatten(template(true)).map(commandOf).filter((id): id is string => id !== undefined));
-    expect([...used].sort()).toEqual([...MENU_COMMAND_IDS].sort());
+    const contextOnly = new Set<string>(EDITOR_CONTEXT_MENU_COMMAND_IDS);
+    expect([...used].sort()).toEqual([...MENU_COMMAND_IDS].filter((id) => !contextOnly.has(id)).sort());
     for (const id of MENU_COMMAND_IDS) expect(coApp.commands.get(id), id).toBeDefined();
   });
 

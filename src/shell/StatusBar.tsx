@@ -1,6 +1,7 @@
 // 底部状态栏(VSCode 风,24px,参考 stitch_desktop_design_reviewer)。
 // 左:workspace 名 + sidebar 收起提示。
-// 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 编码 / 行尾。
+// 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 光标位置 + 缩进 + 编码 / 行尾。
+// 可点击项占满栏高、左右留白、悬停有底色(VSCode .statusbar-item:点击区域即整格;STATUS_ITEM_BUTTON_CLASS)。
 
 import { memo, useDeferredValue, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -35,6 +36,9 @@ import { encodingLabelShort, lineEndingOf } from '@/panels/Editor/editor-encodin
 import { openChangeEncoding, openChangeEol } from '@/plugins/editor-encoding/encoding-actions';
 import { openIndentationPicker } from '@/plugins/editor-encoding/indentation-actions';
 import { useTabIndentation } from '@/panels/Editor/editor-indentation';
+import { selectionStatusLabel, useEditorSelectionStatus } from '@/panels/Editor/editor-selection-status';
+import { GOTO_LINE_COMMAND } from '@/panels/Editor/editor-commands';
+import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import type { TextEncodingId } from '../../electron/shared/text-encoding';
 
 /** MCP 复制按钮在窄状态栏下的图标(lucide copy 字形;只在容器 < xl 时显示,替代文字)。 */
@@ -55,6 +59,13 @@ const MCP_COPY_ICON = (
     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
   </svg>
 );
+
+/**
+ * 状态栏项的外框(VSCode .statusbar-item:占满栏高、左右 5px 留白)。可点击项另加悬停底色(VSCode statusBarItem.hoverBackground)
+ * 与内嵌焦点环(组容器 overflow-hidden,外扩的焦点环会被上下裁掉)。
+ */
+const STATUS_ITEM_CLASS = 'flex shrink-0 items-center self-stretch whitespace-nowrap px-1.5';
+export const STATUS_ITEM_BUTTON_CLASS = `${STATUS_ITEM_CLASS} text-fg-dim transition-colors hover:bg-hover hover:text-fg focus-visible:-outline-offset-1`;
 
 const EMPTY_STATUS_ITEMS: readonly StatusBarItemSpec[] = [];
 const EMPTY_STATUS_SPLIT = {
@@ -110,7 +121,7 @@ export function splitStatusItemsBySide(items: readonly StatusBarItemSpec[]): {
 // VSCode:状态栏条目有最大宽度、超长省略号截断,插件项不能把内置项挤没。插件项 min-w-0 + max-w-[40vw] + truncate,
 // 收缩权重 shrink-[1000] 远高于内置项(当前文件名默认 1,MCP / Agent 授权指示 shrink-0):空间不够时先缩插件项。
 // 渲染结果是字符串时 title 给出全文(截断后仍可悬停查看)。
-const PLUGIN_STATUS_ITEM_CLASS_NAME = 'min-w-0 max-w-[40vw] shrink-[1000] truncate';
+const PLUGIN_STATUS_ITEM_CLASS_NAME = 'min-w-0 max-w-[40vw] shrink-[1000] truncate px-1.5';
 
 // race(R56,R55 同族):渲染时按 id 从 live coApp.statusBar 复查再调 render(),而非调订阅快照里
 // 缓存的 item.render。快照(useRegistry useState 订阅)滞后 registry 一帧,item 刚 unregister 时
@@ -220,7 +231,7 @@ const EditorStats = memo(function EditorStats({
   );
   // 窄宽(状态栏容器 < 2xl)最先隐藏:次要信息,VSCode 空间不够时整项隐藏而不是折行。
   return (
-    <span className="whitespace-nowrap @max-2xl:hidden">
+    <span className="whitespace-nowrap px-1.5 @max-2xl:hidden">
       {t('statusbar.editor_stats', {
         lines: translateCount('statusbar.editor_stats.lines', stats?.lines ?? 0),
         words: translateCount('statusbar.editor_stats.words', stats?.words ?? 0),
@@ -252,7 +263,7 @@ const EditorEncodingItems = memo(function EditorEncodingItems({
   // native button:同 MCP 按钮(24px 状态栏内的行内文本按钮,design Button 最小高度超出状态栏);颜色走语义 token。
   // 可访问名称 = 可见文字(UTF-8 / LF),动作说明在 title(VSCode tooltip「选择编码」/「选择行尾序列」)。
   // 状态栏容器 < lg 时隐藏(在统计之后、文件名之前让位)。
-  const itemClass = 'shrink-0 whitespace-nowrap text-fg-dim hover:text-fg transition-colors @max-lg:hidden';
+  const itemClass = `${STATUS_ITEM_BUTTON_CLASS} @max-lg:hidden`;
   return (
     <>
       <button
@@ -292,11 +303,36 @@ const EditorIndentationItem = memo(function EditorIndentationItem({ tabId }: { t
       data-statusbar-indentation=""
       title={t('statusbar.indent.tooltip')}
       onClick={() => openIndentationPicker(tabId)}
-      className="shrink-0 whitespace-nowrap text-fg-dim hover:text-fg transition-colors @max-lg:hidden"
+      className={`${STATUS_ITEM_BUTTON_CLASS} @max-lg:hidden`}
     >
       {indent.insertSpaces
         ? t('statusbar.indent.spaces', { size: indent.tabSize })
         : t('statusbar.indent.tabs', { size: indent.tabSize })}
+    </button>
+  );
+});
+
+/**
+ * 光标位置项(VSCode status.editor.selection):「行 16，列 1」/「行 16，列 1（已选择12）」/「3 选择」/「3 选择（已选择 9 个字符）」,
+ * 点击 = 转到行/列(workbench.action.gotoLine)。只在代码编辑器 / Markdown 源码模式有登记(编辑 / 预览模式不显示,VSCode 的
+ * Markdown 预览同样没有)。BDD: src/__tests__/statusbar-editor-selection/
+ */
+const EditorSelectionItem = memo(function EditorSelectionItem({ tabId, groupId }: { tabId: string; groupId: string }) {
+  const t = useT();
+  const status = useEditorSelectionStatus(tabId, groupId);
+  if (!status) return null;
+  const { key, params } = selectionStatusLabel(status);
+  const tooltip = t('statusbar.selection.tooltip');
+  // native button:同缩进 / 编码项(24px 状态栏行内文本按钮);可访问名称 = 可见文字,动作说明在 title(VSCode「转到行/列」)。
+  return (
+    <button
+      type="button"
+      data-statusbar-selection=""
+      title={tooltip}
+      onClick={() => void runRegisteredCommand(coApp.commands, GOTO_LINE_COMMAND.id, tooltip)}
+      className={`${STATUS_ITEM_BUTTON_CLASS} @max-md:hidden`}
+    >
+      {t(key, params)}
     </button>
   );
 });
@@ -378,26 +414,26 @@ export function StatusBar() {
       data-statusbar=""
       data-workbench-part="statusbar"
       // 对齐 VSCode:状态栏项从不折行(条目 whitespace-nowrap / truncate),两组 min-w-0 可收缩、溢出裁掉;@container 供
-      // 窄宽按优先级隐藏(先隐藏统计,再把 MCP 按钮缩成图标)。组 self-stretch + -mx-1 px-1:overflow-hidden 不裁掉按钮焦点环。
-      className="@container flex h-statusbar shrink-0 items-center justify-between gap-3 border-t border-line bg-panel px-3 text-2xs text-fg-dim select-none"
+      // 窄宽按优先级隐藏(先隐藏统计,再把 MCP 按钮缩成图标)。组 self-stretch,项占满栏高;按钮焦点环内嵌(focus-visible:-outline-offset-1),overflow-hidden 不裁掉它。
+      className="@container flex h-statusbar shrink-0 items-center justify-between gap-3 border-t border-line bg-panel px-1.5 text-2xs text-fg-dim select-none"
     >
-      <div className="-mx-1 flex min-w-0 items-center gap-3 self-stretch overflow-hidden px-1">
+      <div className="flex min-w-0 items-center gap-0.5 self-stretch overflow-hidden">
         {root ? (
-          <span className="truncate" title={root}>
+          <span className="truncate px-1.5" title={root}>
             {basenameForChrome(root)}
           </span>
         ) : (
-          <span className="whitespace-nowrap">{t('statusbar.no_workspace')}</span>
+          <span className="whitespace-nowrap px-1.5">{t('statusbar.no_workspace')}</span>
         )}
         {!sidebarOpen && (
-          <span className="truncate">{t('statusbar.sidebar_hidden')}</span>
+          <span className="truncate px-1.5">{t('statusbar.sidebar_hidden')}</span>
         )}
         {/* 插件贡献的左侧 statusBar items(race R56:render 时 live 复查) */}
         {leftItems.map((item) => (
           <PluginStatusItem key={item.id} item={item} />
         ))}
       </div>
-      <div className="-mx-1 flex min-w-0 items-center gap-3 self-stretch overflow-hidden px-1">
+      <div className="flex min-w-0 items-center gap-0.5 self-stretch overflow-hidden">
         {/* 插件贡献的右侧 statusBar items(在内置项左边;race R56:render 时 live 复查) */}
         {rightItems.map((item) => (
           <PluginStatusItem key={item.id} item={item} />
@@ -411,7 +447,7 @@ export function StatusBar() {
           // 稳定 aria-label 表「复制 MCP 配置」,结果由下方 live region(A51)播报,按钮名不随状态漂移成结果文本。
           // WCAG 2.5.3(Label in Name):名称 = 默认可见文字(窄宽只剩图标时亦然),长说明留在 title(作可访问描述)。
           aria-label={t('statusbar.mcp.copy')}
-          className="flex shrink-0 items-center whitespace-nowrap text-fg-dim hover:text-fg transition-colors"
+          className={STATUS_ITEM_BUTTON_CLASS}
         >
           {/* 状态栏容器 < xl 时只显示图标(文字隐藏;动作语义仍在 title / aria-label,复制结果由下方 live region 播报)。 */}
           {MCP_COPY_ICON}
@@ -433,7 +469,7 @@ export function StatusBar() {
             //(SR 有可见文本时不一定读 title)→ 名称补上撤销说明;WCAG 2.5.3(Label in Name):以可见文字开头
             //(「N 个 agent，撤销授权并终止…」),语音控制按可见文字能点到。
             aria-label={t('statusbar.agent_revoke_aria', { label: agentRevokeText, action: agentRevokeTooltip })}
-            className="flex shrink-0 items-center gap-1 whitespace-nowrap text-accent hover:text-fg transition-colors"
+            className={`${STATUS_ITEM_CLASS} gap-1 text-accent transition-colors hover:bg-hover hover:text-fg focus-visible:-outline-offset-1`}
           >
             <span aria-hidden>●</span>
             {agentRevokeText}
@@ -441,7 +477,7 @@ export function StatusBar() {
         )}
         {activeFilePath !== null && !editorHidden ? (
           <>
-            <span className="truncate max-w-[280px]" title={isUntitledPath(activeFilePath) ? editorTabTitle(activeFilePath) : activeFilePath}>
+            <span className="truncate max-w-[280px] px-1.5" title={isUntitledPath(activeFilePath) ? editorTabTitle(activeFilePath) : activeFilePath}>
               {editorTabTitle(activeFilePath)}
               {activeDirty && (
                 <>
@@ -457,6 +493,9 @@ export function StatusBar() {
             </span>
             {/* 图片 tab 的内容是 stat 指纹,不是文本:不显示统计(尺寸 / 大小在图片视图里)。 */}
             {!isImagePreviewPath(activeFilePath) && <EditorStats tabId={activeTabId} content={activeContent} />}
+            {!isImagePreviewPath(activeFilePath) && activeTabId !== null && !activeMilkdown && mainGroupId !== null && (
+              <EditorSelectionItem tabId={activeTabId} groupId={mainGroupId} />
+            )}
             {!isImagePreviewPath(activeFilePath) && activeTabId !== null && !activeMilkdown && (
               <EditorIndentationItem tabId={activeTabId} />
             )}

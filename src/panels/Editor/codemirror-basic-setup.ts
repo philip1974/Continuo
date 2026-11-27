@@ -15,7 +15,7 @@
 // 只改 basicSetup 里那一份键表与列选择,其余扩展原样;用公开 API(EditorState.facet)按元素找出它们(键表含 gotoLine、列选择提供
 // mouseSelectionStyle),不依赖数组下标;十字光标是紧随列选择的配套元素(codemirror 包的固定搭配,另以 contentAttributes 核对)。
 // BDD: src/__tests__/editor-goto-line/、src/__tests__/editor-navigation-history/、src/__tests__/editor-text-commands/、
-// src/__tests__/editor-find-keybindings/
+// src/__tests__/editor-find-keybindings/、src/__tests__/editor-line-number-select/
 
 import { basicSetup } from 'codemirror';
 import { EditorState, type Extension } from '@codemirror/state';
@@ -23,6 +23,7 @@ import { EditorView, keymap, rectangularSelection, type KeyBinding } from '@code
 import { gotoLine } from '@codemirror/search';
 import { cursorSyntaxLeft, cursorSyntaxRight } from '@codemirror/commands';
 import { ROUTED_KEYMAP_COMMANDS } from './codemirror-text-commands';
+import { lineNumberSelect } from './codemirror-line-number-select';
 
 /** 去掉 CodeMirror 自带的转到行小面板(纯函数;其余绑定原样返回)。 */
 export function withoutConflictingSearchKeys(bindings: readonly KeyBinding[]): KeyBinding[] {
@@ -85,6 +86,8 @@ function buildBasicSetup(): Extension {
         : ext,
     );
   }
+  // 单击 / 拖动 / ⇧ 单击行号选整行(VSCode 同;BDD: src/__tests__/editor-line-number-select/)
+  out.push(lineNumberSelect);
   return out;
 }
 

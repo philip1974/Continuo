@@ -34,7 +34,7 @@ import { coApp } from '@/plugins/co-app';
 import { PluginRenderBoundary } from '@/plugins/PluginRenderBoundary';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { findEditorFileTabById } from './editor-tab-lookup';
-import { editorTabTitle, isUntitledPath } from './untitled';
+import { editorTabTitle, isUntitledPath, newUntitledFile } from './untitled';
 import {
   filterVisible,
   isEditorActionVisible,
@@ -99,6 +99,15 @@ function focusEditorContentNextFrame(header: HTMLElement | null): void {
     if (!focusWithinOrLost(header.ownerDocument, host)) return;
     header.querySelector<HTMLElement>('[role=tab][aria-selected="true"]')?.focus();
   });
+}
+
+/**
+ * 双击是否落在 tab 栏空白处(VSCode multiEditorTabsControl:dblclick 的目标是 tab 容器本身才新建无标题文件):目标是外层容器或
+ * tablist 本身(tab 之后的空白、tab 之间的缝),不是某个 tab / 按钮。
+ */
+export function isTabBarBlankTarget(target: EventTarget | null, container: Element): boolean {
+  if (target === container) return true;
+  return target instanceof Element && target.parentElement === container && target.getAttribute('role') === 'tablist';
 }
 
 /** tab 栏两侧渐隐遮罩:只在该方向确有被遮住的 tab 时显示(溢出提示)。 */
@@ -414,7 +423,17 @@ export const EditorHeader = memo(function EditorHeader({
       {...tabBarDrop.props}
     >
       {/* 溢出:tab 栏横向滚动(不显示滚动条,竖向滚轮也可滚),两侧渐隐遮罩提示还有被遮住的 tab。 */}
-      <div ref={tabsWrapperRef} className="relative flex min-w-0 flex-1" onWheel={scrollTabsOnWheel}>
+      <div
+        ref={tabsWrapperRef}
+        className="relative flex min-w-0 flex-1"
+        onWheel={scrollTabsOnWheel}
+        // 双击空白处 → 在本组新建无标题文件(VSCode 同;BDD: src/__tests__/editor-tabbar-new-untitled/)
+        onDoubleClick={(e) => {
+          if (!isTabBarBlankTarget(e.target, e.currentTarget)) return;
+          e.preventDefault();
+          newUntitledFile(groupId);
+        }}
+      >
       {/* a11y(A107):给 tablist 注入本地化组名(design 层无 i18n)。 */}
       <TabNav
         className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]"

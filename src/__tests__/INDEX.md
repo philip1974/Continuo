@@ -556,6 +556,7 @@
 ## [可编辑元素原生右键菜单](./edit-context-menu/README.md)
 
 - [`edit-context-menu.spec.ts`](./edit-context-menu/edit-context-menu.spec.ts)
+- [`editor-context-marker.spec.ts`](./edit-context-menu/editor-context-marker.spec.ts)
 
 ## [编辑区可访问名称(对齐 VSCode 编辑器名称,WCAG 4.1.2)](./editor-accessible-name/README.md)
 
@@ -655,6 +656,10 @@
 
 - [`json-format.spec.ts`](./editor-language-commands/json-format.spec.ts)
 - [`language-commands.spec.ts`](./editor-language-commands/language-commands.spec.ts)
+
+## [行号栏鼠标选行(对齐 VSCode)](./editor-line-number-select/README.md)
+
+- [`line-number-select.spec.ts`](./editor-line-number-select/line-number-select.spec.ts)
 
 ## [editor-markdown-autolink-edit](./editor-markdown-autolink-edit/README.md)
 
@@ -778,6 +783,10 @@
 - [`conflict-diff-panel.spec.tsx`](./editor-save-conflict-compare/conflict-diff-panel.spec.tsx)
 - [`conflict-diff-persistence.spec.ts`](./editor-save-conflict-compare/conflict-diff-persistence.spec.ts)
 
+## [滚动超过最后一行(editor.scrollBeyondLastLine)](./editor-scroll-beyond-last-line/README.md)
+
+- [`scroll-beyond-last-line.spec.tsx`](./editor-scroll-beyond-last-line/scroll-beyond-last-line.spec.tsx)
+
 ## [editor-search-git-decorations(编辑器 tab 标题 / 搜索结果文件名按 git 状态着色)](./editor-search-git-decorations/README.md)
 
 - [`contrast.spec.ts`](./editor-search-git-decorations/contrast.spec.ts)
@@ -797,6 +806,10 @@
 ## [editor-store (M-Editor Step E1)](./editor-store/README.md)
 
 - [`editor-store.spec.ts`](./editor-store/editor-store.spec.ts)
+
+## [双击编辑器 tab 栏空白处新建无标题文件](./editor-tabbar-new-untitled/README.md)
+
+- [`tabbar-dblclick.spec.tsx`](./editor-tabbar-new-untitled/tabbar-dblclick.spec.tsx)
 
 ## [常用编辑器(CodeMirror)命令进命令注册表](./editor-text-commands/README.md)
 
@@ -2027,6 +2040,14 @@
 ## [statusbar-copy-feedback-timer](./statusbar-copy-feedback-timer/)
 
 - [`copy-feedback-timer.spec.tsx`](./statusbar-copy-feedback-timer/copy-feedback-timer.spec.tsx)
+
+## [状态栏光标位置「行 X，列 Y」](./statusbar-editor-selection/README.md)
+
+- [`statusbar-selection.spec.tsx`](./statusbar-editor-selection/statusbar-selection.spec.tsx)
+
+## [状态栏项的点击区域与悬停底色](./statusbar-item-hit-area/README.md)
+
+- [`statusbar-hit-area.spec.tsx`](./statusbar-item-hit-area/statusbar-hit-area.spec.tsx)
 
 ## [statusbar-stats-plural(状态栏行 / 词 / 字符统计的单复数)](./statusbar-stats-plural/README.md)
 

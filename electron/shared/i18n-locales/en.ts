@@ -36,6 +36,10 @@ export const en = {
   'menu.edit.copy': 'Copy',
   'menu.edit.paste': 'Paste',
   'menu.edit.select_all': 'Select All',
+  // 编辑器右键菜单追加项(VSCode EditorContext:changeAll.label / formatDocument.label / commandPalette)
+  'menu.editor_context.change_all': 'Change All Occurrences',
+  'menu.editor_context.format_document': 'Format Document',
+  'menu.editor_context.command_palette': 'Command Palette...',
 
   // 应用菜单:role 项的三语标签(Electron role 默认标签只有英文);「设置…」(BDD: command-discoverability)
   'menu.app.about': 'About {name}',
@@ -307,6 +311,7 @@ export const en = {
   'commands.editor.text.outdent_lines.title': 'Outdent Line',
   'commands.editor.text.add_next_match.title': 'Add Selection to Next Find Match',
   'commands.editor.text.select_highlights.title': 'Select All Occurrences of Find Match',
+  'commands.editor.text.change_all.title': 'Change All Occurrences',
   'commands.editor.text.cursor_above.title': 'Add Cursor Above',
   'commands.editor.text.cursor_below.title': 'Add Cursor Below',
   'commands.editor.text.expand_line_selection.title': 'Expand Line Selection',
@@ -415,6 +420,7 @@ export const en = {
   'settings.editor.line_height': 'Line height',
   'settings.editor.show_line_numbers': 'Show line numbers',
   'settings.editor.word_wrap': 'Word wrap',
+  'settings.editor.scroll_beyond_last_line': 'Scroll beyond last line',
   'settings.editor.tab_size': 'Tab size',
   'settings.editor.insert_spaces': 'Insert spaces',
   'settings.editor.detect_indentation': 'Detect indentation',
@@ -455,6 +461,7 @@ export const en = {
   'settings.editor.line_height.desc': 'Line height of the code editor. 0 computes it from the font size; values below 8 are a multiplier of the font size; 8 or more are pixels.',
   'settings.editor.show_line_numbers.desc': 'Whether the code editor shows line numbers (also controls fold markers).',
   'settings.editor.word_wrap.desc': 'Wrap long lines at the editor width in the code editor (toggle with the “Toggle Word Wrap” command).',
+  'settings.editor.scroll_beyond_last_line.desc': 'Controls whether the editor will scroll beyond the last line.',
   'settings.editor.tab_size.desc': 'The number of spaces a tab is equal to, and the indentation width when indenting with spaces. Overridden based on the file contents when “Detect indentation” is on.',
   'settings.editor.insert_spaces.desc': 'Insert spaces when pressing Tab or indenting (Makefile and Go use tabs by default). Overridden based on the file contents when “Detect indentation” is on.',
   'settings.editor.detect_indentation.desc': 'When a file is opened, detect its tab size and whether it uses spaces or tabs from its contents.',
@@ -887,6 +894,12 @@ export const en = {
   'statusbar.indent.spaces': 'Spaces: {size}',
   'statusbar.indent.tabs': 'Tab Size: {size}',
   'statusbar.indent.tooltip': 'Select Indentation',
+  // 光标位置项(VSCode status.editor.selection:singleSelection / singleSelectionRange / multiSelection / multiSelectionRange / gotoLine)
+  'statusbar.selection.single': 'Ln {line}, Col {col}',
+  'statusbar.selection.single_range': 'Ln {line}, Col {col} ({chars} selected)',
+  'statusbar.selection.multi': '{count} selections',
+  'statusbar.selection.multi_range': '{count} selections ({chars} characters selected)',
+  'statusbar.selection.tooltip': 'Go to Line/Column',
   'statusbar.editor_stats.lines_one': '{count} line',
   'statusbar.editor_stats.lines_other': '{count} lines',
   'statusbar.editor_stats.words_one': '{count} word',

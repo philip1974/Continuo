@@ -17,6 +17,7 @@
    | `editor.action.indentLines` / `outdentLines` | Indent Line / Outdent Line | ⌘] / ⌘[ | Ctrl+] / Ctrl+[ |
    | `editor.action.addSelectionToNextFindMatch` | Add Selection to Next Find Match | ⌘D | Ctrl+D |
    | `editor.action.selectHighlights` | Select All Occurrences of Find Match | ⇧⌘L | Ctrl+Shift+L |
+   | `editor.action.changeAll` | Change All Occurrences(同 selectHighlights 实现;编辑器右键菜单第一项) | ⌘F2 | Ctrl+F2 |
    | `editor.action.insertCursorAbove` / `insertCursorBelow` | Add Cursor Above / Below | ⌥⌘↑ / ⌥⌘↓ | Ctrl+Alt+↑ / ↓ |
    | `expandLineSelection` | Expand Line Selection | ⌘L | Ctrl+L |
    | `editor.fold` / `editor.unfold` | Fold / Unfold | ⌥⌘[ / ⌥⌘] | Ctrl+Shift+[ / ] |

@@ -15,7 +15,7 @@ import { EditorView } from 'codemirror';
 import { codeEditorBasicSetup } from './codemirror-basic-setup';
 import { codeEditorTextCommands } from './codemirror-text-commands';
 import { Compartment, EditorState, StateEffect, type Extension } from '@codemirror/state';
-import { keymap, type ViewUpdate } from '@codemirror/view';
+import { keymap, scrollPastEnd, type ViewUpdate } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
@@ -33,6 +33,7 @@ import {
   EDITOR_DETECT_INDENTATION,
   EDITOR_INSERT_SPACES,
   EDITOR_LINE_NUMBERS,
+  EDITOR_SCROLL_BEYOND_LAST_LINE,
   EDITOR_TAB_SIZE,
   EDITOR_WORD_WRAP,
 } from '@/plugins/settings/core-setting-specs';
@@ -73,6 +74,8 @@ import { lastSeparatorIndex } from '@/lib/path-cross';
 import { detectLineEnding } from './editor-encoding';
 import { codeMirrorMediaDrop } from './codemirror-media-drop';
 import { ensureTabIndentation, indentUnitText, useTabIndentation, type IndentOptions } from './editor-indentation';
+import { clearEditorSelectionStatus, selectionStatusOf, setEditorSelectionStatus } from './editor-selection-status';
+import { codeEditorContextMenuMarker } from './codemirror-context-menu';
 
 interface CodeEditorProps {
   tabId: string;
@@ -291,6 +294,13 @@ export function CodeEditor({
   const latestWrapRef = useRef(wordWrap);
   latestWrapRef.current = wordWrap;
   const appliedWrapRef = useRef(wordWrap);
+  // 滚动超过最后一行(设置 editor.scrollBeyondLastLine,默认开;CodeMirror scrollPastEnd):变化时 reconfigure。
+  // BDD: src/__tests__/editor-scroll-beyond-last-line/
+  const scrollPastEndCompartment = useRef(new Compartment());
+  const scrollBeyondLastLine = useSettingValue(EDITOR_SCROLL_BEYOND_LAST_LINE.id, EDITOR_SCROLL_BEYOND_LAST_LINE.default);
+  const latestScrollBeyondRef = useRef(scrollBeyondLastLine);
+  latestScrollBeyondRef.current = scrollBeyondLastLine;
+  const appliedScrollBeyondRef = useRef(scrollBeyondLastLine);
   // 缩进(indentUnit + tabSize):打开时按设置 / 内容推断,之后随状态栏缩进项 / 命令 / 设置变化 reconfigure(BDD: src/__tests__/editor-indentation/)。
   const indentCompartment = useRef(new Compartment());
   const indentation = useTabIndentation(tabId);
@@ -351,7 +361,11 @@ export function CodeEditor({
     appliedLabelRef.current = editorContentLabel(fileName, groupNumber);
     eolRef.current = detectLineEnding(value);
     appliedWrapRef.current = latestWrapRef.current;
+    appliedScrollBeyondRef.current = latestScrollBeyondRef.current;
     appliedIndentRef.current = ensureTabIndentation(tabId, fileName, value, indentSettings);
+
+    const publishSelectionStatus = (state: EditorState) =>
+      setEditorSelectionStatus(tabId, groupId, selectionStatusOf(state, eolRef.current.length));
 
     const extensions: Extension[] = [
       // basicSetup 去掉与 VSCode 冲突的查找键(⌘⌥G 转到行小面板、Win/Linux 的 Ctrl+G 查找下一个),⌃G 归 workbench.action.gotoLine。
@@ -372,6 +386,7 @@ export function CodeEditor({
       labelCompartment.current.of(codeMirrorContentLabel(appliedLabelRef.current)),
       langCompartment.current.of(lang),
       wrapCompartment.current.of(appliedWrapRef.current ? EditorView.lineWrapping : []),
+      scrollPastEndCompartment.current.of(appliedScrollBeyondRef.current ? scrollPastEnd() : []),
       // 回车自动缩进 / Tab / ⇧Tab / ⌘] / ⌘[ 都按文档缩进(4 空格文件缩 4 格,tab 文件插 tab;此前写死 CodeMirror 默认 2 空格)
       indentCompartment.current.of(indentationExtension(appliedIndentRef.current)),
       debugDecorationsExtension(),
@@ -382,6 +397,8 @@ export function CodeEditor({
       codeMirrorMediaDrop({ documentPath: () => fileNameRef.current, markdown: forceLanguage === 'markdown' }),
       // Markdown 源码模式 Cmd/Ctrl+click 链接跳转(含 `#标题` 锚点;BDD: src/__tests__/markdown-anchor-links/)
       markdownLinkClickExtension(() => onLinkClickRef.current),
+      // 右键菜单追加编辑器项(更改所有匹配项 / 格式化文档 / 命令面板;BDD: src/__tests__/edit-context-menu/)
+      codeEditorContextMenuMarker,
       EditorView.updateListener.of((update: ViewUpdate) => {
         if (
           update.docChanged &&
@@ -397,6 +414,10 @@ export function CodeEditor({
         suppressNextChange.current = false;
         // 选区变化 → 会话快照的视图状态可能变了(关窗 / 退出时重取;BDD: src/__tests__/editor-state-restart/)
         if (update.selectionSet) markEditorViewStateChanged();
+        // 状态栏「行 X，列 Y」(BDD: src/__tests__/statusbar-editor-selection/)
+        if (update.selectionSet || update.docChanged || update.startState.tabSize !== update.state.tabSize) {
+          publishSelectionStatus(update.state);
+        }
       }),
       EditorView.domEventObservers({
         scroll: (_e, v) => {
@@ -452,6 +473,7 @@ export function CodeEditor({
     // 初始滚动要等视图有高度才应用;在那之前(所在面板隐藏 / 尚未显示)的快照按它记,不记成「滚在顶部」
     if (scrollTo) rememberInitialCodeEditorScroll(view, scrollTo, anchor?.topLine ?? seed?.topLine ?? saved?.topLine ?? 1);
     viewRef.current = view;
+    publishSelectionStatus(view.state);
     useEditorStore.getState().registerView(tabId, view, groupId);
     const unregisterFocus = registerEditorFocus(tabId, () => view.focus(), groupId);
     // popout 弹出 / 收回只移 DOM:按所在文档重绑 root(创建时面板 DOM 可能已不在主窗,先对齐一次)。
@@ -464,6 +486,7 @@ export function CodeEditor({
       unregisterRoot();
       unregisterFocus();
       useEditorStore.getState().unregisterView(tabId, view);
+      clearEditorSelectionStatus(tabId, groupId);
       view.destroy();
       viewRef.current = null;
     };
@@ -601,6 +624,13 @@ export function CodeEditor({
     appliedWrapRef.current = wordWrap;
     view.dispatch({ effects: wrapCompartment.current.reconfigure(wordWrap ? EditorView.lineWrapping : []) });
   }, [wordWrap]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || appliedScrollBeyondRef.current === scrollBeyondLastLine) return;
+    appliedScrollBeyondRef.current = scrollBeyondLastLine;
+    view.dispatch({ effects: scrollPastEndCompartment.current.reconfigure(scrollBeyondLastLine ? scrollPastEnd() : []) });
+  }, [scrollBeyondLastLine]);
 
   useEffect(() => {
     const view = viewRef.current;

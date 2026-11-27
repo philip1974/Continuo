@@ -30,10 +30,12 @@ function chromeTheme(dark: boolean): Extension {
       '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
         { backgroundColor: SELECTION },
       '.cm-activeLine': { backgroundColor: 'var(--md-state-hover)' },
+      // 行号 / 折叠栏不参与文字选择(VSCode 同):在正文里拖选经过 gutter、或在行号上拖动选行时,行号数字不会被选中 / 复制
       '.cm-gutters': {
         backgroundColor: 'var(--md-surface)',
         color: 'var(--md-fg-dim)',
         border: 'none',
+        userSelect: 'none',
       },
       '.cm-activeLineGutter': { backgroundColor: 'var(--md-state-hover)', color: 'var(--md-on-surface-variant)' },
       '.cm-foldPlaceholder': {

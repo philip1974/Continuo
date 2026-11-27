@@ -101,6 +101,9 @@ export interface WindowViewActionTarget {
   readonly popoutName?: string;
 }
 
+/** 只出现在代码编辑器右键菜单里的菜单命令(edit-context-menu:更改所有匹配项 / 格式化文档;命令面板同时在应用菜单里)。 */
+export const EDITOR_CONTEXT_MENU_COMMAND_IDS = ['editor.action.changeAll', 'editor.action.formatDocument'] as const;
+
 /**
  * 应用菜单项即 renderer 命令(对齐 VSCode 菜单栏 MenuId.MenubarXxx 的命令项):main 只认这些 id 发 RUN_MENU_COMMAND,renderer
  * 只执行这些 id。菜单上的 accelerator 由 renderer 推送的生效键位换算(SET_MENU_KEYBINDINGS),只作显示:按键由 renderer 的
@@ -134,6 +137,8 @@ export const MENU_COMMAND_IDS = [
   'editor.action.insertCursorBelow',
   'editor.action.addSelectionToNextFindMatch',
   'editor.action.selectHighlights',
+  // 编辑器右键菜单专用(不在应用菜单栏里;VSCode 同),见 EDITOR_CONTEXT_MENU_COMMAND_IDS
+  ...EDITOR_CONTEXT_MENU_COMMAND_IDS,
   // 显示
   'workbench.action.showCommands',
   'workbench.view.explorer',

@@ -36,6 +36,8 @@ const NO_PLURAL_NEEDED: Record<string, string> = {
   'statusbar.mcp.revoke_tooltip': '无可数名词(… N in this window)',
   'errors.folder.batch_failed': '无可数名词(N failed)',
   'settings.panel.matched': '无可数名词(Matched N)',
+  'statusbar.selection.multi': '仅多个光标(≥2)时显示(1 个用 statusbar.selection.single)',
+  'statusbar.selection.multi_range': '仅多个光标(≥2)时显示;characters 随 VSCode 不分单复数',
   'permissions.prompt.grant_selected': '无可数名词(Grant selected (N))',
   'dialog.unsaved_close.message': '仅多个文件(≥2)时使用(1 个用 panels.editor.save_changes_title 写文件名)',
 };

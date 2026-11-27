@@ -165,6 +165,8 @@ const RUNNERS: Readonly<Record<string, Command>> = {
   'editor.action.outdentLines': indentLess,
   'editor.action.addSelectionToNextFindMatch': selectNextOccurrence,
   'editor.action.selectHighlights': selectHighlights,
+  // 更改所有匹配项(⌘F2):VSCode CompatChangeAll 与 selectHighlights 同一实现(multiCursorController.selectAll)
+  'editor.action.changeAll': selectHighlights,
   'editor.action.insertCursorAbove': addCursorAbove,
   'editor.action.insertCursorBelow': addCursorBelow,
   expandLineSelection,

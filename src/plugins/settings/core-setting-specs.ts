@@ -103,6 +103,23 @@ export const EDITOR_WORD_WRAP: CoreSettingSpec<boolean> = {
 };
 
 /**
+ * 滚动超过最后一行(VSCode editor.scrollBeyondLastLine,默认开):代码编辑器与 Markdown 源码模式可以把最后一行滚到顶部(CodeMirror
+ * scrollPastEnd;VSCode 对 Markdown 无语言级覆盖)。BDD: src/__tests__/editor-scroll-beyond-last-line/
+ */
+export const EDITOR_SCROLL_BEYOND_LAST_LINE: CoreSettingSpec<boolean> = {
+  id: 'editor.scrollBeyondLastLine',
+  category: 'editor',
+  group: 'appearance',
+  groupKey: 'settings.group.appearance',
+  title: 'Scroll beyond last line',
+  titleKey: 'settings.editor.scroll_beyond_last_line',
+  descriptionKey: 'settings.editor.scroll_beyond_last_line.desc',
+  type: 'boolean',
+  default: true,
+  priority: 3.5,
+};
+
+/**
  * 缩进(VSCode editor.tabSize / editor.insertSpaces / editor.detectIndentation,默认 4 / 开 / 开):打开文档时的缩进默认值;
  * 检测开着时按内容推断(推断不出用默认值)。Makefile / Go 默认用 tab(VSCode 内置语言默认)。改设置 → 已打开文档即时按新设置重定。
  * BDD: src/__tests__/editor-indentation/

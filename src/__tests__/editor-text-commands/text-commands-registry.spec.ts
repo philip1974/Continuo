@@ -28,6 +28,7 @@ const EXPECTED: readonly (readonly [string, string, string | undefined, string |
   ['editor.action.outdentLines', 'Outdent Line', 'mod+[', 'mod+['],
   ['editor.action.addSelectionToNextFindMatch', 'Add Selection to Next Find Match', 'mod+d', 'mod+d'],
   ['editor.action.selectHighlights', 'Select All Occurrences of Find Match', 'mod+shift+l', 'mod+shift+l'],
+  ['editor.action.changeAll', 'Change All Occurrences', 'mod+f2', 'mod+f2'],
   ['editor.action.insertCursorAbove', 'Add Cursor Above', 'mod+alt+up', 'ctrl+alt+up'],
   ['editor.action.insertCursorBelow', 'Add Cursor Below', 'mod+alt+down', 'ctrl+alt+down'],
   ['expandLineSelection', 'Expand Line Selection', 'mod+l', 'mod+l'],

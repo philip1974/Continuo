@@ -60,6 +60,8 @@ export const EDITOR_TEXT_COMMANDS: readonly TextCommandDef[] = [
     title: 'Select All Occurrences of Find Match',
     mac: 'mod+shift+l',
   },
+  // 更改所有匹配项(VSCode editor.action.changeAll,⌘F2 / Ctrl+F2;编辑器右键菜单第一项):选中所有匹配项的同一实现
+  { id: 'editor.action.changeAll', key: 'change_all', title: 'Change All Occurrences', mac: 'mod+f2' },
   { id: 'editor.action.insertCursorAbove', key: 'cursor_above', title: 'Add Cursor Above', mac: 'mod+alt+up', other: 'ctrl+alt+up' },
   {
     id: 'editor.action.insertCursorBelow',
