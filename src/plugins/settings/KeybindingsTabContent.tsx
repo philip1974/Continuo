@@ -33,6 +33,7 @@ import { ResetIcon } from '@/lib/ui-icons';
 import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { isSortedBy } from '@/lib/is-sorted-by';
+import { renderTemplate } from '@/lib/render-template';
 import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 import { byDisplayTitle } from '@/plugins/command-palette/by-display-title';
 import { reservedHotkeyOfCommand, reservedPickerHotkeyOf } from '@/plugins/picker/use-picker-toggle-hotkey';
@@ -465,14 +466,19 @@ export function KeybindingsTabContent() {
             {t('keybindings.summary', { total: displayCommands.length, bound: boundCount })}
           </span>
           <span aria-hidden="true">·</span>
-          <span>{t('keybindings.palette_hint_prefix')}</span>
-          {/* 键帽组整体不换行:窄宽时 ⇧⌘ 与 P 不被拆到两行。 */}
-          <span data-testid="keybindings-palette-keys" className="inline-flex items-center gap-0.5 whitespace-nowrap">
-            {COMMAND_PALETTE_HOTKEY_PARTS.map((p, i) => (
-              <KeyCap key={i}>{p}</KeyCap>
-            ))}
+          {/* 整句模板(`{keys}` 占位):键帽与前后文字的间距由各语言文案决定 —— ko 助词「로」须紧贴键帽,不能由 flex 间距
+              插进空格。键帽组整体不换行:窄宽时 ⇧⌘ 与 P 不被拆到两行。 */}
+          <span data-testid="keybindings-palette-hint">
+            {renderTemplate(t('keybindings.palette_hint'), {
+              keys: (
+                <span data-testid="keybindings-palette-keys" className="inline-flex items-center gap-0.5 whitespace-nowrap">
+                  {COMMAND_PALETTE_HOTKEY_PARTS.map((p, i) => (
+                    <KeyCap key={i}>{p}</KeyCap>
+                  ))}
+                </span>
+              ),
+            })}
           </span>
-          <span>{t('keybindings.palette_hint_suffix')}</span>
         </div>
       </div>
 
@@ -537,7 +543,10 @@ export function KeybindingsTabContent() {
                           {d.displayTitle}
                         </span>
                         <Badge size="xs" className={KEYBINDING_ID_BADGE_CLASS_NAME}>
-                          <code className="truncate">{cmd.id}</code>
+                          {/* 窄宽截断时悬停看完整命令 id */}
+                          <code className="truncate" title={cmd.id}>
+                            {cmd.id}
+                          </code>
                         </Badge>
                         {d.reserved && (
                           <span className="shrink-0 text-2xs text-error">{t('keybindings.reserved_inactive')}</span>

@@ -91,12 +91,14 @@ export async function walkWorkspaceFiles(
   let fileCount = 0;
   for (const e of r.data) {
     if (e.isDirectory) continue;
-    const relPath = stripRootPrefix(rootPath, e.path);
+    // 显示与匹配用 NFC(VSCode macOS 上 pfs.readdir 即 normalizeNFC):磁盘上 NFD 的名字(如从 HFS+ / 部分工具来的
+    // `회의록.md`)与输入法键入的 NFC 查询码元不同,不归一则一个字也搜不到。打开仍用磁盘原样的 absPath。
+    const relPath = stripRootPrefix(rootPath, e.path).normalize('NFC');
     files[fileCount] = {
       absPath: e.path,
       relPath,
       relPathLower: relPath.toLowerCase(), // perf P16:scan 时预算一次
-      name: e.name,
+      name: e.name.normalize('NFC'),
     };
     fileCount += 1;
     if (fileCount >= maxFiles) break;

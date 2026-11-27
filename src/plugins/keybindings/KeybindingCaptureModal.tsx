@@ -3,7 +3,7 @@
 // Backspace=清空(用户可保存空 = unbind),无修饰 Enter=保存已录组合(VSCode 录键框同款,故 Enter 单键不可录),
 // 其它键 = 当前组合。打开时焦点落在录制区(data-autofocus)。
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button, KeyCap, Modal } from '@/design';
 import {
   canonicalHotkey,
@@ -17,6 +17,7 @@ import { useT, useTWithFallback } from '@/i18n';
 import { resolveEffectiveHotkeys } from './keybindings-store';
 import { eventHotkeyKey } from '@/plugins/command-palette/event-hotkey-key';
 import { useStableCallback } from '@/lib/use-stable-callback';
+import { renderTemplate } from '@/lib/render-template';
 import {
   reservedHotkeyOfCommand,
   reservedPickerHotkeyOf,
@@ -34,18 +35,6 @@ const HINT_KEYCAPS: Readonly<Record<string, ReactNode>> = {
   backspace: <KeyCap>{formatHotkeyParts('backspace', PLATFORM)}</KeyCap>,
   escape: <KeyCap>{formatHotkeyParts('escape', PLATFORM)}</KeyCap>,
 };
-
-/**
- * 按 `{name}` 占位把整句文案切成文本与节点(键帽 / 命令名)。标点与间距由各语言的整句模板决定(zh 全角标点),
- * 不再由组件在片段之间补半角空格。未知占位原样保留。
- */
-function renderTemplate(template: string, nodes: Readonly<Record<string, ReactNode>>): ReactNode[] {
-  return template.split(/(\{[a-z]+\})/).map((part, i) => {
-    const name = /^\{[a-z]+\}$/.test(part) ? part.slice(1, -1) : '';
-    const node = name && Object.hasOwn(nodes, name) ? nodes[name] : undefined;
-    return <Fragment key={i}>{node ?? part}</Fragment>;
-  });
-}
 
 function appendComboPart(combo: string, part: string): string {
   return combo ? `${combo}+${part}` : part;

@@ -223,7 +223,9 @@ export function SettingItemRow({
               </span>
               {/* id chip:design Badge xs(浅底)+ <code> 等宽紧贴 title 显示,取代独占一行;不 uppercase —— id 区分大小写 */}
               <Badge size="xs" className="min-w-0 max-w-full">
-                <code className="min-w-0 truncate">{spec.id}</code>
+                <code className="min-w-0 truncate" title={spec.id}>
+                  {spec.id}
+                </code>
               </Badge>
               {/* 「更多操作」(VSCode 设置项左侧齿轮):悬停 / 行内有焦点 / 菜单打开时显示,点击在按钮处打开同一菜单 */}
               <IconButton

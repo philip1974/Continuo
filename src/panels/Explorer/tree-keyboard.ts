@@ -67,7 +67,8 @@ export function findTypeAheadIndex(
 ): number {
   const n = names.length;
   if (n === 0 || query.length === 0) return -1;
-  const q = query.toLowerCase();
+  // NFC:磁盘上 NFD 的名字(如 é = e + 组合重音)与键入的 NFC 字符对得上(VSCode macOS 上文件名读出即 NFC)。
+  const q = query.normalize('NFC').toLowerCase();
   const first = q[0]!;
   let repeated = true;
   for (let i = 1; i < q.length; i++) {
@@ -80,7 +81,7 @@ export function findTypeAheadIndex(
   const start = repeated ? fromIndex + 1 : fromIndex;
   for (let k = 0; k < n; k++) {
     const i = (((start + k) % n) + n) % n;
-    if (names[i]!.toLowerCase().startsWith(prefix)) return i;
+    if (names[i]!.normalize('NFC').toLowerCase().startsWith(prefix)) return i;
   }
   return -1;
 }

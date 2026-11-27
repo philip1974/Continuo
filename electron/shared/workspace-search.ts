@@ -280,7 +280,8 @@ function splitGlobList(text: string): string[] {
  */
 export function compileGlobList(text: string): ((relPath: string) => boolean) | null {
   const sources: string[] = [];
-  for (const raw of splitGlobList(text)) {
+  // 模式与路径两侧都按 NFC 比(VSCode macOS 上文件名读出即 normalizeNFC):磁盘上 NFD 的韩文 / 带重音名与键入的 NFC 模式对得上。
+  for (const raw of splitGlobList(text.normalize('NFC'))) {
     let g = raw.trim().replace(/\\/g, '/');
     if (g === '') continue;
     if (g.startsWith('./')) g = g.slice(2);
@@ -292,7 +293,7 @@ export function compileGlobList(text: string): ((relPath: string) => boolean) | 
   }
   if (sources.length === 0) return null;
   const re = new RegExp(`^(?:${sources.join('|')})(?:/.*)?$`, 'i');
-  return (relPath) => re.test(relPath);
+  return (relPath) => re.test(relPath.normalize('NFC'));
 }
 
 /** 包含 + 排除 → 文件过滤器(排除优先;都空 → null)。 */

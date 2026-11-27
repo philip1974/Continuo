@@ -191,7 +191,7 @@ export function PluginsTabContent() {
             >
               <div className="w-32 shrink-0 text-fg-muted">{t(row.labelKey)}</div>
               <div className="w-8 shrink-0 text-right tabular-nums text-fg">{row.count}</div>
-              <div className="min-w-32 flex-1 truncate font-mono text-2xs text-fg-dim">
+              <div className="min-w-32 flex-1 truncate font-mono text-2xs text-fg-dim" title={row.samplesText}>
                 {row.samplesText}
               </div>
             </div>
@@ -212,7 +212,9 @@ export function PluginsTabContent() {
                 <div className="mt-1 text-fg-muted">{t(p.descKey)}</div>
               </div>
               <Badge size="xs" className="min-w-0 max-w-[40%]">
-                <code className="truncate">{p.id}</code>
+                <code className="truncate" title={p.id}>
+                  {p.id}
+                </code>
               </Badge>
             </div>
           ))}
@@ -474,7 +476,9 @@ function UserPluginsSection() {
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span className="text-sm font-medium text-fg">{pending.name}</span>
                   <Badge size="xs" className="min-w-0 max-w-full">
-                    <code className="truncate">{pending.id}</code>
+                    <code className="truncate" title={pending.id}>
+                      {pending.id}
+                    </code>
                   </Badge>
                   <span className="text-2xs text-fg-dim">v{pending.version}</span>
                 </div>
@@ -505,7 +509,9 @@ function UserPluginsSection() {
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span className="text-sm font-medium text-fg">{p.manifest.name}</span>
                   <Badge size="xs" className="min-w-0 max-w-full">
-                    <code className="truncate">{p.id}</code>
+                    <code className="truncate" title={p.id}>
+                      {p.id}
+                    </code>
                   </Badge>
                   <span className="text-2xs text-fg-dim">v{p.manifest.version}</span>
                 </div>

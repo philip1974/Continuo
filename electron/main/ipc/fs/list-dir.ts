@@ -6,6 +6,7 @@ import { ERROR_CODES } from '../../../shared/error-codes';
 import { fsError, mapNodeErrnoCode } from './path-utils';
 import { direntTypeIsReliable } from '../../lib/dirent-real-type';
 import { LIST_DIR_DEFAULT_EXCLUDE } from '../../../shared/fs-limits';
+import { compareFileNames } from '../../../shared/compare-file-names';
 
 const MAX_DEPTH_HARD_LIMIT = LIST_DIR_MAX_DEPTH;
 
@@ -51,7 +52,7 @@ export interface ListDirOptions {
 /**
  * 列目录。借鉴 Lokus read_directory_contents_with_depth:深度上限 + 黑名单 + symlink 防御。
  *
- * 排序:目录优先,再按 localeCompare(borrows from Lokus)。
+ * 排序:目录优先,再按 compareFileNames(数字段按数值,对齐 VSCode 资源管理器默认排序)。
  */
 export async function listDir(
   dirPath: string,
@@ -302,7 +303,7 @@ export function sortDirsFirst(entries: FileEntry[]): FileEntry[] {
       if (!prev.isDirectory) return entries.sort(compareDirsFirst);
       continue;
     }
-    if (prev.name.localeCompare(cur.name) > 0) {
+    if (compareFileNames(prev.name, cur.name) > 0) {
       return entries.sort(compareDirsFirst);
     }
   }
@@ -311,5 +312,5 @@ export function sortDirsFirst(entries: FileEntry[]): FileEntry[] {
 
 function compareDirsFirst(a: FileEntry, b: FileEntry): number {
   if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-  return a.name.localeCompare(b.name);
+  return compareFileNames(a.name, b.name);
 }

@@ -862,6 +862,10 @@
 - [`open-recent-root.spec.ts`](./explorer-mutate/open-recent-root.spec.ts)
 - [`reveal-or-notify.spec.ts`](./explorer-mutate/reveal-or-notify.spec.ts)
 
+## [资源管理器自然排序(explorer-natural-sort)](./explorer-natural-sort/README.md)
+
+- [`explorer-natural-sort.spec.ts`](./explorer-natural-sort/explorer-natural-sort.spec.ts)
+
 ## [explorer-open-in-terminal — Explorer 右键「在终端中打开」](./explorer-open-in-terminal/README.md)
 
 - [`open-in-terminal.spec.tsx`](./explorer-open-in-terminal/open-in-terminal.spec.tsx)
@@ -941,6 +945,10 @@
 ## [file-icon(资源管理器文件图标化)](./file-icon/README.md)
 
 - [`file-icon.spec.ts`](./file-icon/file-icon.spec.ts)
+
+## [文件名 Unicode 归一化(filename-unicode-normalization)](./filename-unicode-normalization/README.md)
+
+- [`filename-nfc-match.spec.ts`](./filename-unicode-normalization/filename-nfc-match.spec.ts)
 
 ## [三处查找的选项一致(名称 / tooltip 快捷键 / 切换键)](./find-options-parity/README.md)
 
@@ -1809,6 +1817,7 @@
 ## [设置页窄宽布局(settings-narrow-layout)](./settings-narrow-layout/README.md)
 
 - [`settings-narrow-layout.spec.tsx`](./settings-narrow-layout/settings-narrow-layout.spec.tsx)
+- [`truncate-title.spec.tsx`](./settings-narrow-layout/truncate-title.spec.tsx)
 
 ## [settings-panel(设置 Panel · VSCode 同款)](./settings-panel/README.md)
 

@@ -23,7 +23,7 @@ interface RecentItem {
   readonly path: string;
   readonly name: string;
   readonly parent: string;
-  /** 过滤用小写匹配源(名称 + 完整路径)。 */
+  /** 过滤用小写匹配源(名称 + 完整路径;NFC,与归一后的查询对齐 —— 磁盘上 NFD 的文件夹名也能搜到)。 */
   readonly lower: string;
 }
 
@@ -33,7 +33,7 @@ export function openRecentItems(recentRoots: readonly string[], root: string | n
   for (const p of recentRoots) {
     if (root !== null && pathEquals(p, root)) continue;
     const { name, parent } = recentRootLabelParts(p);
-    out.push({ path: p, name, parent, lower: lowerIfNeeded(`${name} ${p}`) });
+    out.push({ path: p, name, parent, lower: lowerIfNeeded(`${name} ${p}`.normalize('NFC')) });
   }
   return out;
 }

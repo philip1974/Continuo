@@ -208,8 +208,9 @@ describe('KeybindingsTabContent — 窄宽命令行', () => {
 
   it('顶部提示行可换行(键帽组自身不拆行,见 keybindings-tab-content)', () => {
     const { container } = render(<KeybindingsTabContent />);
-    const keys = container.querySelector('[data-testid="keybindings-palette-keys"]');
-    expect(classesOf(keys?.parentElement)).toContain('flex-wrap');
+    const hint = container.querySelector('[data-testid="keybindings-palette-hint"]');
+    expect(hint?.querySelector('[data-testid="keybindings-palette-keys"]')).not.toBeNull();
+    expect(classesOf(hint?.parentElement)).toContain('flex-wrap');
   });
 });
 

@@ -62,7 +62,8 @@ export async function runTextSearch(opts: TextSearchOptions): Promise<TextSearch
   for (const e of entries) {
     if (e.isDirectory || e.isSymlink) continue; // 不跟随链接(同 Quick Open 递归扫描)
     enumerated += 1;
-    const rel = path.relative(root, e.path).split(path.sep).join('/');
+    // 显示 / 过滤 / 与已打开编辑器结果对齐用 NFC(见 searchRelPath);读文件仍用磁盘原样的 e.path。
+    const rel = path.relative(root, e.path).split(path.sep).join('/').normalize('NFC');
     if (filter === null || filter(rel)) files.push({ abs: e.path, rel });
   }
   const filesLimitHit = enumerated >= maxFiles;

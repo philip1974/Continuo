@@ -37,10 +37,10 @@ export function searchOverrideKey(relPath: string, fold: (s: string) => string =
   return fold(relPath);
 }
 
-/** 绝对路径 → 相对根的 `/` 路径;不在根下 → null。 */
+/** 绝对路径 → 相对根的 `/` 路径(NFC,与 main 结果的 relPath 同口径);不在根下 → null。 */
 export function searchRelPath(root: string, absPath: string): string | null {
   if (!isSameOrInsidePath(root, absPath)) return null;
-  const rel = stripRootPrefix(root, absPath).replace(/\\/g, '/');
+  const rel = stripRootPrefix(root, absPath).replace(/\\/g, '/').normalize('NFC');
   return rel === '' ? null : rel;
 }
 

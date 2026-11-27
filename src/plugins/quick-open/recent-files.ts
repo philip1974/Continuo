@@ -92,11 +92,18 @@ export function orderByRecent<T extends { readonly absPath: string }>(
 ): { readonly items: readonly T[]; readonly recentCount: number } {
   if (recent.length === 0 || files.length === 0) return { items: files, recentCount: 0 };
   const byPath = new Map<string, T>();
-  for (const f of files) byPath.set(f.absPath, f);
+  // NFC 兜底索引:同一文件经 NFC 路径打开(终端链接 / 手输路径;macOS 上与磁盘 NFD 名指向同一文件)时 tab 记下的路径与
+  // 扫描到的磁盘原样路径码元不同,只按原样查会让这条最近项丢失。原样命中优先。
+  const byNfc = new Map<string, T>();
+  for (const f of files) {
+    byPath.set(f.absPath, f);
+    const nfc = f.absPath.normalize('NFC');
+    if (!byNfc.has(nfc)) byNfc.set(nfc, f);
+  }
   const head: T[] = [];
   const picked = new Set<T>();
   for (const p of recent) {
-    const f = byPath.get(p);
+    const f = byPath.get(p) ?? byNfc.get(p.normalize('NFC'));
     if (f && !picked.has(f)) {
       head.push(f);
       picked.add(f);
