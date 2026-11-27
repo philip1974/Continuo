@@ -32,6 +32,8 @@ export const FS_CHANNELS = {
   /** 递归复制(fs.cp recursive). */
   COPY: 'fs:copy',
   SELECT_DIRECTORY: 'fs:select-directory',
+  /** 另存为的原生保存对话框:返回选定路径(取消 → null),不写盘. */
+  SHOW_SAVE_DIALOG: 'fs:show-save-dialog',
   WATCH: 'fs:watch',
   UNWATCH: 'fs:unwatch',
   /** main → renderer event(非 invoke),webContents.send(path) 通知目录变更 */

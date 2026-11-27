@@ -15,6 +15,7 @@
 // 已标「(已删除)」的 tab 另有低频复查(ORPHANED_RECHECK_MS 一次 + 窗口获得焦点时):不依赖文件事件 —— 卷卸载后挂回、
 // 网络盘重连等场景 watcher 不一定再报这个文件(VSCode 文件重新出现即清除 orphaned),发现文件回来即清除并恢复自动保存。
 
+import { isUntitledPath } from '../../../electron/shared/untitled';
 import { useEffect } from 'react';
 import { coApi } from '@/lib/co-api';
 import { onWatchRestored } from '@/lib/fs-watch-restored';
@@ -128,7 +129,7 @@ export function useExternalFileSync(): void {
       // 外部删除 / 改名(确认后仍不存在,如 git checkout 切到删除它的分支):不关 tab(VSCode closeOnFileDelete:
       // false;此前关闭,切回分支后 tab 不回来、⇧⌘T 也找不回)—— 保留并标记已删除(markPathsDeleted),自动保存
       // 不再写回(否则继续输入后把文件写回,mv 时与新名并存两份)。手动保存:仅文件被删、父目录仍在 → 按路径重建;
-      // 所在目录被移走 / 删除 → atomic-write 不建父目录,保存失败报 FS_NOT_FOUND,须用户另存。
+      // 所在目录被移走 / 删除 → atomic-write 不建父目录,保存失败报 FS_NOT_FOUND,提示带「另存为… / 重试」(见 EditorPanel)。
       // 同样要求 live tab 仍是发起读取时那个实例(未变脏 / 未重开)。
       if (!superseded && isNotFound(r)) {
         const live = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
@@ -193,7 +194,8 @@ export function useExternalFileSync(): void {
     ): EditorTab[] => {
       const out: EditorTab[] = [];
       for (const tab of useEditorStore.getState().tabs) {
-        if (tab.dirty !== dirty) continue;
+        // 无标题文件不在磁盘上,不参与外部同步
+        if (tab.dirty !== dirty || isUntitledPath(tab.filePath)) continue;
         if (match(tab.filePath, tab.realPath)) out.push(tab);
       }
       return out;

@@ -14,6 +14,7 @@ import { useT } from '@/i18n';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import { basenameForChrome } from '@/lib/path-label';
+import { editorTabTitle } from '@/panels/Editor/untitled';
 import { useActiveNonEditorPanel, useMainWindowEditorGroupId } from '@/shell/dock/main-window-active-panel';
 import { formatWindowTitle } from '@/shell/window-title';
 
@@ -69,7 +70,7 @@ export function TitleBar() {
   const otherPanel = useActiveNonEditorPanel();
   const filePath = otherPanel ? null : activeFilePath;
   const dirty = otherPanel ? false : activeDirty;
-  const fileName = otherPanel ? otherPanel.title || null : filePath !== null ? basenameForChrome(filePath) : null;
+  const fileName = otherPanel ? otherPanel.title || null : filePath !== null ? editorTabTitle(filePath) : null;
   const wsLabel = root ? basenameForChrome(root) : null;
   // 拼接:[file ●] · [workspace] || Continuo。dirty ● 仅视觉(aria-hidden),
   // 未保存语义改由视觉隐藏的本地化文本承载(a11y A40,同 A35/A37 dirty 族)。

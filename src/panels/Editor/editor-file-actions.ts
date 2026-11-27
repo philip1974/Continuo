@@ -1,10 +1,8 @@
 // M-Editor Step E2:文件操作纯函数。
 // React hook(useEditorFile)是薄壳,业务逻辑都在这里,可单测。
 //
-// MVP 简化(详见 doc/09 § MVP 范围):
-//  - 只实现 openFileByPath / saveFile
-//  - 不做 Cmd+O / Cmd+N / 另存为(Continuo fs IPC 暂无 open/saveDialog 通道)
-//  - 新建/打开文件统一走 Explorer 右键菜单 + 单击
+// 打开 / 保存 / 还原。另存为与无标题文件(⌘N)见 save-as.ts / untitled.ts(BDD: src/__tests__/editor-save-as/);
+// 打开文件仍走 Explorer / Quick Open(不做 ⌘O 打开文件对话框)。
 
 import type { FsApi } from '@/lib/fs/api';
 import type { IpcResult } from '@/lib/fs/types';
@@ -34,12 +32,15 @@ import {
   loadMilkdownEditorModule,
 } from './editor-engine-loaders';
 import { isImagePreviewPath } from './editor-image';
+import { isUntitledPath } from '../../../electron/shared/untitled';
 import { isEditorPreviewEnabled } from './editor-preview';
 import { readEncodingOf, readOptionsForTab, tabEncodingOf } from './editor-encoding';
 import type { TextEncodingId } from '../../../electron/shared/text-encoding';
 
 /** renderer 内部错误码:保存时发现磁盘已被外部修改(未覆盖)。EditorPanel 据此弹覆盖确认,dirty-close 单独计数。 */
 export const EDITOR_DISK_CHANGED = 'EDITOR_DISK_CHANGED';
+/** renderer 内部错误码:无标题文件没有路径,不能按路径保存 —— 显式保存据此改走另存为,关窗保存单独计数并提示。 */
+export const EDITOR_UNTITLED = 'EDITOR_UNTITLED';
 
 const ignoreWarmupError = (): void => {};
 
@@ -252,6 +253,9 @@ export async function saveFile(
   // 图片 tab 只读(内容是 stat 指纹,见 editor-image):保存 = 无操作(VSCode 图片预览 ⌘S 同样什么也不做)。
   const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
   if (tab && isImagePreviewPath(tab.filePath)) return { ok: true, data: undefined };
+  if (tab && isUntitledPath(tab.filePath)) {
+    return { ok: false, code: EDITOR_UNTITLED, message: `untitled file needs Save As: ${tab.filePath}` };
+  }
   // race(R21):同 tab 的保存按发起顺序串行写盘 —— 防 autosave 旧内容晚于手动保存新内容落盘而
   // 覆盖。每次进链时重读 tab.content(在 task 内取快照),保证串行后写的是当时最新内容。
   return runSerialPerKey(saveChains, tabId, () => saveFileNow(tabId, deps, opts));

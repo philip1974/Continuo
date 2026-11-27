@@ -57,6 +57,8 @@ export function appMenuTemplate(
   };
 
   const fileSubmenu: Item[] = [
+    // 新建文本文件(VSCode 文件菜单首项 ⌘N = workbench.action.files.newUntitledFile;新建窗口 ⇧⌘N)
+    command('workbench.action.files.newUntitledFile', 'menu.file.new_text_file'),
     {
       label: t('menu.file.new_window'),
       accelerator: 'CmdOrCtrl+Shift+N',
@@ -72,6 +74,9 @@ export function appMenuTemplate(
     },
     command('workbench.action.openRecent', 'menu.file.open_recent'),
     SEPARATOR,
+    // 保存 / 另存为… / 全部保存(VSCode 文件菜单同组;BDD: src/__tests__/editor-save-as/)
+    command('workbench.action.files.save', 'menu.file.save'),
+    command('workbench.action.files.saveAs', 'menu.file.save_as'),
     command('workbench.action.files.saveAll', 'menu.file.save_all'),
     // 其它平台没有应用菜单:首选项放 File 菜单(VSCode:File → Preferences)。
     ...(isMac ? [] : [SEPARATOR, preferencesItem]),

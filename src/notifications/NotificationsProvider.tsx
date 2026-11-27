@@ -39,6 +39,10 @@ export const MAX_VISIBLE_NOTIFICATIONS = 3;
 export const REPEAT_ANNOUNCE_THROTTLE_MS = 1000;
 const EMPTY_NOTIFICATIONS: readonly Notification[] = [];
 
+function hasActions(n: Notification): boolean {
+  return n.actions !== undefined && n.actions.length > 0;
+}
+
 function appendCappedNotification(
   prev: readonly Notification[],
   notification: Notification,
@@ -74,11 +78,12 @@ function removeNotificationById(
   );
 }
 
-/** 合并一次相同内容的通知:计数 +1、createdAt 刷新为本次(位置不变)。 */
+/** 合并一次相同内容的通知:计数 +1、createdAt 刷新为本次(位置不变);本次带按钮 → 按钮换成本次的。 */
 function mergeRepeatedNotification(
   notifications: readonly Notification[],
   id: string,
   createdAt: number,
+  actions?: Notification['actions'],
 ): readonly Notification[] {
   let next: Notification[] | null = null;
   let nextCount = 0;
@@ -93,7 +98,12 @@ function mergeRepeatedNotification(
         }
         nextCount = i;
       }
-      current = { ...notification, createdAt, count: (notification.count ?? 1) + 1 };
+      current = {
+        ...notification,
+        createdAt,
+        count: (notification.count ?? 1) + 1,
+        ...(actions !== undefined ? { actions } : null),
+      };
     }
     if (next !== null) {
       next[nextCount] = current;
@@ -235,7 +245,8 @@ export function NotificationsProvider({
     const visible = Math.min(list.length, MAX_VISIBLE_NOTIFICATIONS);
     for (let i = 0; i < visible; i++) {
       const n = list[i]!;
-      if (!timersRef.current.has(n.id)) scheduleDismiss(n.id, n.level);
+      // 带按钮的通知常驻(不计时),等用户点按钮或 ×
+      if (!timersRef.current.has(n.id) && !hasActions(n)) scheduleDismiss(n.id, n.level);
     }
   }, [scheduleDismiss]);
   useEffect(() => {
@@ -315,9 +326,12 @@ export function NotificationsProvider({
           };
           repeatAnnounceRef.current.set(existingId, entry);
         }
-        notificationsRef.current = mergeRepeatedNotification(notificationsRef.current, existingId, now);
-        setNotificationList((prev) => mergeRepeatedNotification(prev, existingId, now));
-        if (timersRef.current.has(existingId)) scheduleDismiss(existingId, level);
+        const actions = opts?.actions;
+        notificationsRef.current = mergeRepeatedNotification(notificationsRef.current, existingId, now, actions);
+        setNotificationList((prev) => mergeRepeatedNotification(prev, existingId, now, actions));
+        // 这次带按钮 → 转为常驻(停掉计时);否则刷新计时
+        if (actions !== undefined && actions.length > 0) clearDismissTimer(existingId);
+        else if (timersRef.current.has(existingId)) scheduleDismiss(existingId, level);
         return;
       }
 
@@ -328,7 +342,10 @@ export function NotificationsProvider({
         doc: getAnnouncingDocument(),
       });
       const id = `notif-${String(++counterRef.current)}`;
-      const n: Notification = { id, level, message, code, createdAt: now };
+      const n: Notification =
+        opts?.actions !== undefined && opts.actions.length > 0
+          ? { id, level, message, code, createdAt: now, actions: opts.actions }
+          : { id, level, message, code, createdAt: now };
       // race(R13):同步把新通知写入 notificationsRef,使同一事件循环内后续 notify 的去重能看到
       // 这条 pending 通知。ref 原本只在 setNotifications 的 updater 执行时(延迟到 render)才更新
       // → 同 tick 连续两次同源 notify 第二次读到的 ref 仍缺第一条 → 各自入队绕过去重。下面的

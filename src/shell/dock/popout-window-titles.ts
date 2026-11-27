@@ -9,6 +9,7 @@ import { groupActiveTabIdOf, useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import { basenameForChrome } from '@/lib/path-label';
+import { editorTabTitle } from '@/panels/Editor/untitled';
 import { formatWindowTitle } from '@/shell/window-title';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 import { subscribePopoutDocuments } from './popout-documents';
@@ -17,7 +18,7 @@ function titleOf(panel: IDockviewPanel | undefined, workspace: string | null): s
   if (panel && isEditorGroupId(panel.id)) {
     const s = useEditorStore.getState();
     const tab = findEditorFileTabById(s.tabs, groupActiveTabIdOf(s, panel.id));
-    return formatWindowTitle(tab ? basenameForChrome(tab.filePath) : null, tab?.dirty ?? false, workspace);
+    return formatWindowTitle(tab ? editorTabTitle(tab.filePath) : null, tab?.dirty ?? false, workspace);
   }
   return formatWindowTitle(panel?.title || null, false, workspace);
 }

@@ -4,6 +4,7 @@
 // 决策(ADR-015):Markdown 自动保存,代码必须显式 Cmd+S。
 // enabled 由 EditorPanel 根据当前 tab 文件类型决定(.md/.markdown → true)。
 
+import { isUntitledPath } from '../../../electron/shared/untitled';
 import { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { groupActiveTabIdOf, useEditorStore } from '@/stores/editor.store';
@@ -227,6 +228,7 @@ export function useAutoSave(
  */
 export function isAutoSaveEnabled(filePath: string | null): boolean {
   // 可维护性 M13:markdown 扩展名判定共用 editor-path-utils.isMarkdownPath。
-  if (!filePath) return false;
+  // 无标题文件不自动保存(VSCode editorAutoSave:never auto save untitled working copies;它也没有路径可写)
+  if (!filePath || isUntitledPath(filePath)) return false;
   return isMarkdownPath(filePath);
 }

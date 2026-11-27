@@ -8,6 +8,7 @@
 
 import { basename } from 'node:path';
 import type { MainT } from './i18n';
+import { untitledNumberOf } from '../shared/untitled';
 import { PATH_ARRAY_MAX, PATH_STR_MAX } from '../shared/explorer-persistence-schema';
 import type { DirtyState, FlushAckPayload } from '../shared/persistence-channels';
 
@@ -64,10 +65,15 @@ export interface DirtyCloseDialogOptions {
 /** 确认框里最多逐行列出的文件名数(VSCode getFileNamesMessage MAX_CONFIRM_FILES),其余一行概括。 */
 export const DIRTY_CLOSE_MAX_NAMES = 10;
 
-/** 脏 tab 身份 `${tabId}#${代际}`(tabId = 文件路径)→ 文件名。路径来自本机,按本机分隔符取 basename。 */
-function dirtyIdFileName(id: string): string {
+/**
+ * 脏 tab 身份 `${tabId}#${代际}`(tabId = 文件路径)→ 文件名。路径来自本机,按本机分隔符取 basename;无标题文件
+ *(`untitled:Untitled-N`,见 shared/untitled)→ 按界面语言的「Untitled-N」(同 renderer tab 名)。
+ */
+function dirtyIdFileName(id: string, t: MainT): string {
   const sep = id.lastIndexOf('#');
-  return basename(sep < 0 ? id : id.slice(0, sep));
+  const tabId = sep < 0 ? id : id.slice(0, sep);
+  const n = untitledNumberOf(tabId);
+  return n === null ? basename(tabId) : t('editor.untitled_name', { n });
 }
 
 /**
@@ -80,10 +86,10 @@ export function buildDirtyCloseDialog(state: DirtyState, t: MainT): DirtyCloseDi
   let message: string;
   let detail = lossNote;
   if (single) {
-    message = t('panels.editor.save_changes_title', { name: dirtyIdFileName(state.ids[0]!) });
+    message = t('panels.editor.save_changes_title', { name: dirtyIdFileName(state.ids[0]!, t) });
   } else {
     message = t('dialog.unsaved_close.message', { count: state.dirty });
-    const lines = state.ids.slice(0, DIRTY_CLOSE_MAX_NAMES).map(dirtyIdFileName);
+    const lines = state.ids.slice(0, DIRTY_CLOSE_MAX_NAMES).map((id) => dirtyIdFileName(id, t));
     const more = state.ids.length - lines.length;
     // 单复数按 en 规则选 key(zh / ko 两条同文);main 侧无 translateCount。
     if (more > 0) lines.push(t(more === 1 ? 'dialog.unsaved_close.more_one' : 'dialog.unsaved_close.more_other', { count: more }));

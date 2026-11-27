@@ -29,6 +29,9 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   'workbench.action.closeActiveEditor',
   // ⇧⌘T:子窗里触发时重开落在该子窗(见 reopen-closed-editor targetOf),不画到主窗
   'workbench.action.reopenClosedEditor',
+  // ⌘N:新建的无标题文件落在该子窗的编辑器组(commandEditorGroupId;BDD: src/__tests__/editor-save-as/)。另存为(⇧⌘S)由编辑器
+  // 面板就地处理(对话框挂在子窗上),不在此列。
+  'workbench.action.files.newUntitledFile',
   // ⌃Tab / ⌃⇧Tab:切换该子窗编辑器组里最近使用的编辑器(commandEditorGroupId 取子窗的组;子窗没有编辑器组 → no-op)
   'workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup',
   'workbench.action.quickOpenLeastRecentlyUsedEditorInGroup',

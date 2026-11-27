@@ -1,6 +1,8 @@
 // 工作台编辑器命令(对齐 VSCode 同名命令):
 // - workbench.action.closeActiveEditor(⌘W):关当前文件 tab / 其它活动面板,无可关的才关窗口;
-// - workbench.action.files.save(⌘S):保存当前活动文件 tab,焦点在哪都生效;
+// - workbench.action.files.save(⌘S):保存当前活动文件 tab,焦点在哪都生效(无标题文件 → 另存为);
+// - workbench.action.files.saveAs(⇧⌘S)/ workbench.action.files.newUntitledFile(⌘N):另存为 / 新建无标题文本文件
+//   (BDD: src/__tests__/editor-save-as/);
 // - workbench.action.files.revert:还原当前活动文件 tab 为磁盘内容(丢弃未保存修改;同 VSCode 无默认键);
 // - workbench.action.files.saveAll(mac ⌥⌘S):保存所有编辑器组里的脏文件 tab,失败处理同 ⌘S;
 // - editor.action.toggleWordWrap(⌥Z):切换代码编辑器自动换行(设置 editor.wordWrap,所有编辑器生效);
@@ -43,6 +45,7 @@ import { coApi } from '@/lib/co-api';
 import { notifyFailure } from '@/notifications/notify-thrown-error';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { revertFile } from './editor-file-actions';
+import { isUntitledPath, newUntitledFile } from './untitled';
 import { reopenClosedEditor } from './reopen-closed-editor';
 import { KEEP_EDITOR_COMMAND_ID, keepActiveEditor } from './editor-preview';
 import { editorFileDeps } from './editor-file-deps';
@@ -81,6 +84,10 @@ import {
 /** 命令 id 与默认键(终端按生效绑定让出 ⌘W / ⌘S 时与此约定一致)。 */
 export const CLOSE_ACTIVE_EDITOR_COMMAND = { id: 'workbench.action.closeActiveEditor', hotkey: 'mod+w' } as const;
 export const SAVE_COMMAND = { id: 'workbench.action.files.save', hotkey: 'mod+s' } as const;
+/** 另存为(VSCode 同:⇧⌘S / Ctrl+Shift+S)。 */
+export const SAVE_AS_COMMAND = { id: 'workbench.action.files.saveAs', hotkey: 'mod+shift+s' } as const;
+/** 新建无标题文本文件(VSCode 同:⌘N / Ctrl+N;新建窗口是 ⇧⌘N,见 WindowPlugin)。 */
+export const NEW_UNTITLED_FILE_COMMAND = { id: 'workbench.action.files.newUntitledFile', hotkey: 'mod+n' } as const;
 export const NEXT_EDITOR_COMMAND_ID = 'workbench.action.nextEditor';
 export const PREVIOUS_EDITOR_COMMAND_ID = 'workbench.action.previousEditor';
 export const REVERT_COMMAND_ID = 'workbench.action.files.revert';
@@ -129,6 +136,8 @@ export function saveHotkeyLabel(platform: Platform = detectPlatform()): string {
 export interface EditorPanelActions {
   /** 显式保存当前活动 tab(磁盘已被外部修改 → 弹覆盖确认;其它失败按 code 提示)。 */
   readonly save: () => Promise<void>;
+  /** 另存为当前活动 tab(无活动 tab → 无操作)。 */
+  readonly saveAs: () => Promise<void>;
   /** 按 tab × 同一路径关闭当前活动 tab;无活动 tab → false。 */
   readonly closeActiveTab: () => boolean;
   /** 按 tab 右键「关闭其他 / 右侧 / 已保存 / 全部」同一路径关闭这些 tab(脏 tab 弹确认)。 */
@@ -174,10 +183,15 @@ export async function saveActiveEditor(): Promise<void> {
   await activeGroupActions()?.save();
 }
 
+/** 另存为活动编辑器组的活动文件 tab(编辑器面板未挂载 → no-op)。 */
+export async function saveActiveEditorAs(): Promise<void> {
+  await activeGroupActions()?.saveAs();
+}
+
 /**
  * 全部保存(VSCode saveAll):所有编辑器组里的脏文件 tab 逐个保存(先把编辑器里尚未上抛的输入写回 store;图片 tab 只读不算)。
  * 每个 tab 交给它所在编辑器组的面板(覆盖确认框在那个面板里);一次全部保存最多弹一个确认框,其余确认类失败只提示。
- * Continuo 没有无标题(untitled)编辑器,每个 tab 都有路径;已删除的文件按 ⌘S 同一约定重建。
+ * 有内容的无标题文件逐个弹另存为对话框(VSCode 同);已删除的文件按 ⌘S 同一约定重建。
  */
 export async function saveAllEditors(): Promise<void> {
   flushEditorWriteBacks(useEditorStore.getState().tabs.map((t) => t.id));
@@ -266,7 +280,7 @@ export function closeActiveGroupEditors(kind: TabCloseKind): void {
 /** 复制活动文件的路径(relative:相对工作区根,同 tab 右键「复制相对路径」)。 */
 function copyActiveFilePath(relative: boolean): void {
   const tab = activeGroupTab();
-  if (!tab) return;
+  if (!tab || isUntitledPath(tab.filePath)) return; // 无标题文件没有路径
   const root = useWorkspaceStore.getState().root;
   const text = relative && root !== null ? stripRootPrefix(root, tab.filePath) : tab.filePath;
   void copyToClipboardOrNotify(text, t('panels.explorer.copy_path_failed'));
@@ -275,7 +289,7 @@ function copyActiveFilePath(relative: boolean): void {
 /** 在系统文件管理器中显示活动文件(文件已删除的 orphaned tab 无处可显示 → no-op)。 */
 function revealActiveFile(): void {
   const tab = activeGroupTab();
-  if (tab && tab.orphaned !== true) void revealPathOrNotify(tab.filePath);
+  if (tab && tab.orphaned !== true && !isUntitledPath(tab.filePath)) void revealPathOrNotify(tab.filePath);
 }
 
 /** 在编辑器组(缺省触发窗口的编辑器组)内切到相邻文件 tab(首尾相接);组内 tab 数 < 2 → no-op。 */
@@ -359,6 +373,22 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
       category: 'File',
       categoryKey: 'commands.file.category',
       fn: saveActiveEditor,
+    },
+    {
+      ...SAVE_AS_COMMAND,
+      title: 'Save As…',
+      titleKey: 'commands.file.save_as.title',
+      category: 'File',
+      categoryKey: 'commands.file.category',
+      fn: saveActiveEditorAs,
+    },
+    {
+      ...NEW_UNTITLED_FILE_COMMAND,
+      title: 'New Untitled Text File',
+      titleKey: 'commands.file.new_untitled.title',
+      category: 'File',
+      categoryKey: 'commands.file.category',
+      fn: () => void newUntitledFile(commandEditorGroupId()),
     },
     {
       id: SAVE_ALL_COMMAND_ID,

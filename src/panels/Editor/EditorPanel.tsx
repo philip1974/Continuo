@@ -44,9 +44,11 @@ import { flushEditorWriteBacks } from './editor-writeback-registry';
 import { dirtyTabsInBatch, nextBatchCloseStep, type BatchClose } from './tab-batch-close';
 import { useStableCallback } from '@/lib/use-stable-callback';
 import { rebindEditorRoots } from './editor-root-registry';
-import { applyEditorWriteBack, EDITOR_DISK_CHANGED, revertFile } from './editor-file-actions';
+import { applyEditorWriteBack, EDITOR_DISK_CHANGED, EDITOR_UNTITLED, revertFile } from './editor-file-actions';
+import { saveTabAs } from './save-as';
+import { editorTabTitle } from './untitled';
 import { openConflictCompare } from './conflict-compare';
-import { editorFileDeps } from './editor-file-deps';
+import { editorFileDeps, saveAsDeps } from './editor-file-deps';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { NO_ACTIVE_TAB, useEditorFile } from './useEditorFile';
 import { resolveLink } from './link-resolve';
@@ -61,16 +63,37 @@ import type { EditorTab } from '@/stores/editor.store';
 import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { notifySaveFailed, openFileOrNotify } from '@/notifications/notify-open-failed';
+import type { NotifyAction } from '@/notifications/notify';
 import { basenameForChrome } from '@/lib/path-label';
 import { isModalOpenFor, winningCommandFor, withDefaultCommands } from '@/plugins/command-palette/useCommandHotkeys';
 import { coApp } from '@/plugins/co-app';
-import { editorCommandSpecs, openAdjacentEditor, registerEditorPanelActions, registerMarkdownModeAction, SAVE_COMMAND, NEXT_EDITOR_COMMAND_ID, PREVIOUS_EDITOR_COMMAND_ID } from './editor-commands';
+import { editorCommandSpecs, openAdjacentEditor, registerEditorPanelActions, registerMarkdownModeAction, SAVE_AS_COMMAND, SAVE_COMMAND, NEXT_EDITOR_COMMAND_ID, PREVIOUS_EDITOR_COMMAND_ID } from './editor-commands';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
-/** 面板就地处理的命令(保存 / 下一个 / 上一个编辑器)的约定默认键:命令尚未注册时兜底,已注册以注册的 spec 为准。 */
-const PANEL_DEFAULT_COMMANDS = editorCommandSpecs(detectPlatform()).filter(
-  (c) => c.id === SAVE_COMMAND.id || c.id === NEXT_EDITOR_COMMAND_ID || c.id === PREVIOUS_EDITOR_COMMAND_ID,
-);
+/** 面板就地处理的命令(保存 / 另存为 / 下一个 / 上一个编辑器)。 */
+const PANEL_COMMAND_IDS: ReadonlySet<string> = new Set([
+  SAVE_COMMAND.id,
+  SAVE_AS_COMMAND.id,
+  NEXT_EDITOR_COMMAND_ID,
+  PREVIOUS_EDITOR_COMMAND_ID,
+]);
+/** 面板就地处理的命令的约定默认键:命令尚未注册时兜底,已注册以注册的 spec 为准。 */
+const PANEL_DEFAULT_COMMANDS = editorCommandSpecs(detectPlatform()).filter((c) => PANEL_COMMAND_IDS.has(c.id));
+
+/**
+ * 保存失败时通知上附「另存为… / 重试」的错误(VSCode textFileSaveErrorHandler:一般写入错误给 Retry / Save As…):目标位置不存在 /
+ * 被换成目录 / 父路径不是目录 / 无权限 / 只读卷 / 磁盘满 / IO 错误。外部修改与写保护另有确认框,不在此列。
+ * BDD: src/__tests__/editor-save-as/
+ */
+const SAVE_FAILURE_ACTION_CODES: ReadonlySet<string> = new Set([
+  ERROR_CODES.FS_NOT_FOUND,
+  ERROR_CODES.FS_NOT_FILE,
+  ERROR_CODES.FS_NOT_DIRECTORY,
+  ERROR_CODES.FS_DENIED,
+  ERROR_CODES.FS_READONLY_FS,
+  ERROR_CODES.FS_NO_SPACE,
+  ERROR_CODES.FS_IO,
+]);
 
 // i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
 // zh/ko 工具栏显英文且不随 locale 切换。id 稳定,label 在组件内用 useT 生成(响应 locale)。
@@ -115,7 +138,7 @@ const UNSAVED_LIST_MAX_NAMES = 10;
 
 /** 合并确认框正文:逐行文件名(列表样式同资源管理器删除确认)+ 丢失提示。 */
 function UnsavedFileList({ paths }: { readonly paths: readonly string[] }) {
-  const names = paths.slice(0, UNSAVED_LIST_MAX_NAMES).map((p) => basename(p));
+  const names = paths.slice(0, UNSAVED_LIST_MAX_NAMES).map((p) => editorTabTitle(p));
   const more = paths.length - names.length;
   return (
     <>
@@ -326,21 +349,78 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     | null
   >(null);
 
-  // 保存失败的统一出口:写保护 → 覆盖确认;其它 → 「保存失败 <文件名>:<原因>」。
-  const onSaveFailed = useCallback(
+  // 另存为(⇧⌘S;无标题文件的保存同样走这里;BDD: src/__tests__/editor-save-as/):取消 → false,不提示;失败 → 「保存失败
+  // <文件名>:<原因>」附「另存为…」(重新选位置)。返回保存到的路径(= tab 的新 id);未保存 → null。
+  const saveAsTab = useStableCallback(async (tabId: string): Promise<string | null> => {
+    const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+    if (!tab) return null;
+    try {
+      const r = await saveTabAs(tabId, saveAsDeps);
+      if (r.ok) return r.data;
+      notifySaveFailed(editorTabTitle(tab.filePath), r, [
+        { label: translate('editor.save_as_action'), run: () => void saveAsTab(tabId) },
+      ]);
+    } catch (err) {
+      notifyThrownError(err);
+    }
+    return null;
+  });
+
+  // 另存为本组的活动文件 tab(无 → 无操作)。
+  const activePanelSaveAs = useStableCallback(async (): Promise<void> => {
+    const s = useEditorStore.getState();
+    const id = groupActiveTabIdOf(s, groupId);
+    if (id !== null && findEditorFileTabById(s.tabs, id)) await saveAsTab(id);
+  });
+
+  // 保存失败的统一出口:无标题文件 → 另存为(来自关闭时的「保存」→ 保存成功后接着推进这批关闭);写保护 → 覆盖确认;其它 →
+  //「保存失败 <文件名>:<原因>」,写入类错误附「另存为… / 重试」(重试 = 同一次保存再来一遍,带上已确认的覆盖)。
+  const onSaveFailed = useStableCallback(
     (
       target: Pick<TabChrome, 'id' | 'filePath'>,
       r: { readonly code: string; readonly message?: string },
       flags: { readonly batch?: BatchClose; readonly force?: boolean } = {},
     ) => {
+      if (r.code === EDITOR_UNTITLED) {
+        const batch = flags.batch;
+        void saveAsTab(target.id).then((saved) => {
+          // 另存后 tab 换了 id:这批关闭里的旧 id 换成新 id 再推进
+          if (saved === null || !batch) return;
+          const remap = (ids: readonly string[]) => ids.map((id) => (id === target.id ? saved : id));
+          advanceBatchClose({ ...batch, rest: remap(batch.rest), closeIds: remap(batch.closeIds) });
+        });
+        return;
+      }
       if (r.code === ERROR_CODES.FS_READONLY) {
         setReadonlyCandidate({ id: target.id, filePath: target.filePath, ...flags });
         return;
       }
-      notifySaveFailed(basenameForChrome(target.filePath), r);
+      notifySaveFailed(editorTabTitle(target.filePath), r, saveFailureActions(target.id, r.code, flags.force === true));
     },
-    [],
   );
+  const saveFailureActions = useStableCallback(
+    (tabId: string, code: string, force: boolean): NotifyAction[] | undefined =>
+      SAVE_FAILURE_ACTION_CODES.has(code)
+        ? [
+            { label: translate('editor.save_as_action'), run: () => void saveAsTab(tabId) },
+            { label: translate('editor.retry_save'), run: () => void retrySave(tabId, force) },
+          ]
+        : undefined,
+  );
+  // 「重试」:按同一 tab 再保存一次(tab 已关 → 无操作);结果处理同显式保存。
+  const retrySave = useStableCallback(async (tabId: string, force: boolean) => {
+    const target = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+    if (!target) return;
+    try {
+      flushEditorWriteBacks([tabId]);
+      const r = await saveTab(tabId, force ? { force: true } : undefined);
+      if (r.ok) return;
+      if (r.code === EDITOR_DISK_CHANGED) setOverwriteCandidate({ id: target.id, filePath: target.filePath });
+      else onSaveFailed(target, r, { force });
+    } catch (err) {
+      notifyThrownError(err);
+    }
+  });
 
   // 显式保存(Cmd+S 或 toolbar)
   const handleSave = useCallback(async () => {
@@ -369,8 +449,13 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     if (!target) return false;
     const r = await saveTab(tabId);
     if (r.ok) return false;
+    // 无标题文件:逐个弹另存为对话框(VSCode 全部保存同样为每个无标题文件弹保存对话框),不算本次的确认框
+    if (r.code === EDITOR_UNTITLED) {
+      await saveAsTab(tabId);
+      return false;
+    }
     if (!allowPrompt) {
-      notifySaveFailed(basenameForChrome(target.filePath), r);
+      notifySaveFailed(editorTabTitle(target.filePath), r, saveFailureActions(target.id, r.code, false));
       return false;
     }
     if (r.code === EDITOR_DISK_CHANGED) {
@@ -442,13 +527,13 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         if (r.code === EDITOR_DISK_CHANGED) {
           setOverwriteCandidate({ id: candidate.id, filePath: candidate.filePath, batch: candidate.batch });
         } else {
-          notifySaveFailed(basenameForChrome(candidate.filePath), r);
+          notifySaveFailed(editorTabTitle(candidate.filePath), r, saveFailureActions(candidate.id, r.code, candidate.force === true));
         }
       } else if (candidate.batch) advanceBatchClose(candidate.batch);
     } catch (err) {
       notifyThrownError(err);
     }
-  }, [readonlyCandidate, saveTab, advanceBatchClose]);
+  }, [readonlyCandidate, saveTab, advanceBatchClose, saveFailureActions]);
   // 冲突时「放弃更改并重新加载」(VSCode Revert):tab 换成磁盘版本、丢弃未保存修改;来自关闭时的「保存」→ 接着推进这批关闭。
   const revertOverwriteCandidate = useCallback(async () => {
     const candidate = overwriteCandidate;
@@ -516,6 +601,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       registerEditorPanelActions(
         {
           save: handleSave,
+          saveAs: activePanelSaveAs,
           closeActiveTab: () => {
             const s = useEditorStore.getState();
             const tab = findEditorFileTabById(s.tabs, groupActiveTabIdOf(s, groupId));
@@ -528,7 +614,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         },
         groupId,
       ),
-    [handleSave, onTabCloseRequest, onTabsCloseRequest, saveTabForSaveAll, groupId],
+    [handleSave, activePanelSaveAs, onTabCloseRequest, onTabsCloseRequest, saveTabForSaveAll, groupId],
   );
 
   // 切模式;较大的 Markdown 切到编辑 / 预览:该 tab 记为已接受。渲染是同步长任务 → 先让「正在渲染」提示画出来(下一帧之后)
@@ -661,10 +747,11 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
           e.nativeEvent,
           withDefaultCommands(coApp.commands.getAll(), PANEL_DEFAULT_COMMANDS),
         )?.id;
-        if (winner !== SAVE_COMMAND.id && winner !== NEXT_EDITOR_COMMAND_ID && winner !== PREVIOUS_EDITOR_COMMAND_ID) return;
+        if (winner === undefined || !PANEL_COMMAND_IDS.has(winner)) return;
         e.preventDefault();
         e.stopPropagation();
         if (winner === SAVE_COMMAND.id) void handleSave();
+        else if (winner === SAVE_AS_COMMAND.id) void activePanelSaveAs();
         else openAdjacentEditor(winner === NEXT_EDITOR_COMMAND_ID ? 1 : -1, groupId);
       }}
       // 焦点进入本组(编辑区 / tab 行)→ 成为活动组:之后打开的文件落在这里(VSCode 最近活动的组)。
@@ -722,7 +809,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         title={
           closeCandidate
             ? translate('panels.editor.save_changes_title', {
-                name: basename(closeCandidate.filePath),
+                name: editorTabTitle(closeCandidate.filePath),
               })
             : ''
         }

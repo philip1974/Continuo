@@ -35,6 +35,10 @@ export const WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND = {
   hotkey: 'mod+w',
 } as const;
 export const WORKBENCH_SAVE_COMMAND = { id: 'workbench.action.files.save', hotkey: 'mod+s' } as const;
+// 另存为 ⇧⌘S / 新建无标题文件 ⌘N(BDD: src/__tests__/editor-save-as/):同保存,只在按键带 Meta 时让出(Win/Linux Ctrl+N 是 readline 的
+// 下一条历史,照常进 shell;VSCode 终端里 `event.metaKey` 一律跳过 shell)。与 editor-commands 的命令常量一致(规范守护)。
+export const WORKBENCH_SAVE_AS_COMMAND = { id: 'workbench.action.files.saveAs', hotkey: 'mod+shift+s' } as const;
+export const WORKBENCH_NEW_UNTITLED_FILE_COMMAND = { id: 'workbench.action.files.newUntitledFile', hotkey: 'mod+n' } as const;
 // 重新打开已关闭的编辑器(BDD: src/__tests__/editor-reopen-closed/):同关闭 / 保存,只在按键带 Meta(mac ⇧⌘T)时让出;
 // Win/Linux Ctrl+Shift+T 照常进 shell(VSCode commandsToSkipShell 默认列表不含本命令)。
 export const WORKBENCH_REOPEN_CLOSED_EDITOR_COMMAND = {
@@ -93,6 +97,8 @@ const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> =
   [FOCUS_PREVIOUS_PART_COMMAND.id, { metaOnly: false }],
   [WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND.id, { metaOnly: true }],
   [WORKBENCH_SAVE_COMMAND.id, { metaOnly: true }],
+  [WORKBENCH_SAVE_AS_COMMAND.id, { metaOnly: true }],
+  [WORKBENCH_NEW_UNTITLED_FILE_COMMAND.id, { metaOnly: true }],
   [WORKBENCH_REOPEN_CLOSED_EDITOR_COMMAND.id, { metaOnly: true }],
   [WORKBENCH_SPLIT_EDITOR_COMMAND.id, { metaOnly: true }],
   ...WORKBENCH_FOCUS_EDITOR_GROUP_COMMANDS.map((c) => [c.id, { metaOnly: false }] as const),
@@ -118,6 +124,8 @@ function terminalDefaults(platform: Platform): readonly DefaultCommand[] {
     { id: TERMINAL_CLEAR_COMMAND.id, hotkey: terminalClearDefaultHotkey(platform) },
     WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND,
     WORKBENCH_SAVE_COMMAND,
+    WORKBENCH_SAVE_AS_COMMAND,
+    WORKBENCH_NEW_UNTITLED_FILE_COMMAND,
     WORKBENCH_REOPEN_CLOSED_EDITOR_COMMAND,
     WORKBENCH_SPLIT_EDITOR_COMMAND,
     ...WORKBENCH_FOCUS_EDITOR_GROUP_COMMANDS,

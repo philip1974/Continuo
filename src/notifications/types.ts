@@ -6,6 +6,7 @@
 // 别名导出让旧 import 路径(`from './types'`)不破。
 
 import type { NotifyLevel } from '../../electron/shared/notify-channels';
+import type { NotifyAction } from './notify';
 
 export type NotificationLevel = NotifyLevel;
 
@@ -17,4 +18,6 @@ export interface Notification {
   readonly createdAt: number;
   /** 相同内容(同 level + 同 message)合并的次数;缺省 = 1。 */
   readonly count?: number;
+  /** 操作按钮(见 NotifyOpts.actions);有按钮的通知不自动消失。 */
+  readonly actions?: readonly NotifyAction[];
 }

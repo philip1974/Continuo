@@ -116,7 +116,7 @@ describe('saveDirtyTabsForClose:「保存」分支保存所有脏 tab', () => {
       saveTab,
       () => [],
     );
-    expect(r).toEqual({ failed: 0, diskChanged: 0, readonly: 0, failedPaths: [] });
+    expect(r).toEqual({ failed: 0, diskChanged: 0, readonly: 0, untitled: 0, failedPaths: [] });
     expect(saveTab.mock.calls.map((c) => c[0]).sort()).toEqual(['/a.ts', '/b.md']);
   });
 
@@ -137,6 +137,7 @@ describe('saveDirtyTabsForClose:「保存」分支保存所有脏 tab', () => {
       failed: 4,
       diskChanged: 1,
       readonly: 1,
+      untitled: 0,
       failedPaths: ['/b.ts', '/c.ts', '/d.ts', '/e.ts'],
     });
   });
@@ -150,7 +151,7 @@ describe('saveDirtyTabsForClose:「保存」分支保存所有脏 tab', () => {
       saveTab,
       () => [tab('/a.ts', true), tab('/b.ts', false)],
     );
-    expect(r).toEqual({ failed: 1, diskChanged: 0, readonly: 0, failedPaths: ['/a.ts'] });
+    expect(r).toEqual({ failed: 1, diskChanged: 0, readonly: 0, untitled: 0, failedPaths: ['/a.ts'] });
   });
 });
 
@@ -162,7 +163,7 @@ describe('saveForCloseFailureMessage:关窗保存失败提示带文件名与出�
   it('≤3 个失败:全部列出文件名;只读追加 readonly_note(含保存键)', () => {
     setLocale('en');
     const msg = saveForCloseFailureMessage(
-      { failed: 2, diskChanged: 0, readonly: 2, failedPaths: ['/w/ro.ts', 'C:\\w\\ro2.md'] },
+      { failed: 2, diskChanged: 0, readonly: 2, untitled: 0, failedPaths: ['/w/ro.ts', 'C:\\w\\ro2.md'] },
       'Cmd+S',
     );
     expect(msg).toContain(t('dialog.unsaved_close.save_failed', { count: 2, names: 'ro.ts, ro2.md' }));
@@ -174,7 +175,7 @@ describe('saveForCloseFailureMessage:关窗保存失败提示带文件名与出�
   it('>3 个失败:只列前 3 个 +「等」;磁盘冲突与只读两段说明都在', () => {
     setLocale('zh');
     const msg = saveForCloseFailureMessage(
-      { failed: 5, diskChanged: 1, readonly: 1, failedPaths: ['/a', '/b', '/c', '/d', '/e'] },
+      { failed: 5, diskChanged: 1, readonly: 1, untitled: 0, failedPaths: ['/a', '/b', '/c', '/d', '/e'] },
       'Ctrl+S',
     );
     expect(msg).toContain(

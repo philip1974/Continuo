@@ -864,10 +864,16 @@ describe('File 菜单「打开文件夹…」:显示生效键位,交给聚焦主
     const template = buildAppMenu(((key: string) => key) as never) as unknown as Item[];
     const file = template.find((m) => m.label === 'menu.file.label');
     const items = (file?.submenu ?? []) as readonly Item[];
-    // 顺序同 VSCode 文件菜单:新建窗口 → 分隔线 → 打开文件夹…(本应用另有「在新窗口中打开文件夹…」紧随其后)。
+    // 顺序同 VSCode 文件菜单:新建文本文件 → 新建窗口 → 分隔线 → 打开文件夹…(本应用另有「在新窗口中打开文件夹…」紧随其后)。
     const labels = items.map((m) => m.label ?? m.type);
     const at = labels.indexOf('menu.file.open_folder');
-    expect(labels.slice(0, at + 2)).toEqual(['menu.file.new_window', 'separator', 'menu.file.open_folder', 'menu.file.open_folder_in_new_window']);
+    expect(labels.slice(0, at + 2)).toEqual([
+      'menu.file.new_text_file',
+      'menu.file.new_window',
+      'separator',
+      'menu.file.open_folder',
+      'menu.file.open_folder_in_new_window',
+    ]);
     return items.find((m) => m.label === 'menu.file.open_folder')!;
   }
 

@@ -292,6 +292,9 @@ const api = {
       ipcRenderer.invoke(FS_CHANNELS.COPY, { src, dest }),
     selectDirectory: (): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke(FS_CHANNELS.SELECT_DIRECTORY),
+    /** 另存为:原生保存对话框,defaultPath = 绝对路径或只有文件名(主目录下);返回选定路径,取消 → null(不写盘). */
+    showSaveDialog: (defaultPath: string): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke(FS_CHANNELS.SHOW_SAVE_DIALOG, { defaultPath }),
     watchDir: (path: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.WATCH, { path }),
     unwatchDir: (path: string): Promise<IpcResult<void>> =>

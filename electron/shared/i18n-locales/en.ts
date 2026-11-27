@@ -21,6 +21,7 @@ export const en = {
   // menu.file (5)
   'menu.file.label': 'File',
   'menu.file.new_window': 'New Window',
+  'menu.file.new_text_file': 'New Text File',
   'menu.file.open_folder': 'Open Folder…',
   'menu.file.open_folder_in_new_window': 'Open Folder in New Window…',
   'menu.file.window_open_failed': 'Could not open a new window',
@@ -68,6 +69,8 @@ export const en = {
   'menu.app.keyboard_shortcuts': 'Keyboard Shortcuts',
   'menu.file.open_recent': 'Open Recent…',
   'menu.file.save_all': 'Save All',
+  'menu.file.save': 'Save',
+  'menu.file.save_as': 'Save As…',
   'menu.edit.find': 'Find',
   'menu.edit.replace': 'Replace',
   'menu.edit.find_in_files': 'Find in Files',
@@ -254,6 +257,8 @@ export const en = {
   'commands.view.focus_previous_part.title': 'Focus Previous Part',
   'commands.view.show_explorer.title': 'Show Explorer',
   'commands.file.save.title': 'Save',
+  'commands.file.save_as.title': 'Save As…',
+  'commands.file.new_untitled.title': 'New Untitled Text File',
   'commands.file.revert.title': 'Revert File',
   'commands.file.accept_local_changes.title': 'Accept My Version (Overwrite File on Disk)',
   'commands.file.revert_local_changes.title': 'Use Disk Version (Discard My Changes)',
@@ -485,6 +490,10 @@ export const en = {
   'editor.autosave_readonly_detail': '{reason}. Press {hotkey} to choose whether to overwrite it.',
   'editor.autosave_paused_deleted': 'Auto-save paused: {name} no longer exists on disk. Your changes are kept in the editor; press {hotkey} to save it again.',
   'editor.save_failed': 'Failed to save',
+  // 无标题编辑器(⌘N)的 tab 名 / 保存失败提示的按钮(VSCode Save As… / Retry;BDD: src/__tests__/editor-save-as/)
+  'editor.untitled_name': 'Untitled-{n}',
+  'editor.save_as_action': 'Save As…',
+  'editor.retry_save': 'Retry',
 
   // 关窗 / 退出时的未保存确认(main dialog.showMessageBox)+ 保存失败提示(renderer toast)
   // 仅多个文件(≥2)时使用(1 个时用 panels.editor.save_changes_title 写文件名);文件名逐行列出(VSCode showSaveConfirm)。
@@ -498,6 +507,8 @@ export const en = {
   'dialog.unsaved_close.names_more': '{names}, etc.',
   'dialog.unsaved_close.readonly_note':
     '{count} file(s) are read-only. Press {hotkey} in the editor to confirm overwriting, or choose “Don\'t Save”.',
+  'dialog.unsaved_close.untitled_note':
+    '{count} file(s) have never been saved. Press {hotkey} in the editor to save them under a name, or choose “Don\'t Save”.',
   'dialog.unsaved_close.disk_changed_note':
     '{count} file(s) were changed on disk by another program and were not overwritten. Press {hotkey} in the editor to resolve the conflict, or choose “Don\'t Save”.',
   'dialog.mcp_legacy_config.message': 'Your Continuo MCP config in Claude Code points to a temporary path',

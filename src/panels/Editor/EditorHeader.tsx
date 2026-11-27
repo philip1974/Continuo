@@ -34,12 +34,13 @@ import { coApp } from '@/plugins/co-app';
 import { PluginRenderBoundary } from '@/plugins/PluginRenderBoundary';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { findEditorFileTabById } from './editor-tab-lookup';
+import { editorTabTitle, isUntitledPath } from './untitled';
 import {
   filterVisible,
   isEditorActionVisible,
   type EditorActionSpec,
 } from '@/plugins/registries/EditorActionRegistry';
-import { basename, stripRootPrefix } from '@/lib/path-cross';
+import { stripRootPrefix } from '@/lib/path-cross';
 import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
 import { tabCloseTargets, type TabCloseKind } from '@/lib/tab-close-targets';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
@@ -340,6 +341,8 @@ export const EditorHeader = memo(function EditorHeader({
       const index = tabsChrome.findIndex((c) => c.id === tab.id);
       const close = (kind: TabCloseKind) => () => onCloseTabsRequest(tabCloseTargets(tabsChrome, tab.id, kind));
       const copyFailed = t('panels.explorer.copy_path_failed');
+      // 无标题文件没有磁盘路径:复制路径 / 在 Finder 中显示不可用(BDD: src/__tests__/editor-save-as/)
+      const untitled = isUntitledPath(tab.filePath);
       return [
         // 右侧键位取当前生效绑定(菜单打开时构建,改键后下次打开即跟随;VSCode 标签右键「关闭 ⌘W」「向右拆分 ⌘\」)
         // 关闭类项可能弹未保存确认框(opensDialog:焦点先回 tab 再执行,确认框拿到初始焦点)
@@ -357,6 +360,7 @@ export const EditorHeader = memo(function EditorHeader({
         {
           label: t('panels.explorer.ctx.copy_path'),
           onSelect: () => void copyToClipboardOrNotify(tab.filePath, copyFailed),
+          disabled: untitled,
         },
         {
           label: t('panels.explorer.ctx.copy_relative_path'),
@@ -364,13 +368,14 @@ export const EditorHeader = memo(function EditorHeader({
             const root = useWorkspaceStore.getState().root;
             void copyToClipboardOrNotify(root === null ? tab.filePath : stripRootPrefix(root, tab.filePath), copyFailed);
           },
+          disabled: untitled,
         },
         'separator',
         // 文件已删除(orphaned)无处可显示。
         {
           label: t('panels.explorer.ctx.reveal_in_finder'),
           onSelect: () => void revealPathOrNotify(tab.filePath),
-          disabled: tab.orphaned === true,
+          disabled: tab.orphaned === true || untitled,
         },
         'separator',
         // VSCode 编辑器 tab 右键「向右拆分 / 向下拆分」:以该 tab 的文件拆出新组(BDD: src/__tests__/editor-groups/)
@@ -421,7 +426,7 @@ export const EditorHeader = memo(function EditorHeader({
         unfocused={unfocused}
       >
         {tabsChrome.map((tab, i) => {
-          const tabTitle = basename(tab.filePath);
+          const tabTitle = editorTabTitle(tab.filePath);
           const description = descriptions[i];
           // git 装饰:标题颜色(激活 / 非激活 tab 都显示,VSCode 同)、标题后字母(与标题同色,aria-hidden)、悬浮提示追加
           // 状态(VSCode ResourceLabel 把 decoration.tooltip 拼到 title)。可访问名称不加状态(VSCode computeEditorAriaLabel)。
@@ -454,7 +459,7 @@ export const EditorHeader = memo(function EditorHeader({
               dirtyLabel={t('panels.editor.unsaved_indicator')}
               // a11y(A106):icon-only 关闭按钮可访问名本地化(design 层无 i18n,调用点注入)。
               closeLabel={t('shell.tab.close', { title: tabTitle })}
-              title={gitLabel === null ? tab.filePath : `${tab.filePath} · ${gitLabel}`}
+              title={isUntitledPath(tab.filePath) ? tabTitle : gitLabel === null ? tab.filePath : `${tab.filePath} · ${gitLabel}`}
               onSelect={() => switchTab(tab.id)}
               onMouseSelect={focusEditorContent}
               onClose={() => onCloseRequest(tab)}

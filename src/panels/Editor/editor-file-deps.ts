@@ -4,6 +4,7 @@
 import { coApi } from '@/lib/co-api';
 import type { EditorFileDeps } from './editor-file-actions';
 import { readEditorFile } from './editor-image';
+import type { SaveAsDeps } from './save-as';
 
 export const editorFileDeps: EditorFileDeps = {
   fs: {
@@ -12,4 +13,10 @@ export const editorFileDeps: EditorFileDeps = {
     writeFile: (p, c, o) => (o ? coApi.fs.writeFile(p, c, o) : coApi.fs.writeFile(p, c)),
     stat: (p) => coApi.fs.stat(p),
   },
+};
+
+/** 另存为的默认依赖(主进程保存对话框 + 同一写盘通道)。 */
+export const saveAsDeps: SaveAsDeps = {
+  showSaveDialog: (defaultPath) => coApi.fs.showSaveDialog(defaultPath),
+  writeFile: (p, c, o) => (o ? coApi.fs.writeFile(p, c, o) : coApi.fs.writeFile(p, c)),
 };

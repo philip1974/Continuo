@@ -127,7 +127,7 @@ describe('打磨 R27 — EditorPanel 只订阅 active tab', () => {
   // 保存快捷键按平台精确匹配(matchesHotkey('mod+s'),与全局热键同一规则):大写 key 照常识别;多带 shift / 另一个
   // 修饰键不算保存(此前 `metaKey || ctrlKey` 不看 shift / alt,绑到 mod+shift+s 的命令会连带触发保存)。
   // fireEvent 返回 false = 处理器 preventDefault(被当作保存接管)。
-  it('mod+S(含大写 key)走保存;mod+shift+S / 另一平台修饰键不走', () => {
+  it('mod+S(含大写 key)走保存;mod+shift+S 走另存为(editor-save-as);另一平台修饰键不走', () => {
     const { container } = render(<EditorPanel />);
     const root = container.firstElementChild;
     if (!root) throw new Error('missing editor root');
@@ -136,7 +136,7 @@ describe('打磨 R27 — EditorPanel 只订阅 active tab', () => {
     const OTHER = mac ? { ctrlKey: true } : { metaKey: true };
     expect(fireEvent.keyDown(root, { key: 'S', ...MOD })).toBe(false);
     expect(fireEvent.keyDown(root, { key: 's', ...MOD })).toBe(false);
-    expect(fireEvent.keyDown(root, { key: 'S', shiftKey: true, ...MOD })).toBe(true);
+    expect(fireEvent.keyDown(root, { key: 'S', shiftKey: true, ...MOD })).toBe(false);
     expect(fireEvent.keyDown(root, { key: 's', ...OTHER })).toBe(true);
   });
 });

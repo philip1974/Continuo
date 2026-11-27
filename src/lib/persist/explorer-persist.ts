@@ -22,6 +22,7 @@
 // editor 字段是 async hydrate(需要 fs.readFile),通过 extras.fs 注入。
 // BDD: editor-session-restore。
 
+import { isUntitledPath } from '../../../electron/shared/untitled';
 import {
   createTab,
   defaultTabMru,
@@ -199,7 +200,8 @@ export function collectEditorSnapshot(
   for (const tab of tabs) {
     // 安全:插件经 editor.openFile 打开的标签不持久化 —— 主进程对它的「路径没被换入链接」确认只在内存里,
     // 重启后按路径恢复就不再受保护,插件此前换入的链接会让宿主读到 / 保存到 scope 外(见 EditorTab.pluginOpenedPath)。
-    if (tab.pluginOpenedPath === undefined) {
+    // 无标题文件不持久化(没有可按路径恢复的内容;Continuo 不做热退出,关闭时按脏文件确认)
+    if (tab.pluginOpenedPath === undefined && !isUntitledPath(tab.filePath)) {
       openFilePaths ??= new Array<string>(tabs.length);
       openFilePaths[count++] = tab.filePath;
       if (tab.id === activeTabId) activePath = tab.filePath;
@@ -215,7 +217,9 @@ export function collectEditorSnapshot(
 /** 会被持久化的 tab(跳过插件打开的,同 openFilePaths 口径):tab id → 路径。 */
 function persistedTabPaths(tabs: readonly EditorTab[]): Map<string, string> {
   const persisted = new Map<string, string>();
-  for (const tab of tabs) if (tab.pluginOpenedPath === undefined) persisted.set(tab.id, tab.filePath);
+  for (const tab of tabs) {
+    if (tab.pluginOpenedPath === undefined && !isUntitledPath(tab.filePath)) persisted.set(tab.id, tab.filePath);
+  }
   return persisted;
 }
 
@@ -358,7 +362,7 @@ export function collectEditorViewStates(
     for (const id of g.tabIds) {
       if (out.length >= EDITOR_VIEW_STATES_MAX) return out;
       const tab = byId.get(id);
-      if (!tab || tab.pluginOpenedPath !== undefined) continue;
+      if (!tab || tab.pluginOpenedPath !== undefined || isUntitledPath(tab.filePath)) continue;
       const state = persistedEditorViewStateOf(id, liveView(id, g.id), g.id);
       const entry = state ? toViewStateEntry(tab.filePath, state, multi ? g.id : undefined) : null;
       if (entry) out.push(entry);

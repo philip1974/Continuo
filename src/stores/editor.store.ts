@@ -32,6 +32,7 @@ import {
 } from '@/panels/Editor/recently-closed-editors';
 import { EDITOR_GROUPS_MAX, PRIMARY_EDITOR_GROUP_ID } from '../../electron/shared/editor-group-id';
 import type { TextEncodingId } from '../../electron/shared/text-encoding';
+import { isUntitledPath } from '../../electron/shared/untitled';
 
 // ── 路径变更通知 ─────────────────────────────────────────────
 // removePaths / renamePath / markPathsDeleted 是「文件已删除 / 已移走」的入口(资源管理器删除 / 改名 / 移动 / 撤销;
@@ -397,6 +398,38 @@ export function getStateAfterRenamingPath(
   return { tabs: newTabs, activeTabId: nextActive };
 }
 
+/**
+ * 另存为后的 tab 状态(VSCode 另存为替换原编辑器,不留两个;BDD: src/__tests__/editor-save-as/):tab `oldId` 换成新路径
+ *(id = filePath = newPath,内容 / 脏态保留,已删除标记与符号链接目标清除,派生缓存按新路径重算);已打开着的另一个
+ * newPath tab 关闭(用户已在系统对话框确认覆盖该文件,它的内容由这次写入取代)。活动 tab 跟随;被关的是活动 tab → 换成本 tab。
+ * oldId 不存在 → 不变。
+ */
+export function getStateAfterRetargetingTab(
+  tabs: EditorTab[],
+  activeTabId: string | null,
+  oldId: string,
+  newPath: string,
+): CloseTabResult {
+  const idx = findEditorTabIndexById(tabs, oldId);
+  if (idx < 0 || oldId === newPath) return { tabs, activeTabId };
+  const t = tabs[idx]!;
+  const { orphaned: _o, realPath: _r, pluginOpenedPath: _p, savedGen: _s, ...rest } = t;
+  const moved: EditorTab = {
+    ...rest,
+    id: newPath,
+    filePath: newPath,
+    milkdownUnsafe: computeMilkdownUnsafe(newPath, t.content),
+    milkdownTooLarge: computeMilkdownTooLarge(newPath, t.content),
+  };
+  const next: EditorTab[] = [];
+  for (const x of tabs) {
+    if (x === t) next.push(moved);
+    else if (x.id !== newPath) next.push(x);
+  }
+  const active = activeTabId === oldId || activeTabId === newPath ? newPath : activeTabId;
+  return { tabs: next, activeTabId: active };
+}
+
 interface TabFilterResult {
   /** 保留下来的 tab(原序);`changed=false` 时为空数组,调用方应直接沿用原 tabs。 */
   readonly remaining: EditorTab[];
@@ -715,6 +748,11 @@ type EditorState = {
   markPathsDeleted: (paths: readonly string[]) => void;
   /** 文件/目录被重命名 / 移动时调用:精确或前缀匹配的 tab 同步路径. */
   renamePath: (oldPath: string, newPath: string) => void;
+  /**
+   * 另存为写盘成功后调用:tab oldId 换到 newPath(各组同位置;组内 MRU / 视图状态随之迁移;已开着的 newPath tab 关闭,
+   * 见 getStateAfterRetargetingTab)。不发路径变更通知 —— 原文件仍在原处(搜索结果 / 最近打开不改写)。
+   */
+  retargetTab: (oldId: string, newPath: string) => void;
   /**
    * 外部修改时调用:非 dirty tab 同步 content+originalContent;dirty 跳过。realPath = 本次读盘
    * 结果的符号链接真实目标(缺省 = 非链接,移除旧值)。
@@ -1043,7 +1081,8 @@ function recordClosedEditors(s: Pick<EditorState, 'tabs' | 'groups'>, groupId: s
     if (index < 0) continue;
     order.splice(index, 1);
     const tab = s.tabs.find((t) => t.id === id);
-    if (!tab || tab.pluginOpenedPath !== undefined) continue;
+    // 无标题文件没有可重新打开的路径(VSCode 关闭无标题编辑器同样不进最近关闭)
+    if (!tab || tab.pluginOpenedPath !== undefined || isUntitledPath(tab.filePath)) continue;
     pushRecentlyClosedEditor({
       path: tab.filePath,
       groupId,
@@ -1519,6 +1558,24 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       getStateAfterRenamingPath(cur, active, oldPath, newPath),
     );
     emitPathChange({ kind: 'moved', oldPath, newPath });
+  },
+
+  retargetTab: (oldId, newPath) => {
+    const pre = get();
+    if (oldId === newPath || findEditorTabIndexById(pre.tabs, oldId) < 0) return;
+    flushEditorWriteBacks([oldId]);
+    renameEditorViewStates([[oldId, newPath]], liveEditorViewsOf);
+    const change = (tabs: EditorTab[], active: string | null): CloseTabResult =>
+      getStateAfterRetargetingTab(tabs, active, oldId, newPath);
+    set((s) => {
+      const base = isMultiGroup(s) ? applyDocChangeToGroups(s, change) : applyTabStateChange(s, change(s.tabs, s.activeTabId));
+      // 组内最近使用顺序里的旧 id 换成新 id(原有的 newPath 条目去掉),关闭活动 tab 后的接替顺序不变
+      const tabMru = new Map<string, readonly string[]>();
+      for (const [gid, ids] of s.tabMru ?? EMPTY_TAB_MRU) {
+        tabMru.set(gid, ids.filter((id) => id !== newPath).map((id) => (id === oldId ? newPath : id)));
+      }
+      return { ...base, tabMru };
+    });
   },
 
   closeTabsOutsideRoot: (root) => {

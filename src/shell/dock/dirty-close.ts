@@ -10,9 +10,9 @@ import type { DirtyState } from '../../../electron/shared/persistence-channels';
 import { isAutoSaveEnabled } from '@/panels/Editor/useAutoSave';
 import { willAutoSaveOnClose } from '@/panels/Editor/autosave-failures';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
-import { EDITOR_DISK_CHANGED } from '@/panels/Editor/editor-file-actions';
+import { EDITOR_DISK_CHANGED, EDITOR_UNTITLED } from '@/panels/Editor/editor-file-actions';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
-import { basenameForChrome } from '@/lib/path-label';
+import { editorTabTitle } from '@/panels/Editor/untitled';
 import { t } from '@/i18n';
 
 type TabLike = Pick<EditorTab, 'id' | 'filePath' | 'dirty' | 'dirtyGen'>;
@@ -84,6 +84,11 @@ export interface SaveForCloseResult {
   readonly diskChanged: number;
   /** 其中因文件写保护(FS_READONLY)而未写的数,提示里单独说明(关窗流程不弹覆盖框)。 */
   readonly readonly: number;
+  /**
+   * 其中无标题文件(没有路径,EDITOR_UNTITLED)的数:关窗握手有超时,不在其中弹另存为对话框 —— 提示用户按另存为键命名保存或选
+   *「不保存」(与 VSCode 退出时逐个弹保存对话框不同)。BDD: src/__tests__/editor-save-as/
+   */
+  readonly untitled: number;
   /** 未保存成功的文件路径(按输入顺序),提示里列出前几个。 */
   readonly failedPaths: readonly string[];
 }
@@ -92,16 +97,17 @@ export interface SaveForCloseResult {
 const FAILED_NAMES_SHOWN = 3;
 
 /**
- * 关窗「保存」失败的 toast 文案:失败数 + 前几个文件名;磁盘冲突 / 写保护各追加一句出路(在编辑器按保存键处理,
- * 或选「不保存」)。hotkey 为当前生效的保存键。
+ * 关窗「保存」失败的 toast 文案:失败数 + 前几个文件名;磁盘冲突 / 写保护 / 无标题各追加一句出路(在编辑器按保存键处理,
+ * 或选「不保存」)。hotkey 为当前生效的保存键(无标题文件按保存键即走另存为)。
  */
 export function saveForCloseFailureMessage(r: SaveForCloseResult, hotkey: string): string {
-  const shown = r.failedPaths.slice(0, FAILED_NAMES_SHOWN).map(basenameForChrome);
+  const shown = r.failedPaths.slice(0, FAILED_NAMES_SHOWN).map(editorTabTitle);
   const joined = shown.join(t('common.list_separator'));
   const names = r.failedPaths.length > shown.length ? t('dialog.unsaved_close.names_more', { names: joined }) : joined;
   const parts = [t('dialog.unsaved_close.save_failed', { count: r.failed, names })];
   if (r.diskChanged > 0) parts.push(t('dialog.unsaved_close.disk_changed_note', { count: r.diskChanged, hotkey }));
   if (r.readonly > 0) parts.push(t('dialog.unsaved_close.readonly_note', { count: r.readonly, hotkey }));
+  if (r.untitled > 0) parts.push(t('dialog.unsaved_close.untitled_note', { count: r.untitled, hotkey }));
   // 句间分隔随语言(中文全角句号后不加空格)。
   return parts.join(t('common.sentence_separator'));
 }
@@ -131,6 +137,7 @@ export async function saveDirtyTabsForClose(
   const failedPaths: string[] = [];
   let diskChanged = 0;
   let readonly = 0;
+  let untitled = 0;
   for (let i = 0; i < targets.length; i += 1) {
     const s = settled[i]!;
     const r = s.status === 'fulfilled' ? s.value : ({ ok: false } as const);
@@ -138,9 +145,10 @@ export async function saveDirtyTabsForClose(
       failedPaths.push(targets[i]!.filePath);
       if ('code' in r && r.code === EDITOR_DISK_CHANGED) diskChanged += 1;
       else if ('code' in r && r.code === ERROR_CODES.FS_READONLY) readonly += 1;
+      else if ('code' in r && r.code === EDITOR_UNTITLED) untitled += 1;
     } else if (current.some((tab) => tab.id === targets[i]!.id && tab.dirty)) {
       failedPaths.push(targets[i]!.filePath);
     }
   }
-  return { failed: failedPaths.length, diskChanged, readonly, failedPaths };
+  return { failed: failedPaths.length, diskChanged, readonly, untitled, failedPaths };
 }

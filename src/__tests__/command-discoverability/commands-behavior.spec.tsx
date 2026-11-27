@@ -104,7 +104,7 @@ afterEach(() => {
 describe('编辑器组关闭类命令(同 tab 右键)', () => {
   function withFakePanel(): ReturnType<typeof vi.fn> {
     const closeTabs = vi.fn();
-    registerEditorPanelActions({ save: vi.fn(), closeActiveTab: vi.fn(() => true), closeTabs, saveTabForSaveAll: vi.fn() });
+    registerEditorPanelActions({ save: vi.fn(), saveAs: vi.fn(), closeActiveTab: vi.fn(() => true), closeTabs, saveTabForSaveAll: vi.fn() });
     return closeTabs;
   }
 

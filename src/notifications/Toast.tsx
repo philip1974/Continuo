@@ -6,6 +6,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { FocusEvent, ReactNode } from 'react';
 import type { Notification } from './types';
+import { Button } from '@/design';
 import './Toast.css';
 
 export interface ToastProps {
@@ -24,7 +25,7 @@ export function Toast({
   onPause,
   onResume,
 }: ToastProps): ReactNode {
-  const { id, level, message, code, count = 1 } = notification;
+  const { id, level, message, code, count = 1, actions } = notification;
   const [hovered, setHovered] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -62,6 +63,17 @@ export function Toast({
     setFocusWithin(false);
   };
 
+  const body = (
+    <div className="toast__body">
+      {/* 错误码不进正文(用户看不懂、占地方),悬停 title 与 data-code 保留给支持排错。 */}
+      <span className="toast__message" title={code !== undefined ? `${message} (${code})` : undefined}>
+        {message}
+      </span>
+      {/* 相同内容合并后的次数(见 NotificationsProvider)。 */}
+      {count > 1 ? <span className="toast__count">×{count}</span> : null}
+    </div>
+  );
+
   return (
     <div
       ref={rootRef}
@@ -77,14 +89,30 @@ export function Toast({
       onBlur={onBlur}
     >
       <span className="toast__icon" aria-hidden="true" />
-      <div className="toast__body">
-        {/* 错误码不进正文(用户看不懂、占地方),悬停 title 与 data-code 保留给支持排错。 */}
-        <span className="toast__message" title={code !== undefined ? `${message} (${code})` : undefined}>
-          {message}
-        </span>
-        {/* 相同内容合并后的次数(见 NotificationsProvider)。 */}
-        {count > 1 ? <span className="toast__count">×{count}</span> : null}
-      </div>
+      {actions !== undefined && actions.length > 0 ? (
+        // 有按钮:正文与按钮行竖排(按钮在正文下方)
+        <div className="toast__main">
+          {body}
+          <div className="toast__actions">
+            {actions.map((a, i) => (
+              <Button
+                key={i}
+                size="sm"
+                variant={i === 0 ? 'primary' : 'secondary'}
+                // 先关闭本通知再执行(执行可能再弹出同内容的通知)
+                onClick={() => {
+                  onDismiss(id);
+                  a.run();
+                }}
+              >
+                {a.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        body
+      )}
       {/* native button:样式由 toast.css 的 .toast__dismiss 定义(token-only),toast 暂留本目录未并入 design。 */}
       <button
         type="button"

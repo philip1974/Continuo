@@ -1,8 +1,8 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { safeHandle, safeHandleWithCtx, senderWindowOrThrow } from '../safe-handle';
+import { safeHandle, safeHandleWithCtx, senderWindowOrThrow, trustedSenderWindow } from '../safe-handle';
 import {
   FS_CHANNELS,
   type FsDirChangedPayload,
@@ -39,6 +39,8 @@ import {
 import { broadcastToWindows, sendToWindow } from '../lib/broadcast';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { showOpenDialogRemembering } from '../lib/open-dialog';
+import { menuCommandTargetWindow } from '../lib/menu-command';
+import { makeShowSaveDialogHandler, showSaveDialogInputSchema } from './fs/save-dialog';
 
 // ────────────────────────────────────────────────────────────
 // schemas — 全部 .strict() 拒绝未知字段(防 IPC 注入)
@@ -524,6 +526,21 @@ export function registerFsIpc(): void {
           properties: opts.properties as Electron.OpenDialogOptions['properties'],
         }),
     }),
+  );
+
+  // 另存为的保存对话框(只返回路径,写入仍走 fs:write-file;见 fs/save-dialog.ts)。
+  safeHandleWithCtx(FS_CHANNELS.SHOW_SAVE_DIALOG, showSaveDialogInputSchema, (input, { event }) =>
+    makeShowSaveDialogHandler({
+      senderWindow: () => trustedSenderWindow(event),
+      parentFor: (owner) => {
+        const focused = BrowserWindow.getFocusedWindow();
+        return focused && focused !== owner && menuCommandTargetWindow(focused) === owner ? focused : owner;
+      },
+      // 调用时取 dialog.showSaveDialog(E2E 以桩替换它)
+      showSaveDialog: (parent, opts) => dialog.showSaveDialog(parent, opts),
+      homeDir: () => app.getPath('home'),
+      recordDocument: recordEditorDocument,
+    })(input),
   );
 
   // ── fs.watch 增量更新(Step 6) ──────────────────────────────

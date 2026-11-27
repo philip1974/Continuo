@@ -19,9 +19,23 @@ import {
   NOTIFY_CODE_MAX,
 } from '../../electron/shared/notify-channels';
 
+/** 通知上的操作按钮(VSCode 通知的 primary actions,如保存失败的「另存为… / 重试」):点击即执行并关闭该通知。 */
+export interface NotifyAction {
+  readonly label: string;
+  readonly run: () => void;
+}
+
+/** 一条通知最多带的按钮数(VSCode 通知 toast 同样只放少量按钮)。 */
+export const NOTIFY_ACTIONS_MAX = 3;
+
 export interface NotifyOpts {
   readonly code?: string;
   readonly mirror?: boolean;
+  /**
+   * 操作按钮(至多 NOTIFY_ACTIONS_MAX 个,多余的丢弃)。带按钮的通知不自动消失(VSCode:带操作的错误通知常驻,直到用户
+   * 点按钮或 ×),同内容合并时按钮换成最新一次的。BDD: src/__tests__/editor-save-as/
+   */
+  readonly actions?: readonly NotifyAction[];
 }
 
 export interface NotifyApi {
@@ -83,7 +97,15 @@ function notifyCore(
       : message;
   const rawCode = opts?.code;
   const codeOk = rawCode === undefined || (rawCode.length > 0 && rawCode.length <= NOTIFY_CODE_MAX);
-  const cappedOpts = codeOk ? opts : { ...opts, code: undefined };
+  const actionsOk = opts?.actions === undefined || opts.actions.length <= NOTIFY_ACTIONS_MAX;
+  const cappedOpts =
+    codeOk && actionsOk
+      ? opts
+      : {
+          ...opts,
+          ...(codeOk ? null : { code: undefined }),
+          ...(actionsOk ? null : { actions: opts!.actions!.slice(0, NOTIFY_ACTIONS_MAX) }),
+        };
   if (cappedOpts?.mirror !== false) {
     mirrorToConsole(level, cappedMessage, cappedOpts?.code);
   }

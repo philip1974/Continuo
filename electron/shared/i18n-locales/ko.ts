@@ -13,6 +13,7 @@ export const ko: Record<TranslationKey, string> = {
   // menu.file
   'menu.file.label': '파일',
   'menu.file.new_window': '새 창',
+  'menu.file.new_text_file': '새 텍스트 파일',
   'menu.file.open_folder': '폴더 열기…',
   'menu.file.open_folder_in_new_window': '새 창에서 폴더 열기…',
   'menu.file.window_open_failed': '새 창을 열 수 없습니다',
@@ -60,6 +61,8 @@ export const ko: Record<TranslationKey, string> = {
   'menu.app.keyboard_shortcuts': '바로 가기 키',
   'menu.file.open_recent': '최근 폴더 열기…',
   'menu.file.save_all': '모두 저장',
+  'menu.file.save': '저장',
+  'menu.file.save_as': '다른 이름으로 저장…',
   'menu.edit.find': '찾기',
   'menu.edit.replace': '바꾸기',
   'menu.edit.find_in_files': '파일에서 찾기',
@@ -242,6 +245,8 @@ export const ko: Record<TranslationKey, string> = {
   'commands.view.focus_previous_part.title': '이전 부분에 포커스',
   'commands.view.show_explorer.title': '탐색기 표시',
   'commands.file.save.title': '저장',
+  'commands.file.save_as.title': '다른 이름으로 저장…',
+  'commands.file.new_untitled.title': '제목 없는 새 텍스트 파일',
   'commands.file.revert.title': '파일 되돌리기',
   'commands.file.accept_local_changes.title': '내 버전 적용(디스크의 파일 덮어쓰기)',
   'commands.file.revert_local_changes.title': '디스크 버전 사용(내 변경 내용 취소)',
@@ -472,6 +477,9 @@ export const ko: Record<TranslationKey, string> = {
   'editor.autosave_readonly_detail': '{reason}. {hotkey}로 덮어쓸지 선택할 수 있습니다.',
   'editor.autosave_paused_deleted': '자동 저장 일시 중지: 디스크에서 {name} 파일을 찾을 수 없습니다. 변경 내용은 편집기에 남아 있으며 {hotkey}로 다시 저장할 수 있습니다.',
   'editor.save_failed': '저장 실패',
+  'editor.untitled_name': '제목 없음-{n}',
+  'editor.save_as_action': '다른 이름으로 저장…',
+  'editor.retry_save': '다시 시도',
 
   'dialog.unsaved_close.message': '다음 {count}개 파일의 변경 내용을 저장하시겠습니까?',
   'dialog.unsaved_close.more_other': '…외 {count}개 파일은 표시되지 않음',
@@ -483,6 +491,8 @@ export const ko: Record<TranslationKey, string> = {
   'dialog.unsaved_close.names_more': '{names} 등',
   'dialog.unsaved_close.readonly_note':
     '그중 {count}개 파일은 읽기 전용입니다. 편집기에서 {hotkey}로 덮어쓰기를 확인하거나 \'저장 안 함\'을 선택하세요.',
+  'dialog.unsaved_close.untitled_note':
+    '그중 {count}개 파일은 아직 저장된 적이 없습니다. 편집기에서 {hotkey}로 이름을 지정해 저장하거나 \'저장 안 함\'을 선택하세요.',
   'dialog.unsaved_close.disk_changed_note':
     '그중 {count}개 파일은 디스크에서 다른 프로그램이 수정하여 덮어쓰지 않았습니다. 편집기에서 {hotkey}로 충돌을 해결하거나 \'저장 안 함\'을 선택하세요.',
   'dialog.mcp_legacy_config.message': 'Claude Code의 Continuo MCP 설정이 임시 경로를 가리키고 있습니다',

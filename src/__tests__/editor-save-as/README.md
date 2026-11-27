@@ -1,0 +1,63 @@
+# editor-save-as(另存为 + 新建无标题文件 + 保存失败提示带「另存为… / 重试」)
+
+## 背景
+
+保存失败(父目录被移走、文件换成目录、磁盘满、无权限)此前只弹「保存失败 …」,没有出路;命令面板 / 菜单没有「另存为」
+「新建无标题文件」。对照 VSCode `workbench.action.files.saveAs`(⇧⌘S)、`newUntitledFile`(⌘N)、`textFileSaveErrorHandler`。
+
+## 行为
+
+### 另存为(⇧⌘S / Ctrl+Shift+S,菜单 文件 → 另存为…,命令面板 File: Save As…)
+
+- 主进程 `fs:show-save-dialog`(`electron/main/ipc/fs/save-dialog.ts`)弹原生保存对话框,**只返回路径**:zod strict 校验
+  `{ defaultPath }`;只接受主窗主 webContents 的调用(可信 frame + sender 即该窗口主 webContents),否则 `NO_WINDOW`;
+  对话框挂在获焦的、属于该主窗的窗口(popout 子窗)上,否则挂主窗;覆盖已有文件由系统对话框确认(Linux 传
+  `showOverwriteConfirmation`);选定的路径须为绝对路径且不超长,否则当作取消;选定的 Markdown 路径登记为本窗口打开过的文档
+  (同目录图片可显示,同 `fs:read-file`)。
+- 写盘仍走 `fs:write-file`(原地写 / 符号链接写穿 / 插件打开路径守卫与普通保存相同;不另开写入通道,不能借另存为绕过任何
+  路径边界)。另存为不做磁盘比对(覆盖已在对话框确认)。
+- 编码沿用 tab 当前的(BDD: `editor-text-encoding`):UTF-16 LE / BE / UTF-8 with BOM 带 BOM、GBK 等按该编码写;行尾就在内容里
+  原样写 —— 另存后的新文件与原文件字节一致(未编辑时);新路径的 tab 保留编码与「用户选定」标记。编码表示不了内容 →
+  `FS_UNENCODABLE`,不写、tab 不变。
+- 默认位置:已有文件 = 它自己的路径;无标题文件 = 工作区根(无工作区 → 主目录)下按首行推断的名字。
+- 成功:原 tab **换到新路径**(不留两个;各编辑器组同位置,组内最近使用顺序、视图状态 / 撤销历史随迁);已开着的目标路径
+  tab 关闭(内容被这次写入取代);tab 变干净(写盘期间继续输入仍脏);保存即常驻(预览 tab 转常驻);导航历史里指向原 tab
+  的条目改指新路径;git 装饰 / 标题 / 语言模式按新路径。原文件不动,不发「已移动 / 已删除」路径通知(搜索结果、最近打开不改写)。
+  选同一路径 = 普通保存。Markdown 内容原样写入,编辑 / 源码 / 预览模式是窗口级设置,另存后不变。
+- 取消:什么都不改。写盘失败:tab 不变,「保存失败 <名字>:<原因>」附「另存为…」。
+- 同一 tab 的另存为单飞:对话框开着时再按 ⇧⌘S 不叠第二个。
+
+### 新建无标题文本文件(⌘N / Ctrl+N,菜单 文件 → 新建文本文件,命令面板 File: New Untitled Text File)
+
+- 在触发窗口的编辑器组打开 `Untitled-N`(编号取未被占用的最小正整数;tab 名三语:Untitled-N / 无标题-N / 제목 없음-N),
+  常驻、语言模式纯文本,内容为空时不脏。标识 `untitled:Untitled-N` 不是磁盘路径(`electron/shared/untitled.ts`)。
+- ⌘S / 全部保存 → 另存为(全部保存为每个有内容的无标题文件依次弹对话框,同 VSCode);关闭有内容的无标题 tab → 「保存 /
+  不保存 / 取消」,保存 = 另存为,保存成功才关闭。
+- 自动保存跳过(VSCode `editorAutoSave`:never auto save untitled);不进会话快照与最近关闭(不做热退出 —— 与 VSCode 不同,
+  关闭 / 关窗时有内容按脏文件确认);不参与外部文件同步;复制路径 / 在 Finder 中显示不可用;后退到已关闭的无标题文件的条目不报错。
+- 关窗 / 退出确认框里显示「Untitled-N」(按界面语言)。确认框选「保存」时:关窗握手有 10s 超时,不在其中弹保存对话框 →
+  无标题文件计入保存失败、中止关窗,提示追加「其中 N 个文件从未保存过,请在编辑器中按 <保存键> 命名保存,或选择『不保存』」
+  (VSCode 退出时逐个弹保存对话框;此处差异)。
+
+### 保存失败提示的按钮
+
+- 通知(`notify`)新增 `actions`(最多 3 个):按钮在正文下方(design `Button`),点击先关闭通知再执行;带按钮的通知不自动
+  消失(VSCode 带操作的错误通知常驻);同内容合并时按钮换成最新一次的。
+- 显式保存 / 全部保存 / 关闭时保存 / 覆盖确认后的重试遇写入类错误(`FS_NOT_FOUND` / `FS_NOT_FILE` / `FS_NOT_DIRECTORY` /
+  `FS_DENIED` / `FS_READONLY_FS` / `FS_NO_SPACE` / `FS_IO`)→ 「保存失败 <名字>:<原因>」附「另存为…」「重试」(VSCode 一般写入错误
+  给 Retry / Save As… / Revert;此处不给 Revert —— 已有 workbench.action.files.revert)。重试 = 同一 tab 再保存一次(带上已确认的
+  「仍然覆盖」),结果处理同显式保存。外部修改 / 写保护仍走各自的确认框。
+
+### 快捷键与菜单
+
+- ⌘N 此前未绑定(⇧⌘N = 新建窗口,与 VSCode 默认一致),直接采用 VSCode 默认。终端获焦时 ⇧⌘S / ⌘N 带 Meta 才让出(Win/Linux
+  Ctrl+N 是 readline 下一条历史,照常进 shell)。编辑器面板内(含 popout 子窗)就地处理 ⇧⌘S。
+- 文件菜单:新建文本文件 / 新建窗口 / … / 保存 / 另存为… / 全部保存(键位随生效绑定显示)。
+
+## 规范
+
+- `save-as.spec.ts`:另存为流程(换路径、取消、失败、目标已开、多组、导航历史、无标题建议名 / 默认位置、Markdown)。
+- `untitled.spec.ts`:新建 / 编号 / 三语 tab 名 / ⌘S 走另存为 / 自动保存与持久化 / 最近关闭跳过 / 关窗名字与提示。
+- `save-dialog-ipc.spec.ts`:主进程 `fs:show-save-dialog` 的校验、发送方限制、默认位置、结果过滤。
+- `save-failure-actions.spec.tsx`:通知按钮;EditorPanel 保存失败附「另存为… / 重试」;无标题 ⌘S / 关闭保存走另存为。
+- `save-as-commands.spec.ts`:命令 / 默认键 / 菜单项 / 终端让键。

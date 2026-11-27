@@ -24,6 +24,7 @@ import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
 import { PluginRenderBoundary } from '@/plugins/PluginRenderBoundary';
 import { useT, t as translate, translateCount } from '@/i18n';
 import { basenameForChrome } from '@/lib/path-label';
+import { editorTabTitle, isUntitledPath } from '@/panels/Editor/untitled';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { codedError, errorCodeOf } from '../../electron/shared/error-message';
 import { createLatestGuard } from '@/lib/latest-wins';
@@ -412,8 +413,8 @@ export function StatusBar() {
         )}
         {activeFilePath !== null && !editorHidden ? (
           <>
-            <span className="truncate max-w-[280px]" title={activeFilePath}>
-              {basenameForChrome(activeFilePath)}
+            <span className="truncate max-w-[280px]" title={isUntitledPath(activeFilePath) ? editorTabTitle(activeFilePath) : activeFilePath}>
+              {editorTabTitle(activeFilePath)}
               {activeDirty && (
                 <>
                   {/* a11y(A37):● 仅视觉;未保存状态用视觉隐藏的真实文本给 AT(状态栏文本流可读)。 */}

@@ -12,6 +12,7 @@
 // 本模块在启动路径上(editor-commands):不静态引入编辑引擎(scrollToLine 动态 import)。
 // BDD: src/__tests__/editor-navigation-history/
 
+import { isUntitledPath } from '../../../electron/shared/untitled';
 import type { EditorSelection, Text } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import {
@@ -167,6 +168,14 @@ export function installNavigationHistory(): () => void {
   };
 }
 
+/**
+ * 另存为把 tab 从 oldPath 换到 newPath(BDD: src/__tests__/editor-save-as/):历史里指向原 tab 的条目改指新路径(原文件仍在,
+ * 但这些位置是在这个编辑器里停留过的)。在 store 换 id 之前调用,随后的活动编辑器变化与当前这条合并。
+ */
+export function retargetNavigationHistory(oldPath: string, newPath: string): void {
+  stack.move(oldPath, newPath);
+}
+
 /** tab 在组 groupId 里的 CodeMirror 视图挂载(或超时 → undefined)。 */
 function waitForGroupView(tabId: string, groupId: string): Promise<EditorView | undefined> {
   const now = liveEditorViewOf(tabId, groupId);
@@ -195,6 +204,8 @@ async function openLocation(loc: NavigationLocation, fallbackGroup: string | und
   const existing = findEditorFileTabByPath(s.tabs, loc.path);
   if (existing) {
     s.switchTab(existing.id, { groupId });
+  } else if (isUntitledPath(loc.path)) {
+    return; // 已关闭的无标题文件没有可重新打开的内容(不按「路径」读盘报错)
   } else {
     s.setActiveGroup(groupId);
     const r = await openFileByPath(loc.path, editorFileDeps);

@@ -59,6 +59,8 @@ describe('popout 子窗按键分发(只限作用于活动面板的命令)', () =
     expect([...POPOUT_HOTKEY_COMMAND_IDS]).toEqual([
       CLOSE_ACTIVE_EDITOR_COMMAND.id,
       REOPEN_CLOSED_EDITOR_COMMAND.id,
+      // ⌘N 新建的无标题文件落在该子窗的编辑器组(editor-save-as)
+      'workbench.action.files.newUntitledFile',
       'workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup',
       'workbench.action.quickOpenLeastRecentlyUsedEditorInGroup',
       'workbench.action.terminal.toggleTerminal',

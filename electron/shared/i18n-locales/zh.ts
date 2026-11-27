@@ -13,6 +13,7 @@ export const zh: Record<TranslationKey, string> = {
   // menu.file
   'menu.file.label': '文件',
   'menu.file.new_window': '新建窗口',
+  'menu.file.new_text_file': '新建文本文件',
   'menu.file.open_folder': '打开文件夹…',
   'menu.file.open_folder_in_new_window': '在新窗口中打开文件夹…',
   'menu.file.window_open_failed': '无法打开新窗口',
@@ -60,6 +61,8 @@ export const zh: Record<TranslationKey, string> = {
   'menu.app.keyboard_shortcuts': '键盘快捷方式',
   'menu.file.open_recent': '打开最近的文件夹…',
   'menu.file.save_all': '全部保存',
+  'menu.file.save': '保存',
+  'menu.file.save_as': '另存为…',
   'menu.edit.find': '查找',
   'menu.edit.replace': '替换',
   'menu.edit.find_in_files': '在文件中查找',
@@ -240,6 +243,8 @@ export const zh: Record<TranslationKey, string> = {
   'commands.view.focus_previous_part.title': '聚焦到上一部分',
   'commands.view.show_explorer.title': '显示资源管理器',
   'commands.file.save.title': '保存',
+  'commands.file.save_as.title': '另存为…',
+  'commands.file.new_untitled.title': '新建无标题文本文件',
   'commands.file.revert.title': '还原文件',
   'commands.file.accept_local_changes.title': '接受我的版本（覆盖磁盘上的文件）',
   'commands.file.revert_local_changes.title': '使用磁盘版本（放弃我的更改）',
@@ -471,6 +476,9 @@ export const zh: Record<TranslationKey, string> = {
   'editor.autosave_readonly_detail': '{reason}，按 {hotkey} 可选择覆盖',
   'editor.autosave_paused_deleted': '自动保存已暂停：磁盘上已找不到 {name}。修改仍保留在编辑器中，按 {hotkey} 可重新保存。',
   'editor.save_failed': '保存失败',
+  'editor.untitled_name': '无标题-{n}',
+  'editor.save_as_action': '另存为…',
+  'editor.retry_save': '重试',
 
   'dialog.unsaved_close.message': '是否要保存对以下 {count} 个文件的更改？',
   'dialog.unsaved_close.more_other': '…另有 {count} 个文件未列出',
@@ -481,6 +489,7 @@ export const zh: Record<TranslationKey, string> = {
   'dialog.unsaved_close.save_failed': '{count} 个文件保存失败（{names}），窗口未关闭。',
   'dialog.unsaved_close.names_more': '{names} 等',
   'dialog.unsaved_close.readonly_note': '其中 {count} 个文件是只读的，请在编辑器中按 {hotkey} 确认覆盖，或选择「不保存」。',
+  'dialog.unsaved_close.untitled_note': '其中 {count} 个文件从未保存过，请在编辑器中按 {hotkey} 命名保存，或选择「不保存」。',
   'dialog.unsaved_close.disk_changed_note': '其中 {count} 个文件已在磁盘上被其它程序修改，未覆盖。请在编辑器中按 {hotkey} 解决冲突，或选择「不保存」。',
   'dialog.mcp_legacy_config.message': 'Claude Code 中的 Continuo MCP 配置指向临时路径，存在安全风险',
   'dialog.mcp_legacy_config.detail':

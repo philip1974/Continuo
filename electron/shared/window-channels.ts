@@ -84,8 +84,11 @@ export interface WindowViewActionTarget {
  */
 export const MENU_COMMAND_IDS = [
   // 文件
+  'workbench.action.files.newUntitledFile',
   'workbench.action.files.openFolder',
   'workbench.action.openRecent',
+  'workbench.action.files.save',
+  'workbench.action.files.saveAs',
   'workbench.action.files.saveAll',
   // 首选项(macOS 应用菜单;其它平台 文件 → 首选项)
   'settings.toggle',

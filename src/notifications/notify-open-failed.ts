@@ -3,7 +3,7 @@
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { failureOf, type Failure } from '@/lib/failure-of';
-import { notify } from './notify';
+import { notify, type NotifyAction } from './notify';
 import { promptOpenWithEncoding } from '@/plugins/editor-encoding/store';
 import { ERROR_CODES } from '../../electron/shared/error-codes';
 import type { TextEncodingId } from '../../electron/shared/text-encoding';
@@ -23,9 +23,13 @@ export function notifyOpenFailed(
 /**
  * 保存失败的统一提示(显式保存 / 关闭时保存 / 覆盖确认后的重试):`「保存失败」 <name>：<原因>`,同 VSCode
  * 「Failed to save 'note.txt': …」—— 此前只弹按 code 本地化的原因(如「文件 I/O 错误」),看不出是哪个文件、什么动作。
+ * actions:通知上的按钮(按错误类型给「另存为… / 重试」,见 EditorPanel saveFailureActions)。
  */
-export function notifySaveFailed(name: string, failure: Failure): void {
-  notify.error(fileFailureText(t('editor.save_failed'), name, failure), { code: failure.code });
+export function notifySaveFailed(name: string, failure: Failure, actions?: readonly NotifyAction[]): void {
+  notify.error(
+    fileFailureText(t('editor.save_failed'), name, failure),
+    actions !== undefined && actions.length > 0 ? { code: failure.code, actions } : { code: failure.code },
+  );
 }
 
 /** `<动作> <文件名>：<按 code 本地化的原因>`(冒号随语言)。打开 / 保存 / 自动保存失败共用。 */

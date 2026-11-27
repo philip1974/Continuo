@@ -90,13 +90,16 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
     ]);
   });
 
-  it('文件:打开最近的文件夹… / 全部保存', () => {
+  it('文件:新建文本文件 / … / 打开最近的文件夹… / 保存 / 另存为… / 全部保存', () => {
     const file = commandsOf(submenu(template(true), 'menu.file.label'));
     expect(file).toEqual([
+      'workbench.action.files.newUntitledFile',
       'menu.file.new_window',
       'workbench.action.files.openFolder',
       'menu.file.open_folder_in_new_window',
       'workbench.action.openRecent',
+      'workbench.action.files.save',
+      'workbench.action.files.saveAs',
       'workbench.action.files.saveAll',
       'menu.file.close_window',
     ]);

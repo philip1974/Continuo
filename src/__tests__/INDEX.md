@@ -730,6 +730,14 @@
 
 - [`revert-file.spec.tsx`](./editor-revert-file/revert-file.spec.tsx)
 
+## [editor-save-as(另存为 + 新建无标题文件 + 保存失败提示带「另存为… / 重试」)](./editor-save-as/README.md)
+
+- [`save-as-commands.spec.ts`](./editor-save-as/save-as-commands.spec.ts)
+- [`save-as.spec.ts`](./editor-save-as/save-as.spec.ts)
+- [`save-dialog-ipc.spec.ts`](./editor-save-as/save-dialog-ipc.spec.ts)
+- [`save-failure-actions.spec.tsx`](./editor-save-as/save-failure-actions.spec.tsx)
+- [`untitled.spec.ts`](./editor-save-as/untitled.spec.ts)
+
 ## [editor-save-conflict-compare](./editor-save-conflict-compare/README.md)
 
 - [`conflict-compare.spec.ts`](./editor-save-conflict-compare/conflict-compare.spec.ts)

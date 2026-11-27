@@ -24,6 +24,7 @@ const makeFs = (overrides: Partial<FsApi> = {}): FsApi => ({
   readFile: vi.fn(async () => ok('')),
   readImage: vi.fn(async () => ok({ dataUrl: '', size: 0 })),
   writeFile: vi.fn(async () => ok(undefined)),
+  showSaveDialog: vi.fn(async () => ok(null)),
   stat: vi.fn(async () => ok({ mtimeMs: 0, size: 0, ino: 0 })),
   rename: vi.fn(async (_o, n) => ok(`/parent/${n}`)),
   createFile: vi.fn(async (d, n) => ok({ path: `${d}/${n}`, created: `${d}/${n}` })),
