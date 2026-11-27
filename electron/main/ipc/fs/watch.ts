@@ -273,30 +273,69 @@ export interface RootPresenceDeps {
   /** true 存在 / false 不存在 / null 无法确定(不改状态、不通知)。 */
   readonly exists: (path: string) => Promise<boolean | null>;
   readonly onChange: (path: string) => void;
+  /** 根事件后再复查一次的延迟(默认 ROOT_PRESENCE_SETTLE_MS)。 */
+  readonly settleMs?: number;
+  /** 定时器(测试注入;默认 setTimeout,不阻止进程退出)。 */
+  readonly schedule?: (fn: () => void, ms: number) => void;
 }
 
 /**
- * 工作区根自身被改名 / 删除 / 恢复的检测(VSCode:根消失后打开的编辑器全部显示已删除)。fs.watch 对被 watch 目录
+ * 根事件后的延迟复查。卷卸载 / 挂回时 FSEvents 的根事件与卷实际状态不同步(macOS 实测,`hdiutil detach` / `attach`):
+ * 卸载事件可能先于挂载点目录被删除到达(此刻 stat 仍存在);挂回时先到的根事件对应**空挂载点目录刚建好**(卷内容尚未出现),
+ * 之后卷真正挂上不一定再有事件。只在事件当下 stat 一次会漏判消失,或在卷内容就位前就通知「恢复」→ 渲染端复查读不到文件,
+ * 「(已删除)」与资源管理器空列表一直停着。
+ */
+export const ROOT_PRESENCE_SETTLE_MS = 1500;
+
+/**
+ * 工作区根自身被改名 / 删除 / 恢复 / 卷卸载挂回的检测(VSCode:根消失后打开的编辑器全部显示已删除)。fs.watch 对被 watch 目录
  * **自身**的改名 / 删除只回调一次、filename = 根的 basename(macOS 递归 FSEvents;Linux inotify IN_MOVE_SELF /
  * IN_DELETE_SELF),按子项解析匹配不到任何 tab;Windows 删除被 watch 的目录则 FSWatcher emit('error')(EPERM),
- * 改名不回调。调用方在这两种情形调本函数返回的 check(root):root 不存在 → 通知(每次);此前通知过消失、现在又存在
- * (改回原名 / 重建,macOS 的 FSEvents 按路径继续回调同一 basename)→ 通知一次。根仍在且未消失过(如根下恰有同名
- * 子项变化)→ 不通知。
+ * 改名不回调;平台不给 filename 的根级事件同样当作根事件。调用方在这些情形调本函数返回的 check(root):
+ * root 不存在 → 通知(每次);此前通知过消失、现在又存在(改回原名 / 重建 / 卷挂回,macOS 的 FSEvents 按路径继续回调同一
+ * basename)→ 通知一次。根仍在且未消失过(如根下恰有同名子项变化)→ 不通知。
+ * 每次根事件另在 settleMs 后复查一次(同一根合并为一个待复查):此时才发现消失 → 通知;事件当下刚判为恢复 → 再通知一次
+ *(卷内容此时才就位,渲染端据此再复查一遍)。
  */
 export function createRootPresenceTracker(deps: RootPresenceDeps): (rootPath: string) => void {
   const gone = new Set<string>();
-  return (rootPath) => {
+  // 刚从消失转为存在、尚未经延迟复查再通知的根。
+  const returned = new Set<string>();
+  const settling = new Set<string>();
+  const settleMs = deps.settleMs ?? ROOT_PRESENCE_SETTLE_MS;
+  const schedule =
+    deps.schedule ??
+    ((fn: () => void, ms: number) => {
+      setTimeout(fn, ms).unref?.();
+    });
+  const check = (rootPath: string, settle: boolean): void => {
     if (!deps.isRoot(rootPath)) return;
     void deps.exists(rootPath).then(
       (exists) => {
         if (exists === false) {
           gone.add(rootPath);
+          returned.delete(rootPath);
           deps.onChange(rootPath);
-        } else if (exists === true && gone.delete(rootPath)) {
-          deps.onChange(rootPath);
+        } else if (exists === true) {
+          if (gone.delete(rootPath)) {
+            if (!settle) returned.add(rootPath);
+            deps.onChange(rootPath);
+          } else if (settle && returned.delete(rootPath)) {
+            deps.onChange(rootPath);
+          }
         }
       },
       () => {},
     );
+  };
+  return (rootPath) => {
+    if (!deps.isRoot(rootPath)) return;
+    check(rootPath, false);
+    if (settling.has(rootPath)) return;
+    settling.add(rootPath);
+    schedule(() => {
+      settling.delete(rootPath);
+      check(rootPath, true);
+    }, settleMs);
   };
 }

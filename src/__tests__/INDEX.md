@@ -689,9 +689,11 @@
 
 ## [editor-orphaned-tab](./editor-orphaned-tab/README.md)
 
+- [`autosave-paused-notice.spec.tsx`](./editor-orphaned-tab/autosave-paused-notice.spec.tsx)
 - [`orphaned-external-clean.spec.tsx`](./editor-orphaned-tab/orphaned-external-clean.spec.tsx)
 - [`orphaned-external-sync.spec.tsx`](./editor-orphaned-tab/orphaned-external-sync.spec.tsx)
 - [`orphaned-panel.spec.tsx`](./editor-orphaned-tab/orphaned-panel.spec.tsx)
+- [`orphaned-recheck.spec.tsx`](./editor-orphaned-tab/orphaned-recheck.spec.tsx)
 - [`orphaned-root-gone.spec.tsx`](./editor-orphaned-tab/orphaned-root-gone.spec.tsx)
 - [`orphaned-store.spec.ts`](./editor-orphaned-tab/orphaned-store.spec.ts)
 - [`orphaned-trash-confirm.spec.tsx`](./editor-orphaned-tab/orphaned-trash-confirm.spec.tsx)
@@ -881,6 +883,10 @@
 ## [Explorer 行内重命名:输入时校验,错误行内提示、输入保留](./explorer-rename-validation/README.md)
 
 - [`rename-validation.spec.tsx`](./explorer-rename-validation/rename-validation.spec.tsx)
+
+## [explorer-root-unavailable(工作区根不可用 / 恢复时资源管理器不显示过期列表)](./explorer-root-unavailable/README.md)
+
+- [`root-presence-refresh.spec.tsx`](./explorer-root-unavailable/root-presence-refresh.spec.tsx)
 
 ## [ExplorerSidebar(VSCode 风固定侧边栏)](./explorer-sidebar/README.md)
 
@@ -1730,6 +1736,11 @@
 ## [ribbon-registry(IconSidebar 活动栏图标贡献)](./ribbon-registry/README.md)
 
 - [`ribbon-registry.spec.ts`](./ribbon-registry/ribbon-registry.spec.ts)
+
+## [save-in-place(编辑器保存覆盖已有文件:原地写,保留文件身份与元数据)](./save-in-place/README.md)
+
+- [`save-in-place-failure.spec.ts`](./save-in-place/save-in-place-failure.spec.ts)
+- [`save-in-place.spec.ts`](./save-in-place/save-in-place.spec.ts)
 
 ## [save-readonly-file(保存写保护文件:拒绝静默覆盖,显式保存经确认后才覆盖)](./save-readonly-file/README.md)
 

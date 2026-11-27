@@ -30,10 +30,11 @@ afterEach(async () => {
 });
 
 // P2 回归:旧实现覆盖前先 rename(path → path.backup),在"原文件已挪走 / tmp 未就位"
-// 之间留崩溃即丢数据的窗口。新实现只 rename(tmp → path) 原子替换,原文件直到替换那刻
-// 始终完好。断言:覆盖已存在文件时,绝不出现 src=原文件 或 dst=*.backup 的 rename。
+// 之间留崩溃即丢数据的窗口。新建文件只 rename(tmp → path) 原子替换;覆盖已有文件原地写、不 rename。
+// 断言:绝不出现 src=原文件 或 dst=*.backup 的 rename。
 describe('49 · atomicWriteFile 不再有 .backup 数据丢失窗口', () => {
-  it('覆盖已有文件:内容更新,且从不把原文件 rename 成 .backup', async () => {
+  // 覆盖已有普通文件现为原地写(同一 inode,见 src/__tests__/save-in-place/):根本不 rename,更无 .backup 窗口。
+  it('覆盖已有文件:内容更新,不做任何 rename(原地写),从不出现 .backup', async () => {
     const dir = await tempDir();
     const file = join(dir, 'doc.md');
     await writeFile(file, 'OLD');
@@ -41,14 +42,7 @@ describe('49 · atomicWriteFile 不再有 .backup 数据丢失窗口', () => {
     await atomicWriteFile(file, 'NEW');
 
     expect(await readFile(file, 'utf-8')).toBe('NEW');
-    // 唯一的 rename 应是 tmp → file;不得有 file → *.backup。tmp 是固定隐藏标记名
-    // `.<base>.continuo.tmp`(避免撞用户真实 ${file}.tmp,P1;并发安全由 per-path
-    // 串行化保证 — 见 atomic-write.ts P1-AL 修订)
-    expect(renameCalls.length).toBe(1);
-    expect(renameCalls[0]!.from).toBe(join(dir, '.doc.md.continuo.tmp'));
-    expect(renameCalls[0]!.to).toBe(file);
-    expect(renameCalls.some((c) => c.to.endsWith('.backup'))).toBe(false);
-    expect(renameCalls.some((c) => c.from === file)).toBe(false);
+    expect(renameCalls).toEqual([]);
   });
 
   it('新建文件:正常写入,单次 rename(tmp → path)', async () => {

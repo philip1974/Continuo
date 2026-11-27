@@ -462,6 +462,7 @@ export const ko: Record<TranslationKey, string> = {
   'find.option.regex': '정규식 사용',
   'editor.autosave_failed': '자동 저장 실패',
   'editor.autosave_readonly_detail': '{reason}. {hotkey}로 덮어쓸지 선택할 수 있습니다.',
+  'editor.autosave_paused_deleted': '자동 저장 일시 중지: 디스크에서 {name} 파일을 찾을 수 없습니다. 변경 내용은 편집기에 남아 있으며 {hotkey}로 다시 저장할 수 있습니다.',
   'editor.save_failed': '저장 실패',
 
   'dialog.unsaved_close.message': '다음 {count}개 파일의 변경 내용을 저장하시겠습니까?',

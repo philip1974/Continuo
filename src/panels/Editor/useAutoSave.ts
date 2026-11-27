@@ -15,6 +15,7 @@ import {
 } from './autosave-flush-registry';
 import { claimAutoSave, releaseAutoSave, setAutoSaveFailed } from './autosave-failures';
 import { useAutoSaveHeld } from './autosave-hold';
+import { observeOrphanedAutoSave } from './autosave-orphan-notice';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
@@ -166,6 +167,22 @@ export function useAutoSave(
     // 有 pending:关窗 flush 会落盘,清除失败态(失败后继续编辑 / 显式保存后再编辑)。
     setAutoSaveFailed(scheduler, false);
   }, [enabled, active, scheduler]);
+
+  // 文件已删除(orphaned)且有未保存修改:自动保存不会写回 → 提示一次(不刷屏,见 autosave-orphan-notice.ts),
+  // 否则继续输入时磁盘静默不更新。只看自动保存设置本身(opts.enabled),不受删除确认期间的暂停(held)影响。
+  const autoSaveOn = opts.enabled;
+  const { orphaned: activeOrphaned, dirty: activeDirty, filePath: activeFilePath } = active;
+  useEffect(() => {
+    if (tabId === null || !autoSaveOn) return;
+    observeOrphanedAutoSave(tabId, activeOrphaned, activeDirty, () => {
+      notify.warn(
+        t('editor.autosave_paused_deleted', {
+          name: basenameForChrome(activeFilePath ?? tabId),
+          hotkey: saveHotkeyLabel(),
+        }),
+      );
+    });
+  }, [tabId, autoSaveOn, activeOrphaned, activeDirty, activeFilePath]);
 
   // 切走该 tab(scheduler 身份随 tabId 变)或组件卸载 → flush pending,
   // 把还卡在防抖窗口里的编辑落盘,避免连续输入后立即切 tab 丢失整段内容。

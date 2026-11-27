@@ -12,6 +12,8 @@
 // 外部删除(确认后仍不存在)不关 tab:干净 / 脏都保留并标「(已删除)」(VSCode closeOnFileDelete: false,
 // editor store markPathsDeleted);文件重新出现 → 清除标记(干净 tab 按磁盘重载)。资源管理器删除仍关干净 tab。
 // 工作区根自身被改名 / 删除 / 恢复:main 推 fs:root-presence-changed,复查根下全部 tab(同 watch-restored)。
+// 已标「(已删除)」的 tab 另有低频复查(ORPHANED_RECHECK_MS 一次 + 窗口获得焦点时):不依赖文件事件 —— 卷卸载后挂回、
+// 网络盘重连等场景 watcher 不一定再报这个文件(VSCode 文件重新出现即清除 orphaned),发现文件回来即清除并恢复自动保存。
 
 import { useEffect } from 'react';
 import { coApi } from '@/lib/co-api';
@@ -40,6 +42,9 @@ const RESTORED_RELOAD_CONCURRENCY = 32;
  * 「先删后建」式替换(部分编辑器 / git checkout)的间隙会短暂读不到,不能据此关 tab。
  */
 export const EXTERNAL_DELETE_CONFIRM_MS = 500;
+
+/** 已标「(已删除)」的 tab 的存在性复查周期(另在窗口获得焦点时复查)。只 stat,不读内容;没有已删除 tab 时什么都不做。 */
+export const ORPHANED_RECHECK_MS = 5000;
 
 type ReadResult = { ok: true; data: string; realPath?: string } | { ok: false; code?: string } | null;
 
@@ -281,11 +286,36 @@ export function useExternalFileSync(): void {
       reloadMatching(match);
       for (const tab of matchingTabs(match, true)) checkOrphan(tab.filePath, tab.id);
     });
+    // 已删除 tab 的低频复查:文件回来了(stat 存在)→ 干净 tab 重读(reloadFromDisk 清除标记),脏 tab 走 checkOrphan 清除
+    //(恢复自动保存;写回前 checkDiskBeforeSave 仍会比对磁盘内容,不会覆盖期间出现的不同内容)。仍不存在 → 不动。
+    // 上一轮还没查完不叠加;有界并发(卷整个卸载时根下可能有很多已删除 tab)。
+    let recheckRunning = false;
+    const recheckOrphaned = (): void => {
+      if (cancelled || recheckRunning) return;
+      const targets = useEditorStore.getState().tabs.filter((t) => t.orphaned === true);
+      if (targets.length === 0) return;
+      recheckRunning = true;
+      void allSettledWithConcurrency(targets, RESTORED_RELOAD_CONCURRENCY, async (t) => {
+        if (cancelled) return;
+        const gone = await statNotFound(t.filePath);
+        if (gone !== false || cancelled) return;
+        const live = findEditorFileTabById(useEditorStore.getState().tabs, t.id);
+        if (live === null || !live.orphaned || live.filePath !== t.filePath) return;
+        if (live.dirty) checkOrphan(live.filePath, live.id);
+        else await requestReload(live.filePath, live.id);
+      }).finally(() => {
+        recheckRunning = false;
+      });
+    };
+    const recheckTimer = setInterval(recheckOrphaned, ORPHANED_RECHECK_MS);
+    window.addEventListener('focus', recheckOrphaned);
     const unsubRestored = onWatchRestored(reloadSubtree);
     // 工作区根自身被改名 / 删除(根下文件名匹配不到 tab)/ 之后恢复:复查根下全部 tab。
     const unsubRootPresence = coApi.fs.onRootPresenceChanged(reloadSubtree);
     return () => {
       cancelled = true; // race(R79):失效在途 readFile 的迟到 settle
+      clearInterval(recheckTimer);
+      window.removeEventListener('focus', recheckOrphaned);
       unsub();
       unsubRestored();
       unsubRootPresence();

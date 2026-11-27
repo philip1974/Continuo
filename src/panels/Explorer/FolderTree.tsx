@@ -64,6 +64,7 @@ import {
 } from './batch-transfer';
 
 import { useFsWatcher } from './hooks/useFsWatcher';
+import { useRootPresenceRefresh } from './hooks/useRootPresenceRefresh';
 import { useGitStatus } from './hooks/useGitStatus';
 import { gitDecorationOf, gitRelPath, type GitDecorationIndex } from './git-decorations';
 import type { GitStatusKind } from '../../../electron/shared/git-status';
@@ -1388,6 +1389,8 @@ export function FolderTree({ root }: { root: string }) {
   // 命令「刷新资源管理器」(explorer-requests)用:订阅只随 root 重建,调用时取最新的 refreshAll。
   const refreshAllStable = useStableCallback(refreshAll);
   const runFileUndoStable = useStableCallback(runFileUndo);
+  // 根消失 / 恢复(卷卸载后挂回等):根读不到 → 显示根读取失败而非过期列表;根读取失败期间低频复查,回来即整树刷新。
+  useRootPresenceRefresh(root, typeof rootLoad === 'object', () => refreshParent(root), refreshAllStable);
 
   // 列表为空时区分三态(VSCode 同款):读取失败(原因 + 重试)/ 加载中 / 空文件夹。读取失败时 loader 也缓存 [],
   // 靠 rootLoad 区分。

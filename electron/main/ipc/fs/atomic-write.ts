@@ -7,9 +7,17 @@ import { runSerialPerKey } from '../../../shared/run-serial-per-key';
 import type { FsFileStat } from '../../../shared/fs-channels';
 
 /**
- * 原子写文件(ADR-009,借鉴 Lokus atomic_write_file)。
+ * 编辑器保存 / 原子写文件(ADR-009,借鉴 Lokus atomic_write_file;覆盖已有文件改为原地写,同 VSCode)。
  *
- * 流程:
+ * atomicWriteFile(编辑器保存)按目标分两种写法:
+ *   - **已有普通文件 → 原地写**(VSCode diskFileSystemProvider.doWriteFile 默认:open 已有文件写内容,只有
+ *     显式要求 atomic 的写才走 tmp + rename,且 VSCode 对符号链接也不做 atomic)。tmp + rename 替换的是**目录项**:
+ *     只读目录(555)里的可写文件存不了(rename 要目录写权限)、扩展属性 / Finder 标签 / ACL / 创建时间丢失、
+ *     硬链接被拆开(inode 变)、属主变成保存者。原地写保持同一 inode,上述元数据全部不动。见 writeInPlace。
+ *   - **新建 / 非普通文件 → tmp + rename**(下述流程,与 atomicReplaceFileNoFollow 共用)。新建本来就要目录写权限,
+ *     也没有要保留的元数据;rename 保证不会留下半截新文件。
+ *
+ * tmp + rename 流程:
  *   1. 写同目录的固定 tmp(`.<base>.continuo.tmp`,`open('wx')`;残留的旧 tmp 先删再建)+ fsync(fd)
  *   2. rename tmp → path     ← POSIX/Windows(MOVEFILE_REPLACE_EXISTING)原子替换
  *
@@ -21,7 +29,7 @@ import type { FsFileStat } from '../../../shared/fs-channels';
  * 在「原文件已挪走」与「tmp 尚未就位」之间留了一个**进程崩溃 → path 不存在**的数据
  * 丢失窗口(且无任何启动期 .backup 恢复逻辑)。`rename(tmp → path)` 本身就是原子替换:
  * 原文件直到 rename 成功的那一刻始终完好,rename 失败也不动原文件 → 预备份多余且有害,
- * 故移除。
+ * 故移除。原地写同样不 rename 原文件(没有「path 不存在」的窗口)。
  *
  * 并发(P1-AL,第十四轮 + 第十八轮自审修订):固定 tmp 名在同一路径的并发写
  * (autosave 连发 / 手动 Cmd+S 与 autosave 重叠 / 多窗或插件同写一文件)下会互相
@@ -29,7 +37,7 @@ import type { FsFileStat } from '../../../shared/fs-channels';
  * 但**第十八轮自审**发现唯一名的反向代价:crash 在 fsync→rename 窗口残留的 `.tmp` 带随机
  * 后缀、永不被后续写复用、无清扫 → 单调累积孤儿文件。改为 **per-path 串行化 + 固定 tmp 名**:
  * 既消除并发损坏(同路径写排队、各自完整 rename = 干净 last-writer-wins),又让 crash 残留的
- * 单个 tmp 在下次同路径写时被删除重建、自愈,不累积。
+ * 单个 tmp 在下次同路径写时被删除重建、自愈,不累积。原地写同样在 per-path 锁内执行。
  *
  * 不做:父目录 mkdir(VSCode 行为:save 到不存在的目录就该报错)
  *
@@ -91,7 +99,7 @@ export async function atomicWriteFile(
   // target 的并发写也能正确串行)。
   const realPath = await resolveSymlinkTarget(filePath);
   return withPathLock(realPath, () =>
-    atomicWriteFileInner(realPath, content, options.overwriteReadonly === true),
+    atomicWriteFileInner(realPath, content, options.overwriteReadonly === true, true),
   );
 }
 
@@ -106,7 +114,8 @@ export async function atomicReplaceFileNoFollow(
   content: string | Uint8Array,
 ): Promise<FsFileStat | undefined> {
   // 写保护文件一律拒绝(FS_READONLY),不提供覆盖:插件 / 拖入 / CLI 配置写不应替用户去掉写保护。
-  return withPathLock(filePath, () => atomicWriteFileInner(filePath, content, false));
+  // 始终 tmp + rename(不原地写):原地 open 会跟随此刻被换成链接的路径写穿到链接目标,与本函数的不跟随语义相反。
+  return withPathLock(filePath, () => atomicWriteFileInner(filePath, content, false, false));
 }
 
 /**
@@ -124,7 +133,7 @@ export async function atomicReplaceFileNoFollow(
 async function existingFileMode(
   filePath: string,
   overwriteReadonly: boolean,
-): Promise<number | undefined> {
+): Promise<{ readonly mode: number } | undefined> {
   let st: Stats;
   try {
     // lstat 不跟随链接:atomicReplaceFileNoFollow 替换的是链接本身,新文件不得继承(探测)链接目标的权限位,
@@ -147,7 +156,7 @@ async function existingFileMode(
       throw fsError(mapNodeErrnoCode(err), `atomic write unlock failed: ${filePath}`);
     }
   }
-  return process.platform === 'win32' ? undefined : mode;
+  return { mode };
 }
 
 /** 无任何写位(含 Windows 只读属性),或当前用户无写权限(access W_OK 被拒;root 恒通过,由前一条兜住 0444)。 */
@@ -166,13 +175,27 @@ async function atomicWriteFileInner(
   filePath: string,
   content: string | Uint8Array,
   overwriteReadonly: boolean,
+  inPlace: boolean,
+): Promise<FsFileStat | undefined> {
+  const existing = await existingFileMode(filePath, overwriteReadonly);
+  if (inPlace && existing !== undefined) {
+    const r = await writeInPlace(filePath, content);
+    if (r !== FALLBACK_TO_RENAME) return r;
+  }
+  return replaceViaTmp(filePath, content, existing);
+}
+
+async function replaceViaTmp(
+  filePath: string,
+  content: string | Uint8Array,
+  existing: { readonly mode: number } | undefined,
 ): Promise<FsFileStat | undefined> {
   // tmp 用**隐藏标记名** `.<base>.continuo.tmp`(而非旧的可预测 `${filePath}.tmp`):
   // 旧名会与用户真实文件(如 `foo.md.tmp` —— 常见后缀)撞名,`open('w')` 直接截断它、
   // 随后 rename 连内容带文件一起销毁 → 数据丢失(P1)。隐藏 + 应用标记的 sibling
   // 实务上不可能是用户文件。仍是固定名(per-path 串行 + crash 残留自愈,见上方注释)。
   const tmpPath = join(dirname(filePath), `.${basename(filePath)}.continuo.tmp`);
-  const keepMode = await existingFileMode(filePath, overwriteReadonly);
+  const keepMode = process.platform === 'win32' ? undefined : existing?.mode;
 
   // ① 写 tmp + fsync。open 'wx' 排他:绝不盲目截断已存在文件。EEXIST 只可能是本应用上次
   // crash(open→rename 窗口被杀)残留的同名标记 tmp(用户不会创建此名)→ 安全删除后重试
@@ -259,6 +282,136 @@ async function confirmWrittenStat(
     now.ino !== written.ino ||
     now.mtimeMs !== written.mtimeMs ||
     now.size !== written.size
+  ) {
+    return undefined;
+  }
+  return { mtimeMs: now.mtimeMs, size: now.size, ino: now.ino };
+}
+
+/** writeInPlace 无法原地写(打不开读写,如只写权限的文件)→ 交回 tmp + rename(原文件未被改动)。 */
+const FALLBACK_TO_RENAME = Symbol('fallback-to-rename');
+
+type FileHandle = Awaited<ReturnType<typeof open>>;
+
+/** 循环写满 [offset, offset+length)(FileHandle.write 可能只写一部分)。 */
+async function writeFully(fh: FileHandle, data: Uint8Array, position: number, offset: number, length: number): Promise<void> {
+  let done = 0;
+  while (done < length) {
+    const { bytesWritten } = await fh.write(data, offset + done, length - done, position + done);
+    if (bytesWritten <= 0) throw Object.assign(new Error('short write'), { code: 'EIO' });
+    done += bytesWritten;
+  }
+}
+
+/** 读满 length 字节(文件在读期间被外部截短 → 抛,不拿不完整的备份去覆盖)。 */
+async function readFully(fh: FileHandle, length: number): Promise<Buffer> {
+  const buf = Buffer.allocUnsafe(length);
+  let done = 0;
+  while (done < length) {
+    const { bytesRead } = await fh.read(buf, done, length - done, done);
+    if (bytesRead <= 0) throw Object.assign(new Error('file shrank while saving'), { code: 'EIO' });
+    done += bytesRead;
+  }
+  return buf;
+}
+
+/**
+ * 原地覆盖已有普通文件(同一 inode:目录权限、扩展属性 / Finder 标签、ACL、硬链接、属主、权限位、创建时间都不变)。
+ *
+ * VSCode 的原地写是 `open('w')` 先截断再写:写到一半失败(磁盘满)文件就只剩半截 / 空。这里保持旧实现
+ * 「写失败原文件完整」的保证(数据安全审计实测磁盘满时原内容保住),按两阶段写:
+ *   ① 新内容比原文件长 → 先把**超出原长度的尾部**写到原文件末尾之后并 fdatasync,一次性要到所需的新增空间;
+ *      空间不足(ENOSPC 在 write 或 fdatasync 报出)→ 截回原长度,原内容 [0, 原长度) 一个字节没动。
+ *   ② 读出将被覆盖的原内容 [0, min(原长度, 新长度))(≤ 新内容大小,受写入上限约束)作内存备份,覆盖写这一段、
+ *      截到新长度、fsync。这一步不再需要新增空间(写自己已占的块);仍失败(I/O 错误 / 写时复制卷上快照占块)→
+ *      用备份写回并截回原长度,再抛错。
+ * 权衡:进程在 ② 中途被杀 / 断电会留下新旧混合的内容(VSCode 原地写同样;tmp + rename 没有此窗口但会丢上述元数据)。
+ * ② 只覆盖已分配的块,通常很快;① 失败与 ② 的错误都能回滚。
+ *
+ * 打开用 O_RDWR | O_NOFOLLOW:调用方传入的已是 realpath,此刻若被换成符号链接(竞态)则拒绝(ELOOP),不写穿。
+ * 打开得到的不是普通文件(竞态换成 FIFO / 目录)→ 不写,交回 tmp + rename(与新建 / 非普通文件同路径)。
+ * 只写权限的文件(可写不可读,读不了备份)→ 同样交回 tmp + rename(原文件未改动,行为同旧实现)。
+ */
+async function writeInPlace(
+  filePath: string,
+  content: string | Uint8Array,
+): Promise<FsFileStat | undefined | typeof FALLBACK_TO_RENAME> {
+  const data = typeof content === 'string' ? Buffer.from(content, 'utf-8') : content;
+  const newSize = data.byteLength;
+  let fh: FileHandle;
+  try {
+    fh = await open(filePath, fsConstants.O_RDWR | (fsConstants.O_NOFOLLOW ?? 0));
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EACCES' || code === 'EPERM') return FALLBACK_TO_RENAME;
+    throw fsError(mapNodeErrnoCode(err), `save in place open failed: ${filePath}`);
+  }
+  let handleId: Stats | undefined;
+  try {
+    const before = await fh.stat();
+    if (!before.isFile()) return FALLBACK_TO_RENAME;
+    const oldSize = before.size;
+    const overlap = Math.min(oldSize, newSize);
+    // 备份在改动任何字节之前读:读失败 → 原文件未动,直接抛。
+    let backup: Buffer;
+    try {
+      backup = await readFully(fh, overlap);
+    } catch (err) {
+      throw fsError(mapNodeErrnoCode(err), `save in place read failed: ${filePath}`);
+    }
+    // ① 先占新增空间。
+    if (newSize > oldSize) {
+      try {
+        await writeFully(fh, data, oldSize, oldSize, newSize - oldSize);
+        await fh.datasync();
+      } catch (err) {
+        await fh.truncate(oldSize).catch(() => {});
+        await fh.datasync().catch(() => {});
+        throw fsError(mapNodeErrnoCode(err), `save in place failed (original kept): ${filePath}`);
+      }
+    }
+    // ② 覆盖重叠段 + 截到新长度 + fsync;失败用备份回滚。
+    try {
+      await writeFully(fh, data, 0, 0, overlap);
+      if (newSize < oldSize) await fh.truncate(newSize);
+      await fh.sync();
+    } catch (err) {
+      try {
+        await writeFully(fh, backup, 0, 0, overlap);
+        await fh.truncate(oldSize);
+        await fh.sync();
+      } catch (restoreErr) {
+        console.error('[fs] save in place: restoring original failed', filePath, restoreErr);
+      }
+      throw fsError(mapNodeErrnoCode(err), `save in place failed: ${filePath}`);
+    }
+    handleId = await fh.stat().catch(() => undefined);
+  } finally {
+    await fh.close().catch(() => {});
+  }
+  return confirmInPlaceStat(filePath, handleId, newSize);
+}
+
+/**
+ * 原地写后的回声身份:关闭写句柄后按路径 stat,须与关闭前经句柄取的 dev/ino/mtimeMs 一致且 size == 写入字节数,
+ * 才返回 { mtimeMs, size, ino }。关闭与 stat 之间被外部改写 / 替换 → 不一致 → undefined(调用方照旧整文件读,
+ * 绝不把别人的写入当成自己的回声)。NTFS/FAT 在关闭写句柄时才刷新 LastWriteTime → Windows 上通常不一致,
+ * 回声识别退化为整文件读(只损失一次读,不影响正确性);这里宁可保守,不放宽 mtime 比对。
+ */
+async function confirmInPlaceStat(
+  filePath: string,
+  handleId: Stats | undefined,
+  expectedSize: number,
+): Promise<FsFileStat | undefined> {
+  if (!handleId) return undefined;
+  const now = await stat(filePath).catch(() => undefined);
+  if (
+    !now ||
+    now.dev !== handleId.dev ||
+    now.ino !== handleId.ino ||
+    now.mtimeMs !== handleId.mtimeMs ||
+    now.size !== expectedSize ||
+    handleId.size !== expectedSize
   ) {
     return undefined;
   }

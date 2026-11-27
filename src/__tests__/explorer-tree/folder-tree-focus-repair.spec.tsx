@@ -37,6 +37,7 @@ vi.mock('@/lib/co-api', () => ({
         };
       }),
       onWatchLost: vi.fn(() => vi.fn()),
+      onRootPresenceChanged: vi.fn(() => vi.fn()),
     },
     terminal: { create: vi.fn() },
   },

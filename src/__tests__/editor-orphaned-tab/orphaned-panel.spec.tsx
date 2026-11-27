@@ -79,7 +79,7 @@ describe('已删除的未保存 tab', () => {
 
   // 外部删除后 orphaned 要经 FSEvents 防抖 + stat + 延迟复查才置位(约 0.8–1.5s);自动保存若先到点,读盘不存在
   // 不得当作「可重建」写回(此前文件被悄悄写回,之后外部同步见文件存在即清标记,用户无感知)。
-  it('外部删除尚未被标记前自动保存到点:不写回,tab 标记已删除,不弹自动保存失败提示', async () => {
+  it('外部删除尚未被标记前自动保存到点:不写回,tab 标记已删除,不弹自动保存失败提示(只提示一次自动保存已暂停)', async () => {
     const { notify } = await import('../../notifications/notify');
     render(<EditorPanel />);
     await screen.findByTestId('code-editor');
@@ -90,7 +90,10 @@ describe('已删除的未保存 tab', () => {
     expect(mocks.writeFile).not.toHaveBeenCalled();
     expect(useEditorStore.getState().tabs[0]).toMatchObject({ dirty: true, orphaned: true });
     expect(screen.getByRole('tab').textContent).toContain(t('panels.editor.tab_deleted'));
-    expect(notify.warn).not.toHaveBeenCalled();
+    // 不弹「自动保存失败」;改为一次「自动保存已暂停」提示(见 autosave-paused-notice.spec.tsx)。
+    const warned = vi.mocked(notify.warn).mock.calls.map((c) => String(c[0]));
+    expect(warned.some((m) => m.includes(t('editor.autosave_failed')))).toBe(false);
+    expect(warned.filter((m) => m.includes('note.md'))).toHaveLength(1);
   });
 
   it('外部删除尚未被标记前切走 / 卸载 flush 自动保存:同样不写回', async () => {

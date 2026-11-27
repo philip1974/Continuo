@@ -3,8 +3,9 @@
 // handles used for writing have been closed")。旧实现 fsync 后经 fd.stat 取 written(关闭前),rename 后
 // stat 目标严格比 mtimeMs → Windows 上几乎必然不一致,回声识别失效(每次保存整文件重读)。
 // 新实现:fsync → close → stat(tmp) 作 written → rename → stat(target) 比对。
+// 适用于 tmp + rename 路径(新建文件);覆盖已有文件为原地写,其回声身份见 src/__tests__/save-in-place/。
 
-import { readFile, rm, mkdtemp, writeFile } from 'node:fs/promises';
+import { readFile, rm, mkdtemp } from 'node:fs/promises';
 import * as fsp from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -85,15 +86,13 @@ async function tempDir(): Promise<string> {
   return d;
 }
 
-describe('49 · atomicWriteFile 回声身份在写句柄关闭后取', () => {
+describe('49 · atomicWriteFile(新建文件,tmp + rename)回声身份在写句柄关闭后取', () => {
   it('调用顺序:close → stat(tmp) → rename → stat(target)', async () => {
     const dir = await tempDir();
     const file = join(dir, 'doc.md');
     const tmp = join(dir, '.doc.md.continuo.tmp');
-    await writeFile(file, 'OLD');
     calls.splice(0);
     await atomicWriteFile(file, 'NEW');
-    // existingFileMode 先 stat(target)(非 win32),其后为本次关注的序列
     const tail = calls.slice(calls.indexOf('close'));
     expect(tail).toEqual(['close', `stat:${tmp}`, 'rename', `stat:${file}`]);
   });
@@ -102,7 +101,6 @@ describe('49 · atomicWriteFile 回声身份在写句柄关闭后取', () => {
     bumpMtimeOnClose = true;
     const dir = await tempDir();
     const file = join(dir, 'doc.md');
-    await writeFile(file, 'OLD');
     const written = await atomicWriteFile(file, 'NEW!');
     expect(await readFile(file, 'utf-8')).toBe('NEW!');
     const st = await fsp.stat(file);
@@ -120,7 +118,6 @@ describe('49 · atomicWriteFile 回声身份在写句柄关闭后取', () => {
   it('关闭后 stat 前 tmp 被另一进程替换(新 inode)→ undefined,不把别人的内容记成自己的回声', async () => {
     const d = await tempDir();
     const f = join(d, 'a.txt');
-    await writeFile(f, 'old');
     replaceTmpAfterClose = true;
     const r = await atomicWriteFile(f, 'mine');
     expect(r).toBeUndefined();
@@ -129,7 +126,6 @@ describe('49 · atomicWriteFile 回声身份在写句柄关闭后取', () => {
   it('替换的 tmp 与本次写入字节数相同(inode 号也可能被复用)→ 仍 undefined', async () => {
     const d = await tempDir();
     const f = join(d, 'a.txt');
-    await writeFile(f, 'old');
     replaceTmpAfterClose = true;
     replaceContent = 'MINE';
     const r = await atomicWriteFile(f, 'mine');

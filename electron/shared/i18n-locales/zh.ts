@@ -461,6 +461,7 @@ export const zh: Record<TranslationKey, string> = {
   'find.option.regex': '使用正则表达式',
   'editor.autosave_failed': '自动保存失败',
   'editor.autosave_readonly_detail': '{reason}，按 {hotkey} 可选择覆盖',
+  'editor.autosave_paused_deleted': '自动保存已暂停：磁盘上已找不到 {name}。修改仍保留在编辑器中，按 {hotkey} 可重新保存。',
   'editor.save_failed': '保存失败',
 
   'dialog.unsaved_close.message': '是否要保存对以下 {count} 个文件的更改？',

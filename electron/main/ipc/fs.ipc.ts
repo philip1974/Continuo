@@ -359,7 +359,8 @@ export const createFsWatcher: WatcherCreator = (rootPath, onChange, onError) => 
     (eventType, filename) => {
       if (!filename) {
         // 罕见:某些 macOS 旧版 / 平台不传 filename(含 Windows 缓冲溢出),退回根目录广播,
-        // 不带文件名 → 下游按目录级处理
+        // 不带文件名 → 下游按目录级处理。根级事件可能就是根自身消失 / 卷卸载 → 同样复查根是否还在。
+        checkRootPresence(rootPath);
         onChange(rootPath);
         return;
       }

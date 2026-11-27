@@ -475,6 +475,7 @@ export const en = {
   'find.option.regex': 'Use Regular Expression',
   'editor.autosave_failed': 'Auto-save failed',
   'editor.autosave_readonly_detail': '{reason}. Press {hotkey} to choose whether to overwrite it.',
+  'editor.autosave_paused_deleted': 'Auto-save paused: {name} no longer exists on disk. Your changes are kept in the editor; press {hotkey} to save it again.',
   'editor.save_failed': 'Failed to save',
 
   // 关窗 / 退出时的未保存确认(main dialog.showMessageBox)+ 保存失败提示(renderer toast)
