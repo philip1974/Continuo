@@ -195,8 +195,8 @@ describe('unified-toast-notification: NotificationsProvider', () => {
     expect(latest?.counts).toEqual([1, 1, 1]);
   });
 
-  // VSCode 同时最多显示 3 条 toast;其余排队,不计时(否则排队中的在用户看到前就过期),前面的消失后依次补上并从那时计时。
-  it('T21 同时可见上限 3:其余排队且不计时;可见的消失后下一条补上并开始计时', () => {
+  // VSCode notificationsToasts:同时最多显示最新的 3 条;计时与是否可见无关(被挤到后面的照常到期,不等前面消失后再冒出来)。
+  it('T21 计时从创建起算、与是否可见无关:第 4 条与前 3 条同时到期,不顺延', () => {
     vi.useFakeTimers();
     renderProvider();
     act(() => {
@@ -210,35 +210,57 @@ describe('unified-toast-notification: NotificationsProvider', () => {
     act(() => {
       vi.advanceTimersByTime(5_001);
     });
-    // a/b/c 到期;排队的 d 此刻才变为可见并开始 5s 计时
-    expect(latest?.messages).toEqual(['d']);
-    act(() => {
-      vi.advanceTimersByTime(4_000);
-    });
-    expect(latest?.messages).toEqual(['d']);
-    act(() => {
-      vi.advanceTimersByTime(1_001);
-    });
     expect(latest?.count).toBe(0);
   });
 
-  it('T21b 手动关掉一条可见 toast → 排队的下一条立即补上并开始计时', () => {
+  it('T21b 被挤到后面的错误到期前,前面更新的消失 → 它仍在列表里(重新可见),到自己的时刻才消失', () => {
     vi.useFakeTimers();
     renderProvider();
     act(() => {
       notify.error('e1');
-      notify.error('e2');
-      notify.error('e3');
-      notify.info('queued');
-    });
-    act(() => {
-      vi.advanceTimersByTime(1_000);
-      latest?.dismiss(latest.ids[0]!);
+      notify.info('i1');
+      notify.info('i2');
+      notify.info('i3');
     });
     act(() => {
       vi.advanceTimersByTime(5_001);
     });
-    expect(latest?.messages).toEqual(['e2', 'e3']);
+    expect(latest?.messages).toEqual(['e1']);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(latest?.count).toBe(0);
+  });
+
+  it('T21c 带按钮的通知常驻:被更新的挤掉也不计时、不丢失', () => {
+    vi.useFakeTimers();
+    renderProvider();
+    act(() => {
+      notify.error('save failed', { actions: [{ label: 'Retry', run: () => {} }] });
+      notify.info('i1');
+      notify.info('i2');
+      notify.info('i3');
+    });
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(latest?.messages).toEqual(['save failed']);
+  });
+
+  it('T21d 合并的重复通知移到最新(被挤掉的重复报错重新可见)', () => {
+    vi.useFakeTimers();
+    renderProvider();
+    act(() => {
+      notify.error('dup');
+      notify.info('a');
+      notify.info('b');
+      notify.info('c');
+    });
+    act(() => {
+      notify.error('dup');
+    });
+    expect(latest?.messages).toEqual(['a', 'b', 'c', 'dup']);
+    expect(latest?.counts).toEqual([1, 1, 1, 2]);
   });
 
   // race(R13):同一事件循环内连续两次同源非 error notify 也须去重 —— 去重读 notificationsRef,

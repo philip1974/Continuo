@@ -1,0 +1,30 @@
+/* 视图顶部的不确定进度细条(VSCode monaco-progress-container .infinite:2px 高、无轨道底色、一小段来回扫过)。 */
+@keyframes wm-progress-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(400%); }
+}
+
+.wm-progress {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.wm-progress-bit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 25%;
+  background-color: var(--md-primary);
+  animation: wm-progress-slide var(--wm-duration-progress) linear infinite;
+}
+
+/* 减弱动效:不扫动,整条静止显示(仍看得出「正在进行」)。 */
+@media (prefers-reduced-motion: reduce) {
+  .wm-progress-bit {
+    width: 100%;
+    animation: none;
+  }
+}

@@ -50,6 +50,7 @@ export {
   subscribeOpenModals,
   type ModalProps,
 } from './Modal';
+export { ProgressBar, useDelayedActive, type ProgressBarProps } from './ProgressBar';
 export { ScrollArea, type ScrollAreaProps } from './ScrollArea';
 export { Separator, type SeparatorProps } from './Separator';
 export { Spinner, type SpinnerProps, type SpinnerSize } from './Spinner';

@@ -93,6 +93,19 @@
    **不自动重搜**,结果为空、状态行空白(VSCode 同:恢复后只在用户提交 / 改输入时搜索);恢复后工作区根变化也不触发搜索
    (还没搜过)。查询词上限 `SEARCH_PATTERN_MAX`、glob 上限 `SEARCH_GLOB_MAX`(与 search:start 入参同一常量,运行时输入已截到
    此上限);超限的快照按损坏处理(同其它字段)。旧数据无该字段 → 输入保持空。新开窗口(fresh)/ 别的窗口段不带入。
+8a. **进行中的反馈与取消、无结果提示**(`search-progress-cancel.spec.tsx`;VSCode searchView `withProgress({ delay: 300 })`、
+   `search.action.cancel`、`SearchView.onSearchComplete`):
+   - 搜索进行中(`status === 'searching'`,含已收到第一批结果之后)结果树 `aria-busy="true"`;满 `SEARCH_PROGRESS_DELAY_MS`(300ms)
+     视图顶部出现 design `ProgressBar`(`role=progressbar`,名称「正在搜索…」),选项按钮旁出现「取消搜索」(三语);
+     很快完成的搜索两者都不出现,完成 / 失败 / 取消后立即消失。
+   - 取消(按钮;焦点在结果树时 Esc,VSCode `WorkbenchListFocusContextKey` + Escape):取消在途查询(`search.cancel`),
+     已收到的结果保留,状态 `cancelled`,状态行「{计数}。搜索已取消」;还没有结果 →「搜索在找到任何结果前已取消」+ 行内
+     「重新搜索」。迟到事件丢弃。不在搜索时 Esc 不被吞。
+   - 无结果(`done` 且 0 个结果):有包含 / 排除条件 → 主句写明条件(「在「x」中未找到结果(已排除「y」)」等三种)+
+     「在所有文件中重新搜索」(清空包含 / 排除后立即重搜);否则「使用排除设置与忽略文件」开着 → 追加「查看设置中配置的排除项
+     并检查 gitignore 文件」+「打开设置」(切到「使用忽略文件」所在的资源管理器设置页并打开设置);开关关着 → 不提示
+     (此时已不受排除表与忽略文件影响 —— 与 VSCode 的刻意差异:VSCode 无论开关都提示)。入口是状态行后的行内链接按钮,
+     提示句在 `role=status` 内一并播报。
 9. **未做**:替换 / 全部替换(跨文件写入需确认与可撤销,超出本轮);搜索历史;`.git/info/exclude` 与全局 gitignore;多行正则;搜索编辑器。
 
 ## 规范文件
@@ -107,3 +120,4 @@
 - `search-open-editors.spec.tsx` — 6(及 5 的跳过大文件 / 无结果时的范围提示)
 - `search-path-gone.spec.ts` — 7
 - `search-input-restart.spec.ts` — 8
+- `search-progress-cancel.spec.tsx` — 8a

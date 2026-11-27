@@ -108,7 +108,7 @@ describe('已打开编辑器在内存内容上搜索', () => {
     emit({ searchId: id, kind: 'files', files: [{ path: '/w/a.ts', relPath: 'a.ts', matches: [diskMatch(1, 1, 'foo')] }] });
     emit({ searchId: id, kind: 'done', limitHit: false, filesLimitHit: false });
     expect(screen.queryAllByRole('treeitem')).toHaveLength(0);
-    expect(screen.getByRole('status').textContent).toBe('未找到结果');
+    expect(screen.getByRole('status').textContent).toBe('未找到结果。查看设置中配置的排除项并检查 gitignore 文件');
   });
 
   it('列号 UTF-16、正则 / 大小写 / 全词与 main 同口径', () => {
@@ -144,14 +144,14 @@ describe('已打开编辑器在内存内容上搜索', () => {
     const id = search('foo');
     emit({ searchId: id, kind: 'done', limitHit: false, filesLimitHit: true, skippedLargeCount: 2, skippedLargePaths: [] });
     expect(screen.getByRole('status').textContent).toBe(
-      '未找到结果。文件过多，只搜索了前 50000 个文件。已跳过 2 个超过 1 MiB 的文件（在编辑器中打开后可搜索）',
+      '未找到结果。文件过多，只搜索了前 50000 个文件。已跳过 2 个超过 1 MiB 的文件（在编辑器中打开后可搜索）。查看设置中配置的排除项并检查 gitignore 文件',
     );
     act(() => {
       setLocale('en');
     });
     act(() => useSearchStore.setState({ skippedLarge: 1, filesLimitHit: false }));
     expect(screen.getByRole('status').textContent).toBe(
-      'No results found. Skipped 1 file larger than 1 MiB (open it in the editor to search it)',
+      'No results found. Skipped 1 file larger than 1 MiB (open it in the editor to search it). Review your settings for configured exclusions and check your gitignore files',
     );
   });
 

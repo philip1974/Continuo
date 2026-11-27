@@ -38,7 +38,8 @@ function ignoreFilesSettingOn(): boolean {
 
 export const SEARCH_DEBOUNCE_MS = 300;
 
-export type SearchStatus = 'idle' | 'searching' | 'done' | 'error' | 'invalid' | 'no-workspace';
+/** cancelled:用户取消了在途搜索(VSCode search.action.cancel),已收到的结果保留。 */
+export type SearchStatus = 'idle' | 'searching' | 'done' | 'cancelled' | 'error' | 'invalid' | 'no-workspace';
 
 /** 树行键:文件行 = 路径;匹配行 = `路径\0序号`。 */
 export type SearchRowKey = string;
@@ -81,6 +82,10 @@ interface SearchState {
   setActiveKey(key: SearchRowKey | null): void;
   /** 立即搜索(Enter)。 */
   searchNow(): void;
+  /** 取消在途搜索(VSCode search.action.cancel:视图里的「取消搜索」/ 结果树 Esc);已收到的结果保留,状态 → cancelled。 */
+  cancelSearch(): void;
+  /** 清空包含 / 排除后立即重搜(VSCode「在所有文件中重新搜索」)。 */
+  searchInAllFiles(): void;
   /** 聚焦查询框;seed 非空 → 替换查询(编辑器单行选区)。 */
   requestFocus(seed?: string): void;
 }
@@ -157,6 +162,15 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     clearTimeout(timer);
     timer = undefined;
     run();
+  },
+  cancelSearch: () => {
+    if (currentId === null || get().status !== 'searching') return;
+    cancelCurrent();
+    set({ status: 'cancelled' });
+  },
+  searchInAllFiles: () => {
+    set({ include: '', exclude: '' });
+    get().searchNow();
   },
   requestFocus: (seed) => {
     set((s) => ({ focusRequest: s.focusRequest + 1 }));

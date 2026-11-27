@@ -1,5 +1,7 @@
 // 在文件中查找视图(dock 单例面板 `search`,对齐 VSCode Search 视图):查询框 + 正则 / 大小写 / 全词开关 + 可折叠的包含 /
-// 排除 glob;状态行(aria-live)给出计数 / 搜索中 / 无结果 / 截断 / 失败;结果按文件分组的虚拟化树(role=tree,
+// 排除 glob;状态行(aria-live)给出计数 / 搜索中 / 无结果 / 截断 / 失败 / 已取消,无结果时附排除项提示与入口(打开设置 /
+// 在所有文件中重新搜索,VSCode SearchView.onSearchComplete);搜索进行中顶部细进度条(延迟 300ms)+「取消搜索」按钮、
+// 结果树 aria-busy,结果树上 Esc 取消(VSCode search.action.cancel);结果按文件分组的虚拟化树(role=tree,
 // aria-activedescendant),键盘 ↑↓ / ←→ / Home / End / Enter,单击打开。状态与调度在 search-store。
 // 结果行右键 / Shift+F10 菜单(VSCode MenuId.SearchContext),外壳同 tab 右键菜单(TabContextMenu)。
 // BDD: src/__tests__/workspace-search/、src/__tests__/list-context-menus/
@@ -7,7 +9,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useShallow } from 'zustand/react/shallow';
-import { Badge, IconButton, Input, TruncateStart } from '@/design';
+import { Badge, IconButton, Input, ProgressBar, TruncateStart, useDelayedActive } from '@/design';
 import { isImeComposing } from '@/design/ime';
 import { translateCount, useT } from '@/i18n';
 import { matchFindOptionHotkey, type FindOption } from '@/lib/find-options';
@@ -16,13 +18,15 @@ import { localizeErrorByCode } from '@/lib/localize-error';
 import { regexSyntaxError } from '@/lib/search-query';
 import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
-import { ChevronDownIcon, ExcludeIcon, MoreActionsIcon } from '@/lib/ui-icons';
+import { ChevronDownIcon, ExcludeIcon, MoreActionsIcon, StopIcon } from '@/lib/ui-icons';
 import { matchesHotkey } from '@/plugins/command-palette/useCommandHotkeys';
 import { OPEN_TO_SIDE_HOTKEY } from '@/panels/Explorer/tree-keyboard';
 import { PICKER_MATCH_CLASS_NAME, pickerRowClassName, pickerRowSecondaryClassName } from '@/plugins/picker/picker-row';
 import { isVirtualIndexRendered } from '@/plugins/picker/use-picker-list';
 import { measurePageNavGeometry, pageNavTarget } from '@/lib/list-page-nav';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { useSettingsStore } from '@/plugins/settings/store';
+import { openSettingsPanel } from '@/lib/toggle-settings-panel';
 import { useGitStatus } from '@/panels/Explorer/hooks/useGitStatus';
 import { fileGitDecoration, GIT_KIND_LABEL_KEY, GIT_KIND_TEXT_CLASS } from '@/panels/Explorer/git-decorations';
 import { useSettingValue } from '@/plugins/settings/values-store';
@@ -49,6 +53,11 @@ const STORE_OPTION: Readonly<Record<FindOption, 'matchCase' | 'wholeWord' | 'isR
 const CHEVRON_ICON = <ChevronDownIcon size={14} />;
 const DETAILS_ICON = <MoreActionsIcon size={14} />;
 const EXCLUDE_ICON = <ExcludeIcon size={14} />;
+const STOP_ICON = <StopIcon size={14} />;
+/** 进度条 / 「取消搜索」按钮的出现延迟(VSCode searchView withProgress delay 300):很快完成的搜索不闪。 */
+export const SEARCH_PROGRESS_DELAY_MS = 300;
+/** 「使用忽略文件」等搜索范围设置所在的设置页签(ExplorerTabPlugin)。 */
+const SEARCH_SETTINGS_TAB_ID = 'core.explorer';
 const PRE_STYLE = { whiteSpace: 'pre' } as const;
 
 type Row =
@@ -143,6 +152,16 @@ export function SearchPanel() {
 
   const regexError = s.isRegex && s.pattern ? regexSyntaxError(s.pattern) : null;
   const statusText = searchStatusText(s, t);
+  const statusAction = searchStatusAction(s);
+  const searching = s.status === 'searching';
+  const slowSearch = useDelayedActive(searching, SEARCH_PROGRESS_DELAY_MS);
+  const runStatusAction = () => {
+    if (statusAction === 'open-settings') {
+      useSettingsStore.getState().setActiveTabId(SEARCH_SETTINGS_TAB_ID);
+      openSettingsPanel();
+    } else if (statusAction === 'search-all') actions.searchInAllFiles();
+    else if (statusAction === 'search-again') actions.searchNow();
+  };
 
   // preview:匹配行单击以预览方式打开(双击的第二下 / Enter 常驻;BDD: src/__tests__/editor-preview-tab/)
   const activate = (row: Row, preview = false) => {
@@ -151,6 +170,13 @@ export function SearchPanel() {
   };
 
   const onTreeKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    // Esc 取消在途搜索(VSCode search.action.cancel:焦点在结果列表时 Escape)
+    if (e.key === 'Escape' && searching) {
+      e.preventDefault();
+      e.stopPropagation();
+      actions.cancelSearch();
+      return;
+    }
     if (rows.length === 0) return;
     const cur = activeIndex < 0 ? 0 : activeIndex;
     const row = rows[cur]!;
@@ -258,7 +284,13 @@ export function SearchPanel() {
   };
 
   return (
-    <div className="flex h-full w-full min-w-0 flex-col bg-canvas text-fg" data-testid="search-panel" onKeyDown={onViewKeyDown}>
+    <div className="relative flex h-full w-full min-w-0 flex-col bg-canvas text-fg" data-testid="search-panel" onKeyDown={onViewKeyDown}>
+      <ProgressBar
+        active={searching}
+        delayMs={SEARCH_PROGRESS_DELAY_MS}
+        aria-label={t('panels.search.searching')}
+        className="absolute inset-x-0 top-0 z-10"
+      />
       <div className="flex flex-col gap-1.5 border-b border-line p-2">
         {/* 窄宽(侧栏最窄 170)时选项按钮换到下一行靠右,不被面板右边界裁掉 */}
         <div className="flex min-w-0 flex-wrap items-center gap-1">
@@ -280,6 +312,18 @@ export function SearchPanel() {
               values={{ caseSensitive: s.matchCase, wholeWord: s.wholeWord, regex: s.isRegex }}
               onToggle={(option) => actions.toggleOption(STORE_OPTION[option])}
             />
+            {/* VSCode 搜索进行中把标题栏「清除」换成「取消搜索」;本视图无标题栏操作,放在选项按钮旁,与进度条同一延迟出现 */}
+            {slowSearch && (
+              <IconButton
+                size="xs"
+                aria-label={t('panels.search.cancel')}
+                title={t('panels.search.cancel')}
+                onClick={actions.cancelSearch}
+                className="shrink-0"
+              >
+                {STOP_ICON}
+              </IconButton>
+            )}
             <IconButton
               size="xs"
               aria-label={t('panels.search.toggle_details')}
@@ -327,12 +371,25 @@ export function SearchPanel() {
           </>
         )}
         <div
-          role="status"
-          aria-live="polite"
           title={regexError ?? undefined}
           className={`min-h-4 break-words text-xs ${s.status === 'invalid' || s.status === 'error' ? 'text-error' : 'text-fg-dim'}`}
         >
-          {statusText}
+          <span role="status" aria-live="polite">
+            {statusText}
+          </span>
+          {statusAction !== null && (
+            <>
+              {' '}
+              {/* native:状态行内的行内文字链接(VSCode SearchLinkButton),design Button 的内边距 / 底色不适用;复用语义 token。 */}
+              <button
+                type="button"
+                className="cursor-pointer rounded-sm text-accent underline-offset-2 hover:underline"
+                onClick={runStatusAction}
+              >
+                {t(STATUS_ACTION_LABEL_KEY[statusAction])}
+              </button>
+            </>
+          )}
         </div>
       </div>
       {/* Shift+F10 / 菜单键:焦点在树容器上,菜单定位到活动行 */}
@@ -345,6 +402,7 @@ export function SearchPanel() {
           role="tree"
           aria-label={t('panels.search.results_label')}
           tabIndex={rows.length > 0 ? 0 : -1}
+          aria-busy={searching || undefined}
           aria-activedescendant={activeRendered ? rowId(activeIndex) : undefined}
           onKeyDown={onTreeKeyDown}
           onContextMenu={onTreeContextMenu}
@@ -449,6 +507,11 @@ export function SearchPanel() {
 
 interface StatusInput {
   readonly status: string;
+  /** 缺省 ''(旧调用方 / 测试未传)。 */
+  readonly include?: string;
+  readonly exclude?: string;
+  /** 「使用排除设置与忽略文件」;缺省 true。 */
+  readonly useExcludesAndIgnoreFiles?: boolean;
   readonly files: readonly SearchFileResult[];
   readonly resultCount: number;
   readonly limitHit: boolean;
@@ -459,7 +522,36 @@ interface StatusInput {
   readonly error: { readonly code: string; readonly message: string } | null;
 }
 
-/** 状态行文案(VSCode 搜索视图消息):搜索中 / 计数 / 无结果 / 截断 / 文件数上限 / 失败 / 非法正则 / 无工作区。 */
+type StatusAction = 'open-settings' | 'search-all' | 'search-again';
+const STATUS_ACTION_LABEL_KEY = {
+  'open-settings': 'panels.search.open_settings',
+  'search-all': 'panels.search.search_all_files',
+  'search-again': 'panels.search.search_again',
+} as const satisfies Record<StatusAction, string>;
+
+/**
+ * 无结果时状态行后的行内入口(VSCode SearchView.onSearchComplete):取消时还没有结果 →「重新搜索」;有包含 / 排除条件 →
+ * 「在所有文件中重新搜索」;否则在使用排除设置与忽略文件时 →「打开设置」(关掉开关后已不受它们影响,不提示)。
+ */
+export function searchStatusAction(s: StatusInput): StatusAction | null {
+  if (s.resultCount > 0) return null;
+  if (s.status === 'cancelled') return 'search-again';
+  if (s.status !== 'done') return null;
+  if ((s.include ?? '').trim() !== '' || (s.exclude ?? '').trim() !== '') return 'search-all';
+  return s.useExcludesAndIgnoreFiles === false ? null : 'open-settings';
+}
+
+/** 无结果的主句:有包含 / 排除条件时写明(VSCode noResultsIncludes / noResultsExcludes / noResultsIncludesExcludes)。 */
+function noResultsText(s: StatusInput, t: ReturnType<typeof useT>): string {
+  const include = (s.include ?? '').trim();
+  const exclude = (s.exclude ?? '').trim();
+  if (include !== '' && exclude !== '') return t('panels.search.no_results_in_excluding', { include, exclude });
+  if (include !== '') return t('panels.search.no_results_in', { include });
+  if (exclude !== '') return t('panels.search.no_results_excluding', { exclude });
+  return t('panels.search.no_results');
+}
+
+/** 状态行文案(VSCode 搜索视图消息):搜索中 / 计数 / 无结果 / 已取消 / 截断 / 文件数上限 / 失败 / 非法正则 / 无工作区。 */
 export function searchStatusText(s: StatusInput, t: ReturnType<typeof useT>): string {
   switch (s.status) {
     case 'invalid':
@@ -472,14 +564,17 @@ export function searchStatusText(s: StatusInput, t: ReturnType<typeof useT>): st
       return '';
   }
   if (s.status === 'searching' && s.resultCount === 0) return t('panels.search.searching');
+  // 取消时还没有结果(VSCode searchCanceled);有结果 → 计数后注明已取消(结果不完整)。
+  if (s.status === 'cancelled' && s.resultCount === 0) return t('panels.search.cancelled_no_results');
   const parts = [
     s.status === 'done' && s.resultCount === 0
-      ? t('panels.search.no_results')
+      ? noResultsText(s, t)
       : t('panels.search.summary', {
           results: translateCount('panels.search.result_count', s.resultCount),
           files: translateCount('panels.search.file_count', s.files.length),
         }),
   ];
+  if (s.status === 'cancelled') parts.push(t('panels.search.cancelled'));
   if (s.limitHit) parts.push(t('panels.search.limit_hit'));
   // 文件数上限 / 跳过大文件:无结果时同样提示(否则「未找到结果」看不出搜索范围不完整)。
   if (s.filesLimitHit) parts.push(t('panels.search.files_limit_hit', { max: SEARCH_MAX_FILES }));
@@ -488,5 +583,7 @@ export function searchStatusText(s: StatusInput, t: ReturnType<typeof useT>): st
   if ((s.skippedUnreadable ?? 0) > 0) {
     parts.push(translateCount('panels.search.skipped_unreadable', s.skippedUnreadable ?? 0));
   }
+  // 无结果且受排除设置与忽略文件影响(VSCode noResultsFound「查看设置中配置的排除项并检查 gitignore 文件」),后接「打开设置」
+  if (searchStatusAction(s) === 'open-settings') parts.push(t('panels.search.no_results_hint'));
   return parts.join(t('panels.search.message_separator'));
 }

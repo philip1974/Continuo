@@ -78,7 +78,7 @@ export function Toast({
     <div
       ref={rootRef}
       // a11y:toast 自身不是 live region(不设 role=alert/status / aria-live)。播报由 ToastViewport 常驻的
-      // polite / assertive live region 承担(error → assertive,A60):toast 有可见上限,排队的不在 DOM、创建时播不出;
+      // polite / assertive live region 承担(error → assertive,A60):toast 有可见上限,被挤到后面的不在 DOM、创建时播不出;
       // role=alert/status 隐含 aria-atomic,合并时整条连「×N」「关闭」一起重读。
       data-level={level}
       data-code={code}

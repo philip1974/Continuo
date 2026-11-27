@@ -1,5 +1,5 @@
-// topic-15 unified-toast-notification: 容器层。fixed 右下,vertical stack;同时只显示最早的 MAX_VISIBLE_NOTIFICATIONS 条,
-// 其余排队(计时也只给可见的,见 NotificationsProvider)。
+// topic-15 unified-toast-notification: 容器层。fixed 右下,vertical stack;同时只显示最新的 MAX_VISIBLE_NOTIFICATIONS 条
+//(VSCode notificationsToasts 同),更早的隐藏(计时照常,见 NotificationsProvider)。
 // 主窗之外,还经 createPortal 渲染进每个 dockview popout 子窗(弹出面板的 notify.* 全进主窗 provider,
 // 子窗只能这样看到)。toast 本身不是 live region;读屏播报由 NotificationsProvider 写进全局播报区(src/lib/announce),
 // 此处只为主窗与每个 popout 子窗预先建好那一对常驻 live region。
@@ -18,13 +18,14 @@ import {
 } from '@/shell/dock/popout-documents';
 import './ToastViewport.css';
 
-/** 可见区 = 列表前 MAX_VISIBLE_NOTIFICATIONS 条(最早的先显示,其余排队);未超上限时复用原数组。 */
+/** 可见区 = 列表末尾 MAX_VISIBLE_NOTIFICATIONS 条(最新的,保持列表顺序);未超上限时复用原数组。 */
 export function selectVisibleNotifications<T>(
   notifications: readonly T[],
 ): readonly T[] {
   if (notifications.length <= MAX_VISIBLE_NOTIFICATIONS) return notifications;
+  const start = notifications.length - MAX_VISIBLE_NOTIFICATIONS;
   const visible = new Array<T>(MAX_VISIBLE_NOTIFICATIONS);
-  for (let i = 0; i < MAX_VISIBLE_NOTIFICATIONS; i++) visible[i] = notifications[i]!;
+  for (let i = 0; i < MAX_VISIBLE_NOTIFICATIONS; i++) visible[i] = notifications[start + i]!;
   return visible;
 }
 

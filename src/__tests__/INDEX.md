@@ -453,6 +453,10 @@
 - [`modal-viewport.spec.ts`](./design-system-modal/modal-viewport.spec.ts)
 - [`modal.spec.tsx`](./design-system-modal/modal.spec.tsx)
 
+## [design ProgressBar(视图顶部的不确定进度细条)](./design-system-progress-bar/README.md)
+
+- [`progress-bar.spec.tsx`](./design-system-progress-bar/progress-bar.spec.tsx)
+
 ## [design Switch(开关)](./design-system-switch/README.md)
 
 - [`switch.spec.tsx`](./design-system-switch/switch.spec.tsx)
@@ -883,6 +887,7 @@
 
 - [`batch-transfer.spec.ts`](./explorer-batch-transfer/batch-transfer.spec.ts)
 - [`drop-overwrite-confirm.spec.ts`](./explorer-batch-transfer/drop-overwrite-confirm.spec.ts)
+- [`transfer-progress.spec.tsx`](./explorer-batch-transfer/transfer-progress.spec.tsx)
 
 ## [资源管理器入口命令(VSCode 对齐)](./explorer-commands/README.md)
 
@@ -2483,6 +2488,7 @@
 - [`search-panel-placement.spec.tsx`](./workspace-search/search-panel-placement.spec.tsx)
 - [`search-path-gone.spec.ts`](./workspace-search/search-path-gone.spec.ts)
 - [`search-preview.spec.ts`](./workspace-search/search-preview.spec.ts)
+- [`search-progress-cancel.spec.tsx`](./workspace-search/search-progress-cancel.spec.tsx)
 - [`search-query.spec.ts`](./workspace-search/search-query.spec.ts)
 - [`search-view.spec.tsx`](./workspace-search/search-view.spec.tsx)
 

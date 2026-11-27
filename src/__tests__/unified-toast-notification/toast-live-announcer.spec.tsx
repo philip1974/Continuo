@@ -66,7 +66,7 @@ describe('toast 读屏播报(全局常驻 live region,见 live-announcer)', () =
     expect(region('assertive').textContent).not.toContain('E_SAVE');
   });
 
-  it('T26b 超出可见上限排队的通知创建时就播报;之后补位显示时不再重播', () => {
+  it('T26b 新通知立即显示并播报;被挤掉的旧通知在更新的消失后重新显示时不再重播', () => {
     renderApp();
     act(() => {
       notify.warn('w1');
@@ -74,16 +74,18 @@ describe('toast 读屏播报(全局常驻 live region,见 live-announcer)', () =
       notify.warn('w3');
     });
     act(() => notify.warn('w4'));
-    expect([...document.querySelectorAll('.toast')].some((el) => el.textContent?.includes('w4'))).toBe(false);
+    const shown = () => [...document.querySelectorAll('.toast')].map((el) => el.querySelector('.toast__message')?.textContent);
+    expect(shown()).toEqual(['w2', 'w3', 'w4']);
     expect(spoken('polite')).toEqual(['w1', 'w2', 'w3', 'w4']);
 
-    fireEvent.click(document.querySelector('.toast__dismiss')!);
-    expect([...document.querySelectorAll('.toast')].some((el) => el.textContent?.includes('w4'))).toBe(true);
-    // 补位不产生新的播报节点
+    // 关掉最新的 → 被挤掉的 w1 重新显示,不产生新的播报节点
+    const toasts = document.querySelectorAll<HTMLElement>('.toast');
+    fireEvent.click(toasts[toasts.length - 1]!.querySelector('.toast__dismiss')!);
+    expect(shown()).toEqual(['w1', 'w2', 'w3']);
     expect(spoken('polite')).toEqual(['w1', 'w2', 'w3', 'w4']);
   });
 
-  it('T27 合并只以 polite 播一次简短的「正文 + 次数」(含 error、含排队项);不整条带 ×N 重读', () => {
+  it('T27 合并只以 polite 播一次简短的「正文 + 次数」(含 error、含被挤到后面的);不整条带 ×N 重读', () => {
     vi.useFakeTimers();
     renderApp();
     act(() => notify.error('dup'));
@@ -98,7 +100,7 @@ describe('toast 读屏播报(全局常驻 live region,见 live-announcer)', () =
     act(() => {
       notify.info('a');
       notify.info('b');
-      notify.info('c'); // 排队(第 4 条)
+      notify.info('c'); // 第 4 条:最早的 dup 被挤到后面
     });
     act(() => notify.info('c'));
     act(() => vi.advanceTimersByTime(REPEAT_ANNOUNCE_THROTTLE_MS));

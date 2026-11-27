@@ -148,14 +148,44 @@ describe('unified-toast-notification: DOM rendering', () => {
       expect(readFileSync('src/notifications/ToastViewport.tsx', 'utf-8')).not.toContain(
         'visible.push(',
       );
-      // 同时最多显示 3 条(VSCode 同款),其余排队:先显示最早的三条
+      // 同时最多显示 3 条(VSCode notificationsToasts 同款):显示最新的三条,更早的隐藏
       expect(document.querySelectorAll('.toast')).toHaveLength(3);
       // 只看 toast 视口(读屏播报区里也有这些正文)
       const viewport = within(document.querySelector<HTMLElement>('.toast-viewport')!);
-      expect(viewport.getByText('boom-0')).toBeTruthy();
-      expect(viewport.queryByText('boom-3')).toBeNull();
+      expect([...document.querySelectorAll('.toast__message')].map((el) => el.textContent)).toEqual(['boom-3', 'boom-4', 'boom-5']);
+      expect(viewport.queryByText('boom-0')).toBeNull();
+      expect(viewport.queryByText('boom-2')).toBeNull();
     } finally {
       sliceSpy.mockRestore();
+    }
+  });
+
+  it('可见区取列表末尾的 MAX_VISIBLE_NOTIFICATIONS 条(最新的),保持列表顺序', () => {
+    expect(selectVisibleNotifications([1, 2, 3, 4, 5])).toEqual([3, 4, 5]);
+  });
+
+  it('带按钮的通知被更新的挤掉后不丢失:更新的消失后重新显示', () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <NotificationsProvider>
+          <ToastViewport />
+        </NotificationsProvider>,
+      );
+      act(() => {
+        notify.error('save failed', { actions: [{ label: 'Retry', run: () => {} }] });
+        notify.info('n1');
+        notify.info('n2');
+        notify.info('n3');
+      });
+      const shown = () => [...document.querySelectorAll('.toast__message')].map((el) => el.textContent);
+      expect(shown()).toEqual(['n1', 'n2', 'n3']);
+      act(() => {
+        vi.advanceTimersByTime(5_001);
+      });
+      expect(shown()).toEqual(['save failed']);
+    } finally {
+      vi.useRealTimers();
     }
   });
 

@@ -265,7 +265,7 @@ describe('结果树与计数', () => {
     flush();
     let { id } = lastStart();
     emit({ searchId: id, kind: 'done', limitHit: false, filesLimitHit: false });
-    expect(screen.getByRole('status').textContent).toBe('未找到结果');
+    expect(screen.getByRole('status').textContent).toBe('未找到结果。查看设置中配置的排除项并检查 gitignore 文件');
     type('foo');
     flush();
     ({ id } = lastStart());

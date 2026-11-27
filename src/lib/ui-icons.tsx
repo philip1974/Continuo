@@ -84,6 +84,15 @@ export function CloseIcon({ size }: IconProps) {
   );
 }
 
+/** 方块:停止 / 取消进行中的操作(搜索视图「取消搜索」)。 */
+export function StopIcon({ size }: IconProps) {
+  return (
+    <StrokeIcon size={size}>
+      <rect x="4.5" y="4.5" width="7" height="7" rx="1" />
+    </StrokeIcon>
+  );
+}
+
 /** 漏斗:排除设置与忽略文件(搜索视图排除框旁的开关)。 */
 export function ExcludeIcon({ size }: IconProps) {
   return (

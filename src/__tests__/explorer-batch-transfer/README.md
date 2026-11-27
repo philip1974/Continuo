@@ -45,3 +45,14 @@ FolderTree 有三个「把一批路径移动/复制进同一目录」的入口:�
 
 8. FolderTree 的三个移动入口都经组件内唯一包装 `runBatchTransfer` 调 `transferEntriesInto`,两个外部 drop 入口都调 `dropForeignFilesInto`,
    组件内不再内联 `coApi.fs.move` / `coApi.fs.copy` / `performDrop`。
+
+### 进度、并发与失败文案(`transfer-progress.spec.tsx`)
+
+9. 进行中的文件操作(`runBatchTransfer`:粘贴 / 拖放移动与复制;移到废纸篓;永久删除)计数 > 0 且持续满
+   `EXPLORER_PROGRESS_DELAY_MS`(500ms,VSCode `ExplorerService.applyBulkEdit` 的 `withProgress({ location: Explorer, delay: 500 })`)
+   → 资源管理器顶部(标题栏下、叠在树上不推动内容)出现 design `ProgressBar`(名称「正在执行文件操作…」,三语);全部结束即消失,
+   很快完成的不出现。外部文件拖入(`dropForeignFilesInto`,可能停在同名确认框上)不计入。
+10. `runBatchTransfer` 逐批串行(组件内一条 `createSerialQueue`):每批开始时才按目标目录列表挑名字,上一批还在写时再粘贴,
+    后一批等它写完、看得到它写出的文件 → `a copy 2.txt`(VSCode 重复粘贴同),不再两批都挑 `a copy.txt`、后一批报「已存在」。
+11. 某项失败的提示只写源的名字(`basenamePreserveTrailing`),不写绝对路径:「无法粘贴「a.txt」：{本地化原因}」/「无法移动…」/
+    「无法复制…」(三语;VSCode 文件操作错误同样只给名字)。

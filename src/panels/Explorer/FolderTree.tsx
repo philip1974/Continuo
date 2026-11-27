@@ -19,7 +19,8 @@ import type {
   TreeInstance,
 } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
-import { Button } from '@/design';
+import { Button, ProgressBar } from '@/design';
+import { createSerialQueue } from '@/lib/serialize-per-key';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
@@ -373,6 +374,9 @@ export function makeNamePicker(destDir: string, existing: Set<string>): (name: s
   };
 }
 
+/** 文件操作进度条的出现延迟(VSCode ExplorerService.applyBulkEdit withProgress delay 500):很快完成的操作不闪。 */
+export const EXPLORER_PROGRESS_DELAY_MS = 500;
+
 export function FolderTree({ root }: { root: string }) {
   const tt = useT();
   // tree ref:onRename callback 在 useMemo 里引用,需要稳定 handle 拿到最新 tree
@@ -444,6 +448,16 @@ export function FolderTree({ root }: { root: string }) {
   const confirmDragAndDropRef = useRef(confirmDragAndDrop);
   confirmDragAndDropRef.current = confirmDragAndDrop;
   const [moveConfirm, setMoveConfirm] = useState<MoveConfirmState | null>(null);
+  // 进行中的文件操作数(粘贴 / 拖放的移动与复制 / 删除):> 0 时视图顶部细进度条(VSCode explorer 文件操作走
+  // ProgressLocation.Explorer,delay 500)。
+  const [busyOps, setBusyOps] = useState(0);
+  const trackBusy = useCallback(<T,>(work: Promise<T>): Promise<T> => {
+    setBusyOps((n) => n + 1);
+    return work.finally(() => setBusyOps((n) => n - 1));
+  }, []);
+  // 批量移动 / 复制逐批串行:每批开始时按目标目录列表挑名字(` copy` / ` copy 2`),上一批还在写时连按两次粘贴会
+  // 挑到同一个名字,后一批报「已存在」。串行后后一批看得到前一批写出的文件(VSCode 重复粘贴得 `x copy 2`)。
+  const [transferQueue] = useState(createSerialQueue);
   const [moveDontAsk, setMoveDontAsk] = useState(false);
   const [overwriteConfirm, setOverwriteConfirm] = useState<OverwriteConfirmState | null>(null);
   const overwriteResolveRef = useRef<((choice: OverwriteChoice) => void) | null>(null);
@@ -738,7 +752,7 @@ export function FolderTree({ root }: { root: string }) {
       const moved: MovePair[] = [];
       const copied: CreatedEntry[] = [];
       const copiedPairs: MovePair[] = [];
-      return transferEntriesInto(
+      const transfer = () => transferEntriesInto(
         kind,
         srcs,
         destDir,
@@ -757,7 +771,8 @@ export function FolderTree({ root }: { root: string }) {
           root,
           onItemFailed: (src, code, message) => {
             console.warn(`[explorer] ${logLabel} failed`, src, code, message);
-            notify.error(t(failedKey, { src, message: localizeErrorByCode(code, message) }), {
+            // 只写名字(VSCode 同):绝对路径冗长,且暴露工作区外的源位置
+            notify.error(t(failedKey, { name: basenamePreserveTrailing(src), message: localizeErrorByCode(code, message) }), {
               code,
               mirror: false,
             });
@@ -766,7 +781,8 @@ export function FolderTree({ root }: { root: string }) {
             notifyThrownError(err);
           },
         },
-      ).then(() => {
+      );
+      return trackBusy(transferQueue.run(transfer)).then(() => {
         recordFileOp(
           root,
           kind === 'move' ? { kind: 'move', pairs: moved } : { kind: 'create', entries: copied },
@@ -775,7 +791,7 @@ export function FolderTree({ root }: { root: string }) {
         return kind === 'move' ? moved : copiedPairs;
       });
     },
-    [makeUniqueDestPicker, onPathMoved, refreshParent, root],
+    [makeUniqueDestPicker, onPathMoved, refreshParent, root, trackBusy, transferQueue],
   );
   // 外部拖入写成的新文件入撤销栈(无法重做:内容未保留;选「替换」时 dropForeignFilesInto 不回报)。
   const recordDropped = useCallback(
@@ -1189,7 +1205,7 @@ export function FolderTree({ root }: { root: string }) {
     (paths: string[]) => {
       // 在途期间暂停被删文件的自动保存(确认框关闭到删除完成之间同样不写盘,见 autosave-hold.ts)。
       const releaseAutoSave = holdAutoSave(paths);
-      void (async () => {
+      void trackBusy((async () => {
         // 走规范的 mutate-actions.removeItems(遍历全部项、收集所有失败、刷新所有
         // 成功项父目录),而非内联首失早退 —— 旧实现一旦某项 trash 失败就 return,
         // 静默跳过其余选中项(多选删除时后续项既不删也不报错)。removeItems 是
@@ -1213,16 +1229,16 @@ export function FolderTree({ root }: { root: string }) {
           }
           if (offerPermanent.length > 0) setPermanentDeleteConfirm(offerPermanent);
         }
-      })();
+      })());
     },
-    [mutateDeps, onPathsRemoved, root, treeApi],
+    [mutateDeps, onPathsRemoved, root, trackBusy, treeApi],
   );
 
   // 永久删除(确认框里明确选择后;不可撤销,不进 ⌘Z 栈 —— 删除屏障已由上面的 trash 记录或在这里补上)。
   const runPermanentDelete = useCallback(
     (paths: string[]) => {
       const releaseAutoSave = holdAutoSave(paths);
-      void (async () => {
+      void trackBusy((async () => {
         const result = await deleteItemsPermanentlyAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved).finally(
           releaseAutoSave,
         );
@@ -1233,9 +1249,9 @@ export function FolderTree({ root }: { root: string }) {
             notifyRemoveFailure('errors.folder.delete_failed', f);
           }
         }
-      })();
+      })());
     },
-    [mutateDeps, onPathsRemoved, root, treeApi],
+    [mutateDeps, onPathsRemoved, root, trackBusy, treeApi],
   );
 
   // 删除后焦点落点:树焦点项(右键时已移到该行)的相邻项。DOM 焦点随之移过去(右键菜单跳过了 Radix 的焦点还原)。
@@ -1954,6 +1970,15 @@ export function FolderTree({ root }: { root: string }) {
         onNewFile={() => startCreateAtFocus('file')}
         onNewDir={() => startCreateAtFocus('dir')}
       />
+      {/* 零高容器:进度条叠在树顶部,出现 / 消失不推动树内容 */}
+      <div className="relative h-0">
+        <ProgressBar
+          active={busyOps > 0}
+          delayMs={EXPLORER_PROGRESS_DELAY_MS}
+          aria-label={tt('panels.explorer.file_operation_progress')}
+          className="absolute inset-x-0 top-0 z-10"
+        />
+      </div>
       {dragActive && <DropOverlay targetDir={dropTargetDir} />}
       {creating && (
         <CreateInput

@@ -31,8 +31,9 @@ const DISMISS_MS: Record<NotificationLevel, number> = {
 //(显示层只取可见区),故在 push 时按上限丢最旧(并清其 timer)。
 export const MAX_NOTIFICATIONS = 50;
 /**
- * 同时可见的 toast 上限(VSCode 通知 toast 同为 3):列表前这么多条可见,其余排队。只有可见的挂自动消失计时 ——
- * 排队中的不计时(否则在用户看到前就过期),前面的消失后依次补上并从那时开始计时。ToastViewport 按同一常量取可见区。
+ * 同时可见的 toast 上限(VSCode notificationsToasts MAX_NOTIFICATIONS 同为 3):显示**最新**的这么多条,更早的隐藏
+ *(ToastViewport 按同一常量取列表末尾)。计时与是否可见无关(VSCode 同):不带按钮的从创建起计时,被挤到后面的照常到期,
+ * 不会等前面的消失后才冒出来;带按钮的常驻,被挤掉时留在列表里,前面更新的消失后重新显示(不会因被挤掉而丢失)。
  */
 export const MAX_VISIBLE_NOTIFICATIONS = 3;
 /** 同一条通知连续合并时,「正文(第 N 次)」播报的尾随节流窗口:窗口内只播最后的计数一次。 */
@@ -78,39 +79,33 @@ function removeNotificationById(
   );
 }
 
-/** 合并一次相同内容的通知:计数 +1、createdAt 刷新为本次(位置不变);本次带按钮 → 按钮换成本次的。 */
+/**
+ * 合并一次相同内容的通知:计数 +1、createdAt 刷新为本次,并移到列表末尾(成为最新,重新可见 —— VSCode 关掉旧的重复通知、
+ * 新的放在最前);本次带按钮 → 按钮换成本次的。
+ */
 function mergeRepeatedNotification(
   notifications: readonly Notification[],
   id: string,
   createdAt: number,
   actions?: Notification['actions'],
 ): readonly Notification[] {
-  let next: Notification[] | null = null;
+  const at = notifications.findIndex((n) => n.id === id);
+  if (at < 0) return notifications;
+  const notification = notifications[at]!;
+  const next = new Array<Notification>(notifications.length);
   let nextCount = 0;
   for (let i = 0; i < notifications.length; i++) {
-    const notification = notifications[i]!;
-    let current = notification;
-    if (notification.id === id) {
-      if (next === null) {
-        next = new Array<Notification>(notifications.length);
-        for (let j = 0; j < i; j++) {
-          next[j] = notifications[j]!;
-        }
-        nextCount = i;
-      }
-      current = {
-        ...notification,
-        createdAt,
-        count: (notification.count ?? 1) + 1,
-        ...(actions !== undefined ? { actions } : null),
-      };
-    }
-    if (next !== null) {
-      next[nextCount] = current;
-      nextCount += 1;
-    }
+    if (i === at) continue;
+    next[nextCount] = notifications[i]!;
+    nextCount += 1;
   }
-  return next ?? notifications;
+  next[nextCount] = {
+    ...notification,
+    createdAt,
+    count: (notification.count ?? 1) + 1,
+    ...(actions !== undefined ? { actions } : null),
+  };
+  return next;
 }
 
 interface NotificationsContextValue {
@@ -162,8 +157,6 @@ export function NotificationsProvider({
   const timersRef = useRef(new Map<string, DismissTimer>());
   // 有打开的模态时为 true:toast 层在模态遮罩之下(看不到、无法悬停),每个计时多计一次暂停,全部模态关闭后续算。
   const modalPausedRef = useRef(false);
-  // 到期移除后补位(armVisibleTimers);经 ref 调用,避免计时回调与补位互相依赖。
-  const promoteRef = useRef<() => void>(noop);
 
   const setNotificationList = useCallback(
     (update: (prev: readonly Notification[]) => readonly Notification[]) => {
@@ -198,7 +191,6 @@ export function NotificationsProvider({
         id,
       );
       setNotificationList((prev) => removeNotificationById(prev, id));
-      promoteRef.current();
     },
     [clearDismissTimer, setNotificationList],
   );
@@ -213,7 +205,6 @@ export function NotificationsProvider({
           id,
         );
         setNotificationList((prev) => removeNotificationById(prev, id));
-        promoteRef.current();
       }, timer.remaining);
     },
     [setNotificationList],
@@ -238,20 +229,6 @@ export function NotificationsProvider({
     },
     [startDismissTimer],
   );
-
-  // 可见区(列表前 MAX_VISIBLE_NOTIFICATIONS 条)里还没计时的(新入列 / 刚从排队补上)开始计时。读同步的 ref。
-  const armVisibleTimers = useCallback(() => {
-    const list = notificationsRef.current;
-    const visible = Math.min(list.length, MAX_VISIBLE_NOTIFICATIONS);
-    for (let i = 0; i < visible; i++) {
-      const n = list[i]!;
-      // 带按钮的通知常驻(不计时),等用户点按钮或 ×
-      if (!timersRef.current.has(n.id) && !hasActions(n)) scheduleDismiss(n.id, n.level);
-    }
-  }, [scheduleDismiss]);
-  useEffect(() => {
-    promoteRef.current = armVisibleTimers;
-  }, [armVisibleTimers]);
 
   const pause = useCallback((id: string) => {
     const timer = timersRef.current.get(id);
@@ -306,8 +283,8 @@ export function NotificationsProvider({
         }
       }
 
-      // VSCode 通知同款:同 level + 同 message 的通知还在列表里(显示中或排队中)就合并为一条 —— 计数 +1、
-      // 刷新自动消失计时(排队中的没有计时,补位时才开始),不再堆出多条相同 toast。error 同样合并。带 replaceKey 的不参与。
+      // VSCode 通知同款:同 level + 同 message 的通知还在列表里(显示中或被挤到后面)就合并为一条 —— 计数 +1、
+      // 移到最新(重新可见)、刷新自动消失计时,不再堆出多条相同 toast。error 同样合并。带 replaceKey 的不参与。
       let existing: Notification | undefined;
       for (let i = notificationsRef.current.length - 1; replaceKey === undefined && i >= 0; i--) {
         const n: Notification | undefined = notificationsRef.current[i];
@@ -337,13 +314,13 @@ export function NotificationsProvider({
         const actions = opts?.actions;
         notificationsRef.current = mergeRepeatedNotification(notificationsRef.current, existingId, now, actions);
         setNotificationList((prev) => mergeRepeatedNotification(prev, existingId, now, actions));
-        // 这次带按钮 → 转为常驻(停掉计时);否则刷新计时
+        // 这次带按钮 → 转为常驻(停掉计时);否则刷新计时(已是常驻的保持常驻)
         if (actions !== undefined && actions.length > 0) clearDismissTimer(existingId);
         else if (timersRef.current.has(existingId)) scheduleDismiss(existingId, level);
         return;
       }
 
-      // a11y:新通知创建时即播报正文(排队中、尚未显示的也播;之后补位显示不再播)。error → assertive,其余 polite。
+      // a11y:新通知创建时即播报正文(之后被挤掉又重新显示不再播)。error → assertive,其余 polite。
       // 写进全局播报区(src/lib/announce):同 tick 多条都保留,模态框打开时写进模态里。
       announce(message, {
         politeness: level === 'error' ? 'assertive' : 'polite',
@@ -367,9 +344,10 @@ export function NotificationsProvider({
         onDrop,
       );
       setNotificationList((prev) => appendCappedNotification(prev, n, onDrop));
-      armVisibleTimers();
+      // 带按钮的通知常驻(不计时),等用户点按钮或 ×;其余从创建起计时(与是否可见无关)。
+      if (!hasActions(n)) scheduleDismiss(id, level);
     },
-    [armVisibleTimers, clearDismissTimer, dismiss, scheduleDismiss, setNotificationList],
+    [clearDismissTimer, dismiss, scheduleDismiss, setNotificationList],
   );
 
   // epoch race 防护:mount 时注册,unmount 时仅当自身 epoch === 当前 currentEpoch 才清空
