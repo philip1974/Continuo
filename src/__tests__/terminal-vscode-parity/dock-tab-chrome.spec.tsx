@@ -10,11 +10,13 @@ function renderTab(isActive: boolean) {
     id: 'p1',
     title: 'Terminal 1',
     isActive,
+    isVisible: isActive,
     group: { id: 'g1', api: { isMaximized: () => false }, panels: [] },
     close: vi.fn(),
     setActive: vi.fn(),
     onDidActiveChange: () => ({ dispose: vi.fn() }),
     onDidTitleChange: () => ({ dispose: vi.fn() }),
+    onDidVisibilityChange: () => ({ dispose: () => {} }),
     onDidGroupChange: () => ({ dispose: vi.fn() }),
   };
   const props = {

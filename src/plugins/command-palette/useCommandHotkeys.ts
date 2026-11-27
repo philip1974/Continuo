@@ -52,6 +52,10 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   // 颜色主题选择器画在按键所在子窗;切换浅深只改设置(BDD: src/__tests__/theme-commands/)
   'workbench.action.selectTheme',
   'workbench.action.toggleLightDarkThemes',
+  // F6 / ⇧F6:在按键所在子窗自己的区域间循环(组 tab 栏 ↔ 面板内容;VSCode 辅助窗口同样只在本窗口区域间移动,见 focus-parts)。
+  // 终端获焦时也让出(commandsToSkipShell 默认含两条)→ 只有终端的子窗里键盘用户靠它到达 tab 与「更多操作」。
+  'workbench.action.focusNextPart',
+  'workbench.action.focusPreviousPart',
 ]);
 
 /**

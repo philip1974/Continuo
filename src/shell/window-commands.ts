@@ -1,7 +1,9 @@
 // 窗口类命令(VSCode 同名命令):转到文件…(Quick Open)、显示所有命令(命令面板)、关闭窗口、重新加载窗口、放大 / 缩小 / 重置缩放、切换全屏。
 // 显示所有命令另有附加默认键 F1(进命令分发)。
 // 与应用菜单同一动作:关闭窗口经 coApi.window.close(关窗脏确认),重新加载 / 切换全屏经 window:view-action(重新加载走菜单
-// ⌘R 的脏确认 + flush),按键由应用菜单 accelerator 处理;⌘P / ⇧⌘P 是 Quick Open / 命令面板保留键(picker 监听处理,
+// ⌘R 的脏确认 + flush),按键由应用菜单 accelerator 处理;作用于触发命令的窗口(getCommandDocument,VSCode 同):popout 子窗里
+// 关闭窗口只关该子窗(同菜单 ⇧⌘W:子窗关闭,dockview 把其组收回主窗)、切换全屏只让子窗全屏;重新加载窗口重载主窗(子窗界面
+// 属于主窗 renderer,VSCode 辅助窗口里同样重载其主窗;走同一的脏确认 + flush,子窗布局随 dock 布局恢复)。⌘P / ⇧⌘P 是 Quick Open / 命令面板保留键(picker 监听处理,
 // 两条命令只显示该键、不分发,见 PICKER_TOGGLE_COMMAND_IDS)。
 // 放大 / 缩小 / 重置缩放(VSCode windowActions ZoomIn / ZoomOut / ZoomReset,window.zoomPerWindow=false 语义):改设置项
 // window.zoomLevel(所有窗口统一,ZoomLevelFromSettings 推给 main),默认键同 VSCode(⌘= / ⌘- 及 ⇧ / 小键盘附加键;重置另留 ⌘0)。
@@ -9,6 +11,7 @@
 // BDD: src/__tests__/command-discoverability/、src/__tests__/reserved-command-hotkeys/、src/__tests__/window-zoom/
 
 import { coApi } from '@/lib/co-api';
+import { getCommandDocument } from '@/shell/dock/popout-documents';
 import { notifyFailure } from '@/notifications/notify-thrown-error';
 import { useQuickOpenStore } from '@/plugins/quick-open/store';
 import { useCommandPaletteStore } from '@/plugins/command-palette/store';
@@ -19,8 +22,25 @@ import { WINDOW_ZOOM_LEVEL } from '@/plugins/settings/core-setting-specs';
 import type { WindowViewAction } from '../../electron/shared/window-channels';
 import { clampZoomLevel, MAX_ZOOM_LEVEL, MIN_ZOOM_LEVEL } from '../../electron/shared/window-zoom';
 
+/** 命令所在的 popout 子窗(命令窗口是主窗 / 子窗已关 → null)。须在命令的第一个 await 前读。 */
+function commandPopoutWindow(): Window | null {
+  const doc = getCommandDocument();
+  return doc === document ? null : doc.defaultView;
+}
+
 async function runViewAction(action: WindowViewAction): Promise<void> {
-  const r = await coApi.window.viewAction(action);
+  const popout = action === 'toggleFullScreen' ? commandPopoutWindow() : null;
+  const r = await (popout ? coApi.window.viewAction(action, { popoutName: popout.name }) : coApi.window.viewAction(action));
+  if (!r.ok) notifyFailure(r);
+}
+
+async function closeWindow(): Promise<void> {
+  const popout = commandPopoutWindow();
+  if (popout) {
+    popout.close();
+    return;
+  }
+  const r = await coApi.window.close();
   if (!r.ok) notifyFailure(r);
 }
 
@@ -113,10 +133,7 @@ export function windowCommandSpecs(): CommandSpec[] {
       titleKey: 'commands.window.close.title',
       category: 'Window',
       categoryKey: 'commands.window.category',
-      fn: async () => {
-        const r = await coApi.window.close();
-        if (!r.ok) notifyFailure(r);
-      },
+      fn: closeWindow,
     },
     ...VIEW_ACTION_COMMANDS.map(
       (c): CommandSpec => ({

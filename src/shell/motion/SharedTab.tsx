@@ -55,6 +55,20 @@ function useIsActive(api: DockviewPanelApi): boolean {
   return active;
 }
 
+/**
+ * 面板是否是本组正显示的 tab(dockview api.isVisible:组的活动面板)。与 useIsActive(全局活动组的活动面板)不同:非活动组里
+ * 正显示的 tab 也算 —— VSCode 每个编辑器组的活动 tab 都 aria-selected=true、在 Tab 顺序里。
+ */
+function useIsShownInGroup(api: DockviewPanelApi): boolean {
+  const [visible, setVisible] = useState(api.isVisible);
+  useEffect(() => {
+    setVisible(api.isVisible);
+    const d = api.onDidVisibilityChange((e) => setVisible(e.isVisible));
+    return () => d.dispose();
+  }, [api]);
+  return visible;
+}
+
 function useTitle(api: DockviewPanelApi): string {
   const [title, setTitle] = useState(api.title ?? '');
   useEffect(() => {
@@ -94,6 +108,8 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
   //(此前静态 t 在 locale 变化时不重渲,aria-label 停留旧语言)。
   const t = useT();
   const active = useIsActive(api);
+  // a11y 选中态 / roving tabIndex 按「本组正显示」(每组一个);顶部强调条、标题 layoutId 仍按全局活动。
+  const selected = useIsShownInGroup(api);
   const title = useTitle(api);
   // a11y:tab 名称只取标题(aria-labelledby),不按内容把关闭 / 退出最大化按钮的名称拼进来(对齐 VSCode tab)。
   const titleId = useId();
@@ -316,12 +332,12 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
     <div
       ref={rootRef}
       // a11y(A119):Dock tab 须有 tab 语义 + 键盘模型。role=tab + aria-selected 暴露选中态;
-      // roving tabIndex(仅 active 在 Tab 顺序);Enter/Space 激活(切到该 tab)。dockview 用
+      // roving tabIndex(每组正显示的 tab 在 Tab 顺序,非活动组同样;VSCode 同);Enter/Space 激活(切到该 tab)。dockview 用
       // pointer 激活,这里补等价键盘入口。
       role="tab"
-      aria-selected={active}
+      aria-selected={selected}
       aria-labelledby={titleId}
-      tabIndex={active ? 0 : -1}
+      tabIndex={selected ? 0 : -1}
       // a11y(A120):data-panel-id 供方向键导航后焦点跟随定位新 active tab。
       data-panel-id={api.id}
       onKeyDown={handleKeyDown}

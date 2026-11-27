@@ -9,6 +9,9 @@ type InvokeHandler = (event: { sender: object; senderFrame: unknown }, raw: unkn
 const electronMock = vi.hoisted(() => ({
   handlers: new Map<string, InvokeHandler>(),
   senderToWindow: new Map<object, unknown>(),
+  allWindows: [] as unknown[],
+  /** popout 子窗 → 打开它的主窗(menuCommandTargetWindow 的语义) */
+  popoutOwner: new Map<unknown, unknown>(),
 }));
 
 vi.mock('electron', () => ({
@@ -20,8 +23,11 @@ vi.mock('electron', () => ({
   },
   BrowserWindow: {
     fromWebContents: vi.fn((sender: object) => electronMock.senderToWindow.get(sender) ?? null),
-    getAllWindows: vi.fn(() => []),
+    getAllWindows: vi.fn(() => electronMock.allWindows),
   },
+}));
+vi.mock('../../../electron/main/lib/menu-command', () => ({
+  menuCommandTargetWindow: (win: unknown) => electronMock.popoutOwner.get(win) ?? win,
 }));
 vi.mock('../../../electron/main/persistence', () => ({ allocateWindowSeq: vi.fn() }));
 
@@ -30,7 +36,8 @@ const sender = {};
 let fullScreen = false;
 const win = {
   id: 7,
-  webContents: { zoomLevel: 0 },
+  isDestroyed: () => false,
+  webContents: { zoomLevel: 0, isDestroyed: () => false, mainFrame: { name: '' } },
   isFullScreen: vi.fn(() => fullScreen),
   setFullScreen: vi.fn((v: boolean) => {
     fullScreen = v;
@@ -51,6 +58,8 @@ beforeEach(() => {
   electronMock.handlers.clear();
   electronMock.senderToWindow.clear();
   electronMock.senderToWindow.set(sender, win);
+  electronMock.allWindows = [win];
+  electronMock.popoutOwner.clear();
   registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow, rebuildAppMenu: vi.fn() });
 });
 
@@ -82,5 +91,51 @@ describe('window:view-action', () => {
     expect(r.ok).toBe(false);
     expect(r.code).toBe('NO_WINDOW');
     expect(reloadWindow).not.toHaveBeenCalled();
+  });
+});
+
+/** 一个 popout 子窗:window.open 名 = name,由 owner 打开。 */
+function popout(name: string, owner: unknown) {
+  let fs = false;
+  const child = {
+    id: 20 + electronMock.allWindows.length,
+    isDestroyed: () => false,
+    webContents: { isDestroyed: () => false, mainFrame: { name } },
+    isFullScreen: vi.fn(() => fs),
+    setFullScreen: vi.fn((v: boolean) => {
+      fs = v;
+    }),
+  };
+  electronMock.allWindows.push(child);
+  electronMock.popoutOwner.set(child, owner);
+  return child;
+}
+
+describe('window:view-action 带 popoutName(命令在 popout 子窗里触发)', () => {
+  it('toggleFullScreen → 只切发起方打开的、同名的那个子窗,主窗不动', async () => {
+    const other = popout('dv-1-g3', win);
+    const target = popout('dv-1-g2', win);
+    expect(await invoke({ action: 'toggleFullScreen', popoutName: 'dv-1-g2' })).toEqual({ ok: true, data: undefined });
+    expect(target.setFullScreen).toHaveBeenCalledWith(true);
+    expect(other.setFullScreen).not.toHaveBeenCalled();
+    expect(win.setFullScreen).not.toHaveBeenCalled();
+  });
+
+  it('同名子窗不归发起方(别的主窗打开的)/ 不存在 → NO_WINDOW,不动任何窗口', async () => {
+    const foreign = popout('dv-1-g2', { id: 99 });
+    for (const popoutName of ['dv-1-g2', 'missing']) {
+      const r = (await invoke({ action: 'toggleFullScreen', popoutName })) as { ok: boolean; code?: string };
+      expect(r).toMatchObject({ ok: false, code: 'NO_WINDOW' });
+    }
+    expect(foreign.setFullScreen).not.toHaveBeenCalled();
+    expect(win.setFullScreen).not.toHaveBeenCalled();
+  });
+
+  it('popoutName 为空串 / 超长 / 非字符串 → 拒绝', async () => {
+    for (const popoutName of ['', 'x'.repeat(257), 1]) {
+      const r = (await invoke({ action: 'toggleFullScreen', popoutName })) as { ok: boolean };
+      expect(r.ok).toBe(false);
+    }
+    expect(win.setFullScreen).not.toHaveBeenCalled();
   });
 });

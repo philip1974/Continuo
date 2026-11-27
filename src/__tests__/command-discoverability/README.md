@@ -18,7 +18,7 @@
   (renderer 热键先处理并 preventDefault,菜单 accelerator 不再触发)
 - 切换界面语言 → 菜单整体重建(既有 `setMenuRebuilder`),标签跟随
 
-### 2. 常用动作注册为命令(`workbench-commands.spec.ts`、`commands-behavior.spec.tsx`、`window-view-action-ipc.spec.ts`)
+### 2. 常用动作注册为命令(`workbench-commands.spec.ts`、`commands-behavior.spec.tsx`、`window-view-action-ipc.spec.ts`、`window-commands-popout.spec.ts`)
 
 命令 id 照抄 VSCode(有对应的),三语标题 + 分类,命令面板可搜、快捷键设置页自动列出(无默认键;缩放三条例外,带 VSCode 默认键)。
 
@@ -46,7 +46,15 @@
 - 编辑器类命令作用于活动编辑器组的活动 tab;资源管理器类作用于当前工作区的文件树;弹出作用于 dock 活动面板所在组
 - 无上下文(无活动 tab / 无工作区 / 非 Markdown / 无活动面板 / 活动组已在子窗)→ 静默无操作(命令注册表无 when / enabled 机制)
 - 关闭类与 tab 右键同一路径:脏 tab 弹「保存 / 不保存 / 取消」
-- 主进程动作(重新加载 / 缩放 / 全屏)经 `window:view-action`(通用 IPC 外壳:受信 frame + zod;作用于发起方所在窗口)
+- 主进程动作(重新加载 / 全屏)经 `window:view-action`(通用 IPC 外壳:受信 frame + zod;作用于发起方所在窗口)
+- 窗口类命令作用于**触发它的窗口**(`getCommandDocument`:按键 / 菜单 / 命令面板所在窗口;VSCode 同)。popout 子窗里:
+  - 关闭窗口 → 只关该子窗(子窗 `window.close()`,同菜单 ⇧⌘W:dockview 把子窗的组收回主窗,终端不结束),不经 `window:close`
+    关主窗(此前子窗界面跑在主窗 renderer,IPC 发起方是主窗 → 关掉整个主窗连同终端)
+  - 切换全屏 → `window:view-action` 带 `popoutName`(子窗的 window.open 名):main 只切**发起方打开的**同名子窗;不存在 /
+    不归发起方 → `NO_WINDOW`(提示错误),不动任何窗口(VSCode toggleFullScreen 作用于活动窗口)
+  - 重新加载窗口 → 重载主窗(子窗属于主窗 renderer;VSCode 辅助窗口里 reloadWindow 同样重载主窗):走同一的脏确认 + flush,
+    子窗随主窗卸载关闭、随 dock 布局恢复
+- 最小化 / 开发者工具 / 全屏(菜单)是菜单 role,作用于系统获焦窗口(含子窗),不经 renderer;缩放是全局设置
 
 ### 3. 命令标题大小写统一(`workbench-commands.spec.ts`)
 

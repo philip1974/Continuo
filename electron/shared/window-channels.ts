@@ -59,8 +59,9 @@ export const WINDOW_CHANNELS = {
    */
   SET_MENU_KEYBINDINGS: 'window:set-menu-keybindings',
   /**
-   * 命令面板里的「重新加载窗口 / 切换全屏」(应用菜单 View 同款动作,payload `{ action }`,
-   * 仅限 WINDOW_VIEW_ACTIONS):main 作用于发起方所在窗口;reload 走与菜单 ⌘R 相同的脏确认 + flush。
+   * 命令面板里的「重新加载窗口 / 切换全屏」(应用菜单 View 同款动作,payload `{ action, popoutName? }`,
+   * 仅限 WINDOW_VIEW_ACTIONS):main 作用于发起方所在窗口;reload 走与菜单 ⌘R 相同的脏确认 + flush。带 popoutName
+   *(在 dockview popout 子窗里触发:子窗的 window.open 名)→ 作用于发起方打开的那个子窗。
    */
   VIEW_ACTION: 'window:view-action',
 } as const;
@@ -69,6 +70,12 @@ export const WINDOW_CHANNELS = {
 // 放大 / 缩小 / 重置缩放不在此列:它们改设置项 window.zoomLevel(所有窗口统一,见 SET_ZOOM_LEVEL)。
 export const WINDOW_VIEW_ACTIONS = ['reload', 'toggleFullScreen'] as const;
 export type WindowViewAction = (typeof WINDOW_VIEW_ACTIONS)[number];
+/** window:view-action 的 popoutName 上限(dockview popout 名 = `<dockview id>-<组 id>`,远小于此)。 */
+export const POPOUT_NAME_MAX = 256;
+/** window:view-action 的可选目标:popout 子窗的 window.open 名。 */
+export interface WindowViewActionTarget {
+  readonly popoutName?: string;
+}
 
 /**
  * 应用菜单项即 renderer 命令(对齐 VSCode 菜单栏 MenuId.MenubarXxx 的命令项):main 只认这些 id 发 RUN_MENU_COMMAND,renderer

@@ -372,6 +372,7 @@
 - [`app-menu.spec.ts`](./command-discoverability/app-menu.spec.ts)
 - [`commands-behavior.spec.tsx`](./command-discoverability/commands-behavior.spec.tsx)
 - [`explorer-tree-actions.spec.tsx`](./command-discoverability/explorer-tree-actions.spec.tsx)
+- [`window-commands-popout.spec.ts`](./command-discoverability/window-commands-popout.spec.ts)
 - [`window-view-action-ipc.spec.ts`](./command-discoverability/window-view-action-ipc.spec.ts)
 - [`workbench-commands.spec.ts`](./command-discoverability/workbench-commands.spec.ts)
 

@@ -170,11 +170,13 @@ function renderDockTab(targetId: string, ids: readonly string[]) {
     id: targetId,
     title: targetId,
     isActive: true,
+    isVisible: true,
     group: { id: 'g1', api: { isMaximized: () => false }, panels },
     close: panels.find((p) => p.id === targetId)!.api.close,
     setActive: vi.fn(),
     onDidActiveChange: () => ({ dispose: vi.fn() }),
     onDidTitleChange: () => ({ dispose: vi.fn() }),
+    onDidVisibilityChange: () => ({ dispose: () => {} }),
     onDidGroupChange: () => ({ dispose: vi.fn() }),
   };
   const props = {

@@ -53,6 +53,7 @@ function buildEnv(initialMaxed = false): TestEnv {
   const panelApi = {
     id: 'panel-1',
     isActive: true,
+    isVisible: true,
     title: 'Terminal 1',
     group: {
       id: groupRef.id,
@@ -63,6 +64,7 @@ function buildEnv(initialMaxed = false): TestEnv {
       activeEmitter.on(cb),
     onDidTitleChange: (cb: (e: { title: string | undefined }) => void) =>
       titleEmitter.on(cb),
+    onDidVisibilityChange: () => ({ dispose: () => {} }),
     onDidGroupChange: () => ({ dispose: () => {} }),
     close: vi.fn(),
   } as unknown as SharedTabProps['api'];

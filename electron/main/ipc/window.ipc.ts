@@ -12,6 +12,7 @@ import {
   MENU_COMMAND_IDS,
   MENU_HOTKEY_MAX,
   WINDOW_CHANNELS,
+  POPOUT_NAME_MAX,
   WINDOW_VIEW_ACTIONS,
   type IpcWindowCreateInput,
   type WindowViewAction,
@@ -43,6 +44,7 @@ import { WINDOW_BACKGROUND_COLORS } from '../../shared/window-background';
 import { setMenuKeybindings } from '../menu-keybindings';
 import { getWindowTheme, setWindowTheme } from '../services/window-theme.service';
 import { setWindowZoomLevel } from '../services/window-zoom.service';
+import { menuCommandTargetWindow } from '../lib/menu-command';
 
 function summarizePath(p: string): string {
   return p.length > 60 ? p.slice(0, 50) + '...' : p;
@@ -211,11 +213,26 @@ const NotifyRootInput = z
 const CloseInput = z.object({}).strict();
 const FocusInput = z.object({}).strict();
 const RelaunchInput = z.object({}).strict();
-const ViewActionInput = z.object({ action: z.enum(WINDOW_VIEW_ACTIONS) }).strict();
+// popoutName:命令在 dockview popout 子窗里触发(renderer 的命令窗口是子窗)→ 作用于发起方打开的、以此为 window.open 名的子窗。
+const ViewActionInput = z
+  .object({ action: z.enum(WINDOW_VIEW_ACTIONS), popoutName: z.string().min(1).max(POPOUT_NAME_MAX).optional() })
+  .strict();
 // 菜单命令的生效键位:键只限菜单命令 id(条数因此有界),值为归一后的 hotkey 或 null(未绑定 / 冲突落败)。
 const SetMenuKeybindingsInput = z
   .object({ keybindings: z.partialRecord(z.enum(MENU_COMMAND_IDS), z.string().max(MENU_HOTKEY_MAX).nullable()) })
   .strict();
+
+/**
+ * owner(主窗)打开的、window.open 名为 name 的 dockview popout 子窗;没有 / 不归 owner → null。popout 子窗界面跑在主窗
+ * renderer,其 IPC 的 sender 是主窗,子窗只能按名字认(dockview 每个 popout 组的名字唯一)。
+ */
+function ownedPopoutWindow(owner: BrowserWindow, name: string): BrowserWindow | null {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win === owner || win.isDestroyed() || win.webContents.isDestroyed()) continue;
+    if (win.webContents.mainFrame.name === name && menuCommandTargetWindow(win) === owner) return win;
+  }
+  return null;
+}
 
 function applyWindowViewAction(win: BrowserWindow, action: WindowViewAction, reload: (win: BrowserWindow) => void): void {
   switch (action) {
@@ -299,10 +316,13 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
     if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
     win.close();
   });
-  // 命令面板的「重新加载窗口 / 缩放 / 全屏」(应用菜单 View 同款动作):作用于发起方所在窗口。
+  // 命令面板的「重新加载窗口 / 全屏」(应用菜单 View 同款动作):作用于发起方所在窗口;带 popoutName → 作用于发起方的那个
+  // popout 子窗(在子窗里触发的切换全屏只让子窗全屏;VSCode toggleFullScreen 作用于活动窗口)。
   safeHandleWithCtx(WINDOW_CHANNELS.VIEW_ACTION, ViewActionInput, (input, { event }) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    if (!owner) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
+    const win = input.popoutName === undefined ? owner : ownedPopoutWindow(owner, input.popoutName);
+    if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no popout window');
     applyWindowViewAction(win, input.action, deps.reloadWindow);
   });
   // 菜单命令的生效键位(renderer 改键 / 解绑 / 命令注册变化后推送):有变化才重建菜单(accelerator 只作显示)。

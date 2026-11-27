@@ -18,11 +18,13 @@ function makeApi(isActive: boolean) {
     id: 'p1',
     title: 'Terminal 1',
     isActive,
+    isVisible: isActive,
     group: { id: 'g1', api: { isMaximized: () => false }, panels: [] },
     close: vi.fn(),
     setActive: vi.fn(),
     onDidActiveChange: () => ({ dispose: () => {} }),
     onDidTitleChange: () => ({ dispose: () => {} }),
+    onDidVisibilityChange: () => ({ dispose: () => {} }),
     onDidGroupChange: (cb: () => void) => {
       groupChange.add(cb);
       return { dispose: () => groupChange.delete(cb) };

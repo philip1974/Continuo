@@ -13,6 +13,7 @@ function makeApi() {
     id: 'editor',
     title: 'Editor',
     isActive: false,
+    isVisible: false,
     group: { id: 'g1', api: { isMaximized: () => false }, panels: [] },
     close: vi.fn(),
     setActive: vi.fn(),
@@ -21,6 +22,7 @@ function makeApi() {
       return { dispose: vi.fn() };
     },
     onDidTitleChange: () => ({ dispose: vi.fn() }),
+    onDidVisibilityChange: () => ({ dispose: () => {} }),
     onDidGroupChange: () => ({ dispose: vi.fn() }),
   };
   return { api, setActive: (v: boolean) => activeCb?.({ isActive: v }) };

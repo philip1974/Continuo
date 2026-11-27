@@ -17,7 +17,10 @@ active 时 title 与底部下划线指示条都挂 motion layoutId(panelTitleLay
 ### title / active 同步
 
 - 订阅 api.onDidTitleChange → 更新 title
-- 订阅 api.onDidActiveChange → 更新 active
+- 订阅 api.onDidActiveChange → 更新 active(全局活动组的活动面板:顶部强调条、标题 / 指示条 layoutId、关闭按钮常显)
+- 订阅 api.onDidVisibilityChange → 更新「本组正显示」:`aria-selected` 与 roving `tabIndex` 按它 —— 每个组正显示的 tab
+  都 `aria-selected=true`、`tabIndex=0`(非活动组同样;VSCode 每个编辑器组的活动 tab 都选中、在 Tab 顺序里),组内被遮住的
+  tab `aria-selected=false`、`tabIndex=-1`。强调条仍只在全局活动 tab 上(读屏 / Tab 顺序不再把非活动组的 tab 当未选中)
 
 ### close 按钮
 

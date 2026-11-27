@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
+import { DockviewComponent } from 'dockview-react';
 import { SharedTab } from '../../shell/motion/SharedTab';
 import { setLocale, notifyLocaleChange } from '@/i18n';
 import {
@@ -14,6 +15,8 @@ interface FakeApi {
   id: string;
   title: string;
   isActive: boolean;
+  /** 本组正显示(dockview api.isVisible);缺省同 isActive */
+  isVisible?: boolean;
   group: {
     id: string;
     api: { isMaximized: () => boolean };
@@ -27,15 +30,20 @@ interface FakeApi {
   onDidTitleChange: (cb: (e: { title: string }) => void) => {
     dispose: () => void;
   };
+  onDidVisibilityChange: (cb: (e: { isVisible: boolean }) => void) => {
+    dispose: () => void;
+  };
   onDidGroupChange: (cb: () => void) => { dispose: () => void };
   __triggerActiveChange: (isActive: boolean) => void;
+  __triggerVisibilityChange: (isVisible: boolean) => void;
   __triggerTitleChange: (title: string) => void;
 }
 
 function makeApi(over: Partial<FakeApi> = {}): FakeApi {
   let activeCb: ((e: { isActive: boolean }) => void) | null = null;
   let titleCb: ((e: { title: string }) => void) | null = null;
-  return {
+  let visibilityCb: ((e: { isVisible: boolean }) => void) | null = null;
+  const api: FakeApi = {
     id: 'p1',
     title: 'Tab Title',
     isActive: false,
@@ -51,11 +59,18 @@ function makeApi(over: Partial<FakeApi> = {}): FakeApi {
       titleCb = cb;
       return { dispose: vi.fn() };
     },
+    onDidVisibilityChange: (cb) => {
+      visibilityCb = cb;
+      return { dispose: vi.fn() };
+    },
     onDidGroupChange: () => ({ dispose: vi.fn() }),
     __triggerActiveChange: (isActive) => activeCb?.({ isActive }),
     __triggerTitleChange: (title) => titleCb?.({ title }),
+    __triggerVisibilityChange: (isVisible) => visibilityCb?.({ isVisible }),
     ...over,
   };
+  api.isVisible ??= api.isActive;
+  return api;
 }
 
 afterEach(() => cleanup());
@@ -169,6 +184,57 @@ describe('SharedTab — active 同步', () => {
     });
     // 现在 m.span 指示条已挂载
     expect(container.querySelector('.bg-accent')).not.toBeNull();
+  });
+});
+
+// VSCode:每个编辑器组正显示的 tab 都 aria-selected=true、在 Tab 顺序里;只有全局活动组的活动 tab 带顶部强调条。
+describe('SharedTab — 选中态按「本组正显示」(非活动组的可见 tab 也选中)', () => {
+  it('非活动组里正显示的 tab(isActive=false、isVisible=true)→ aria-selected=true、tabIndex=0,但没有强调条', () => {
+    const api = makeApi({ isActive: false, isVisible: true });
+    const { container } = renderTab(api);
+    const tab = container.querySelector('[role=tab]') as HTMLElement;
+    expect(tab.getAttribute('aria-selected')).toBe('true');
+    expect(tab.getAttribute('tabindex')).toBe('0');
+    expect(container.querySelector('.bg-accent')).toBeNull();
+  });
+
+  it('本组里被别的 tab 遮住(isVisible 变 false)→ aria-selected=false、移出 Tab 顺序;再显示 → 恢复', () => {
+    const api = makeApi({ isActive: false, isVisible: true });
+    const { container } = renderTab(api);
+    const tab = container.querySelector('[role=tab]') as HTMLElement;
+    act(() => api.__triggerVisibilityChange(false));
+    expect(tab.getAttribute('aria-selected')).toBe('false');
+    expect(tab.getAttribute('tabindex')).toBe('-1');
+    act(() => api.__triggerVisibilityChange(true));
+    expect(tab.getAttribute('aria-selected')).toBe('true');
+    expect(tab.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('dockview 语义:两组各自的活动面板 isVisible=true,只有活动组的 isActive=true;组内被遮住的面板 isVisible=false', () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const dock = new DockviewComponent(container, {
+      createComponent: () => ({ element: document.createElement('div'), init: () => {} }),
+    });
+    const a = dock.api.addPanel({ id: 'a', component: 'x', title: 'a' });
+    const hidden = dock.api.addPanel({ id: 'hidden', component: 'x', title: 'hidden', position: { referencePanel: 'a' } });
+    a.api.setActive();
+    const b = dock.api.addPanel({ id: 'b', component: 'x', title: 'b', position: { referencePanel: 'a', direction: 'right' } });
+    b.api.setActive();
+    expect(b.api.isActive).toBe(true);
+    expect(a.api.isActive).toBe(false);
+    expect(a.api.isVisible).toBe(true);
+    expect(hidden.api.isVisible).toBe(false);
+    dock.dispose();
+    vi.unstubAllGlobals();
   });
 });
 

@@ -2,15 +2,17 @@
 // BDD:F6 / ⇧F6 在工作台区域间循环(VSCode workbench.action.focusNextPart / focusPreviousPart);终端让出 F6;
 // 编辑器里 F6 照常触发命令。见同目录 README 第 6 条。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { cleanup, renderHook } from '@testing-library/react';
 import { DockviewComponent, type DockviewApi } from 'dockview-react';
 import {
   FOCUS_NEXT_PART_COMMAND,
   FOCUS_PREVIOUS_PART_COMMAND,
   focusAdjacentPart,
+  focusPartCommandSpecs,
 } from '@/shell/focus-parts';
 import { setDockApi } from '@/shell/dock/dock-api-ref';
-import { isMainWindowDockEmpty, trackGroupMru } from '@/shell/dock/group-mru';
+import { isMainWindowDockEmpty, popoutGroupOfDocument, trackGroupMru } from '@/shell/dock/group-mru';
+import { trackPopoutDocuments } from '@/shell/dock/popout-documents';
 import { openFakePopout } from '../dock-terminal-vscode-focus/dock-fixtures';
 import { terminalYieldedCommandId } from '@/panels/Terminal/terminal-hotkeys';
 import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
@@ -272,5 +274,94 @@ describe('终端与编辑器里的 F6', () => {
     expect(f6).toHaveBeenCalledTimes(1);
     expect(event.defaultPrevented).toBe(true);
     expect(x).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * popout 子窗里的 F6 / ⇧F6(VSCode:辅助窗口里 F6 只在本窗口的区域间移动):主窗 a | b 两组,b 弹到子窗(iframe 充当子窗)。
+ * tab 用 role=tab + roving tabIndex(同 SharedTab:正显示的 tab tabIndex=0)。命令经真实热键分发(popout 子窗文档上的 keydown)。
+ */
+describe('popout 子窗里的 F6 / ⇧F6:只在本窗的组 tab 栏 ↔ 面板内容之间循环', () => {
+  // 卸掉热键 hook:否则上一条的监听也挂到下一条的子窗文档上,一次按键执行两遍
+  afterEach(() => cleanup());
+
+  async function popoutWorkbench() {
+    workbench();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const dockPart = document.querySelector<HTMLElement>('[data-workbench-part="dock"]')!;
+    dockPart.innerHTML = '';
+    const container = document.createElement('div');
+    dockPart.appendChild(container);
+    const dock = new DockviewComponent(container, {
+      createComponent: ({ id }) => {
+        const element = document.createElement('div');
+        element.innerHTML = `<textarea data-x="editor-${id}"></textarea>`;
+        return { element, init: () => {} };
+      },
+      defaultTabComponent: 'roving',
+      createTabComponent: ({ id }) => {
+        const element = document.createElement('div');
+        element.setAttribute('role', 'tab');
+        element.dataset.x = `tab-${id}`;
+        return {
+          element,
+          init: ({ api }) => {
+            const sync = () => {
+              element.tabIndex = api.isVisible ? 0 : -1;
+            };
+            sync();
+            api.onDidVisibilityChange(sync);
+          },
+        };
+      },
+    });
+    const api = dock.api as DockviewApi;
+    api.addPanel({ id: 'a', component: 'x', title: 'a' });
+    api.addPanel({ id: 'b', component: 'x', title: 'b', position: { referencePanel: 'a', direction: 'right' } });
+    setDockApi(api);
+    const tracker = trackPopoutDocuments(api);
+    await openFakePopout(dock, 'b');
+    const doc = api.getPanel('b')!.group.element.ownerDocument;
+    expect(doc).not.toBe(document);
+    expect(popoutGroupOfDocument(api, doc)).toBe(api.getPanel('b')!.group);
+    const reg = new CommandRegistry();
+    for (const spec of focusPartCommandSpecs()) reg.register(spec);
+    renderHook(() => useCommandHotkeys(reg));
+    const inChild = (x: string) => doc.querySelector<HTMLElement>(`[data-x="${x}"]`)!;
+    const press = (init: KeyboardEventInit) => (doc.activeElement ?? doc.body).dispatchEvent(key(init));
+    return { api, doc, inChild, press, dispose: () => tracker.dispose() };
+  }
+
+  it('面板内容 → F6 → 本窗 tab 栏正显示的 tab → F6 → 回面板内容;⇧F6 同样在两者间切换;主窗焦点不动', async () => {
+    const { doc, inChild, press, dispose } = await popoutWorkbench();
+    inChild('editor-b').focus();
+    expect(doc.activeElement).toBe(inChild('editor-b'));
+
+    press({ key: 'F6' });
+    expect(doc.activeElement).toBe(inChild('tab-b'));
+    press({ key: 'F6' });
+    expect(doc.activeElement).toBe(inChild('editor-b'));
+    press({ key: 'F6', shiftKey: true });
+    expect(doc.activeElement).toBe(inChild('tab-b'));
+    press({ key: 'F6', shiftKey: true });
+    expect(doc.activeElement).toBe(inChild('editor-b'));
+    // 主窗区域(状态栏 / 侧栏 / 主窗组)没被卷进来:主窗文档的焦点只是承载子窗的 iframe
+    expect(document.activeElement?.closest('[data-workbench-part]')).toBeNull();
+    dispose();
+  });
+
+  it('子窗里焦点不在 tab 栏也不在面板内容(子窗 body)→ F6 先到面板内容', async () => {
+    const { doc, inChild, press, dispose } = await popoutWorkbench();
+    (doc.activeElement as HTMLElement | null)?.blur();
+    press({ key: 'F6' });
+    expect(doc.activeElement).toBe(inChild('editor-b'));
+    dispose();
   });
 });

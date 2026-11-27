@@ -19,7 +19,7 @@ F6 / ⇧F6(`workbench.action.focusNextPart` / `focusPreviousPart`)在工作台�
 | `src/shell/dock/panel-focus.ts` | 面板内容无可编辑 / 可 Tab 元素时回退到面板根(`[data-editor-panel-root]` / 内容根下 tabIndex=-1 的根元素) |
 | `src/shell/dock/EmptyState.tsx` / `src/shell/dock/group-mru.ts` | 主窗空态(`data-dock-empty`,tabIndex=-1);`isMainWindowDockEmpty` 按主窗内面板数判空 |
 | `src/panels/Editor/EditorPanel.tsx` | 关掉最后一个 tab 后焦点给面板根(tabIndex=-1) |
-| `src/shell/focus-parts.ts` | F6 / ⇧F6 命令:活动 dock 组 → 状态栏 → 侧栏循环 |
+| `src/shell/focus-parts.ts` | F6 / ⇧F6 命令:活动 dock 组 → 状态栏 → 侧栏循环;popout 子窗里组 tab 栏 ↔ 面板内容 |
 | `src/panels/Terminal/terminal-hotkeys.ts` | F6 / ⇧F6 在终端里让出给命令(VSCode commandsToSkipShell 默认含 focusNextPart / focusPreviousPart) |
 | `src/plugins/command-palette/useCommandHotkeys.ts` | 无修饰的功能键(F1–F24)绑定在可编辑控件里照常分发(不是文字输入键) |
 
@@ -62,6 +62,10 @@ F6 / ⇧F6(`workbench.action.focusNextPart` / `focusPreviousPart`)在工作台�
 - 空编辑器的 Welcome 带「打开文件夹 / 显示所有命令」按钮时,F6 仍聚焦编辑器面板根而非第一个按钮(水印入口不抢焦点,Tab 再进);打开了文件时仍优先聚焦可编辑区
 - 主窗没有面板(全关光,或所有组都弹出到子窗 —— DockShell 按主窗内面板数判空,显示空态):F6 聚焦主窗空态容器
 - 终端里 F6 / ⇧F6 让出给命令(不发给 shell);编辑器(CodeMirror / ProseMirror)里 F6 照常触发命令
+- popout 子窗里 F6 / ⇧F6 也分发(`POPOUT_HOTKEY_COMMAND_IDS`),作用于按键所在子窗(`getCommandDocument`):只在本窗的两个区域间
+  切换 —— 组 tab 栏(正显示的 tab,roving tabIndex=0;没有 tab 时落到栏里第一个控件)↔ 面板内容(同 `focusPanelContent`,终端
+  走 xterm 焦点句柄);焦点在子窗 body 时先到面板内容。不碰主窗的区域。只有终端的子窗里 Tab 进了 shell,键盘用户靠它到达
+  tab 与「更多操作」(VSCode:辅助窗口里 F6 只在本窗口的区域间移动 —— 编辑器 ↔ 状态栏,子窗没有状态栏)
 
 ### 7. 再次激活已活动的面板不丢焦点(`reactivate-active-panel.spec.ts`)
 

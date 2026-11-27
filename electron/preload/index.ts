@@ -72,6 +72,7 @@ import {
   WINDOW_CHANNELS,
   type IpcWindowCreateInput,
   type WindowViewAction,
+  type WindowViewActionTarget,
 } from '../shared/window-channels';
 import {
   MARKETPLACE_CHANNELS,
@@ -541,9 +542,15 @@ const api = {
     focus: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.FOCUS, {}),
     /** 重启应用(插件安装后「立即重启」):main 走与 ⌘Q 相同的退出流程(脏文件确认),通过后重新启动。 */
     relaunchApp: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.RELAUNCH_APP, {}),
-    /** 对本窗口执行应用菜单 View 同款动作(重新加载 / 切换全屏);重新加载走脏确认。 */
-    viewAction: (action: WindowViewAction): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(WINDOW_CHANNELS.VIEW_ACTION, { action }),
+    /**
+     * 对本窗口执行应用菜单 View 同款动作(重新加载 / 切换全屏);重新加载走脏确认。target.popoutName → 作用于本窗口打开的
+     * 那个 dockview popout 子窗(子窗界面跑在本 renderer,IPC 发起方总是主窗)。
+     */
+    viewAction: (action: WindowViewAction, target?: WindowViewActionTarget): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(
+        WINDOW_CHANNELS.VIEW_ACTION,
+        target?.popoutName === undefined ? { action } : { action, popoutName: target.popoutName },
+      ),
     /**
      * Electron 38+ File.path 已弃用,改 webUtils.getPathForFile(file)。
      * renderer 拖文件 / 文件夹到窗口时,需要绝对路径才能调 fs / setRoot。

@@ -88,11 +88,13 @@ function renderTab(component: string, params: Record<string, unknown>) {
     id: 'p1',
     title: 'T',
     isActive: false,
+    isVisible: false,
     group: { id: 'g1', api: { isMaximized: () => false }, panels: [panel] },
     close: panel.api.close,
     setActive: vi.fn(),
     onDidActiveChange: () => ({ dispose: vi.fn() }),
     onDidTitleChange: () => ({ dispose: vi.fn() }),
+    onDidVisibilityChange: () => ({ dispose: () => {} }),
     onDidGroupChange: () => ({ dispose: vi.fn() }),
   };
   const props = {
