@@ -16,7 +16,7 @@ import { TerminalRenameDialog } from './TerminalRenameDialog';
 import { clearTerminalRename, useTerminalRenameRequest } from './terminal-rename-request';
 import { useT } from '@/i18n';
 import type { OriginHint } from '../../../electron/shared/origin-hint';
-import { terminalPanelTitle } from '@/shell/dock/terminal-panel-id';
+import { terminalInputAriaLabel, terminalPanelTitle } from '@/shell/dock/terminal-panel-id';
 
 export interface TerminalPanelViewParams {
   sessionId: string;
@@ -65,7 +65,7 @@ export function TerminalPanelView(
     }),
   );
   // 每次渲染直接算(便宜的字符串拼接):useT 已订阅 locale,「(已退出)」后缀随语言切换重算。
-  const derivedTitle = terminalPanelTitle({
+  const titleInput = {
     sessionId,
     sessionTitle,
     defaultTitleIndex: sessionDefaultTitleIndex,
@@ -73,7 +73,9 @@ export function TerminalPanelView(
     exited: sessionExited,
     userTitle,
     processName,
-  });
+  };
+  const derivedTitle = terminalPanelTitle(titleInput);
+  const inputAriaLabel = terminalInputAriaLabel(titleInput);
 
   useEffect(() => {
     if (props.api.title !== derivedTitle) {
@@ -96,15 +98,17 @@ export function TerminalPanelView(
     );
   }
 
-  return <TerminalPanelContent api={props.api} sessionId={sessionId} />;
+  return <TerminalPanelContent api={props.api} sessionId={sessionId} inputAriaLabel={inputAriaLabel} />;
 }
 
 function TerminalPanelContent({
   api,
   sessionId,
+  inputAriaLabel,
 }: {
   api: IDockviewPanelProps<TerminalPanelViewParams>['api'];
   sessionId: string;
+  inputAriaLabel: string;
 }) {
   const t = useT();
   // 进程非 0 退出后「按任意键关闭」:走面板关闭的公共路径(关闭动画 + 删会话)。
@@ -115,7 +119,7 @@ function TerminalPanelContent({
   const searchOpenRef = useRef(false);
   const focusOnInit = useCallback(() => api.isActive && !searchOpenRef.current, [api]);
   const { containerRef, isReady, fit, requestFit, focus, clear, readText, contextMenuActions, searchApi } =
-    useTerminal(sessionId, { onExitDismiss, focusOnInit });
+    useTerminal(sessionId, { onExitDismiss, focusOnInit, inputAriaLabel });
   const { ref: dropZoneRef } = useTerminalDragDrop({ sessionId, focus, api });
   // tab 右键「重命名…」→ 本面板显示重命名框;portal 进面板所在文档的 body(popout 子窗画在子窗),关闭后焦点回终端。
   const renaming = useTerminalRenameRequest((s) => s.sessionId === sessionId);

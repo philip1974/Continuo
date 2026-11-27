@@ -79,6 +79,8 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - 右键「移到废纸篓」:右键先把树焦点移到该行(VSCode 同款,选中不变);菜单关闭跳过 Radix 焦点还原(否则其 setTimeout
   会抢走确认框的自聚焦,焦点落在遮罩后的树行)。确认框打开期间焦点在框内;取消(Esc)→ 焦点显式回到该行
   (`updateDomFocus`,不依赖 Modal 记录的 prevFocus —— 那是已卸载的菜单项);确认 / 无需确认 → 焦点与选中移到相邻项
+- Shift+F10 / 菜单键(VSCode 列表同,`isContextMenuKey`):在焦点行左下角派发 contextmenu(`dispatchContextMenuAt`),
+  与鼠标右键同一路径 —— 文件 / 目录各自的菜单,多选且焦点行在选中集内时作用于整组;Esc 关闭后焦点回到该行
 - mod+C / mod+X / mod+V(mac ⌘、其它 Ctrl,平台判定同全局命令热键 `matchesHotkey`):与右键剪切 / 复制 /
   粘贴同一实现;粘贴落点 = 焦点目录,焦点是文件则其父目录
 - macOS 按住 ⌘ 时其它键无 keyup:按 ⌘ 组合后从库的 pressedKeys 摘掉该键,之后方向键照常

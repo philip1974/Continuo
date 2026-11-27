@@ -41,6 +41,8 @@ const electronMock = vi.hoisted(() => ({
 vi.mock('electron', () => ({
   app: {
     getPath: vi.fn(() => electronMock.userData),
+    // registerIpc 也注册读屏检测(app.on('accessibility-support-changed'))
+    on: vi.fn(),
   },
   ipcMain: {
     handle: vi.fn(

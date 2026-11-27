@@ -444,6 +444,30 @@ export const WINDOW_ZOOM_LEVEL: CoreSettingSpec<number> = {
   priority: 4,
 };
 
+/** 读屏优化模式(VSCode editor.accessibilitySupport 同名同取值,默认 auto)。 */
+export type AccessibilitySupport = 'auto' | 'on' | 'off';
+
+/**
+ * 读屏优化(VSCode editor.accessibilitySupport):auto = 按系统检测到的辅助技术(读屏)自动开启;on = 始终按读屏优化;
+ * off = 假定未接读屏。当前作用于终端(xterm screenReaderMode:输出进可访问 DOM 树供读屏朗读),所有已开终端即时生效。
+ * BDD: src/__tests__/terminal-screen-reader/
+ */
+export const EDITOR_ACCESSIBILITY_SUPPORT: CoreSettingSpec<AccessibilitySupport> = {
+  id: 'editor.accessibilitySupport',
+  category: 'general',
+  title: 'Accessibility support',
+  titleKey: 'settings.general.accessibility_support',
+  descriptionKey: 'settings.general.accessibility_support.desc',
+  type: 'select',
+  default: 'auto',
+  enum: [
+    { value: 'auto', label: 'Auto', labelKey: 'settings.general.accessibility_support.auto' },
+    { value: 'on', label: 'On', labelKey: 'settings.general.accessibility_support.on' },
+    { value: 'off', label: 'Off', labelKey: 'settings.general.accessibility_support.off' },
+  ],
+  priority: 5,
+};
+
 /** 注册用的语言项:默认值 = main 的系统默认 locale(与首启默认一致),「已修改」/「恢复默认」都以它为准。 */
 export function languageSettingSpec(systemDefault: Locale): CoreSettingSpec<Locale> {
   return { ...GENERAL_LANGUAGE, default: systemDefault };

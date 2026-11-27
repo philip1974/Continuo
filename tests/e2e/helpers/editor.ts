@@ -23,7 +23,8 @@ const TERMINAL_TITLE = String.raw`(?:(?:Terminal|终端|터미널) \d+|zsh|bash|
 export const DOCK_CLOSE_TERMINAL = new RegExp(`^(关闭 ${TERMINAL_TITLE}|Close ${TERMINAL_TITLE}|${TERMINAL_TITLE} 닫기)$`);
 export const DOCK_CLOSE_BUTTON = /^(关闭 .+|Close .+|.+ 닫기)$/;
 export const DOCK_POPOUT = /^(弹出到独立窗口|Pop out to standalone window|독립 창으로 팝아웃)$/;
-export const TERMINAL_INPUT = /^Terminal input$/;
+// 终端输入框可访问名(VSCode「Terminal 1, zsh」):「Terminal N, 标题」/「终端 N，标题」/「터미널 N, 标题」;标题即默认名时只「终端 N」;无序号「终端，标题」。
+export const TERMINAL_INPUT = /^(?:Terminal|终端|터미널)(?: \d+|[,，])/;
 export const TERMINAL_PANEL_TAB = new RegExp(`^${TERMINAL_TITLE}(?= |$)`);
 // 关闭脏 tab 的 VSCode 式确认框「是否要保存对 X 的更改?」+ 保存 / 不保存 / 取消。
 export const EDITOR_SAVE_CHANGES_TITLE =

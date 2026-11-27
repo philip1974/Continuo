@@ -112,6 +112,11 @@ export const ko: Record<TranslationKey, string> = {
   'settings.general.zoom_level': '확대/축소 수준',
   'settings.general.zoom_level.desc':
     '모든 창의 확대/축소 수준을 조정합니다. 0보다 크거나(예: 1) 작은(예: -1) 각 단계는 20% 확대 또는 축소를 나타냅니다. 더 세밀하게 조정하려면 소수를 입력할 수도 있습니다. 확대 / 축소 / 확대/축소 초기화 명령이 이 값을 변경합니다.',
+  'settings.general.accessibility_support': '접근성 지원',
+  'settings.general.accessibility_support.desc': '화면 읽기 프로그램에 최적화된 모드로 UI를 실행할지 여부를 제어합니다. 터미널에서는 출력을 화면 읽기 프로그램에 제공합니다.',
+  'settings.general.accessibility_support.auto': '자동',
+  'settings.general.accessibility_support.on': '켜기',
+  'settings.general.accessibility_support.off': '끄기',
 
   // errors.MAIN_*
   'errors.AGENT_AUTH_REQUEST_NOT_PENDING': '승인 요청이 더 이상 유효하지 않습니다',
@@ -510,6 +515,8 @@ export const ko: Record<TranslationKey, string> = {
   'panels.terminal.exit_press_any_key': '아무 키나 눌러 터미널을 닫으세요.',
   'panels.terminal.exited_suffix': '(종료됨)',
   'panels.terminal.default_title': '터미널 {n}',
+  'panels.terminal.input_aria_label': '터미널, {title}',
+  'panels.terminal.input_aria_label_numbered': '터미널 {n}, {title}',
   'panels.terminal.kill_confirm.title': '실행 중인 프로세스를 종료할까요?',
   'panels.terminal.kill_confirm.detail': '"{title}"에서 "{process}"이(가) 아직 실행 중입니다. 터미널을 닫으면 프로세스가 종료됩니다.',
   'panels.terminal.kill_confirm.detail_process': '"{process}"이(가) 아직 실행 중입니다. 터미널을 닫으면 프로세스가 종료됩니다.',

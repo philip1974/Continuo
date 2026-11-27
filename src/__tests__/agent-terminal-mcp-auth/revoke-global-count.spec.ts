@@ -11,7 +11,8 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('electron', () => ({
-  app: { getPath: vi.fn(() => '/tmp') },
+  // registerIpc 也注册读屏检测(app.on('accessibility-support-changed'))
+  app: { getPath: vi.fn(() => '/tmp'), on: vi.fn() },
   ipcMain: {
     handle: vi.fn((channel: string, fn: (event: unknown, raw: unknown) => Promise<unknown>) => {
       h.handlers.set(channel, fn);

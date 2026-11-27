@@ -15,6 +15,7 @@ import type {
 } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { isSameOrInsidePath } from '@/lib/path-cross';
+import { dispatchContextMenuAt, isContextMenuKey } from '@/lib/context-menu-key';
 import { matchesHotkey } from '@/plugins/command-palette/useCommandHotkeys';
 import type { Platform } from '@/plugins/command-palette/format-hotkey';
 import { getContextActionTargets, type ContextMenuActions } from './ContextMenu';
@@ -215,6 +216,19 @@ export function handleTreeKeyDown(e: KeyboardEvent, ctx: TreeKeyContext): boolea
 
   const rawFocused = items.length > 0 ? tree.getFocusedItem() : undefined;
   const focused = renderedFocusedItem(tree, items);
+
+  // Shift+F10 / 菜单键(VSCode 列表同):在焦点行左下角打开该行的右键菜单 —— 行的 contextmenu 处理与鼠标右键同一路径
+  //(多选时焦点行在选中集内 → 作用于选中集)。焦点行不在 DOM(虚拟列表滚出)或无焦点行 → 在按键目标(树容器)处打开空白菜单。
+  // 菜单关闭后 Radix 把焦点还给打开前的焦点元素(即该行)。
+  if (isContextMenuKey(e)) {
+    const el = focused?.getElement() ?? (e.target as HTMLElement | null);
+    if (!el || typeof el.dispatchEvent !== 'function') return false;
+    e.preventDefault();
+    e.stopPropagation();
+    dispatchContextMenuAt(el);
+    return true;
+  }
+
   const command = matchTreeKeyCommand(e, ctx.platform);
   if (command !== null) {
     const consume = (): true => {

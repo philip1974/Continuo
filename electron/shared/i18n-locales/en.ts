@@ -121,6 +121,11 @@ export const en = {
   'settings.general.zoom_level': 'Zoom level',
   'settings.general.zoom_level.desc':
     'Adjust the zoom level for all windows. Each increment above 0 (e.g. 1) or below (e.g. -1) represents zooming 20% larger or smaller. You can also enter decimals for a finer granularity. Zoom In / Zoom Out / Reset Zoom change this value.',
+  'settings.general.accessibility_support': 'Accessibility support',
+  'settings.general.accessibility_support.desc': 'Controls if the UI should run in a mode where it is optimized for screen readers. In the terminal this exposes output to screen readers.',
+  'settings.general.accessibility_support.auto': 'Auto',
+  'settings.general.accessibility_support.on': 'On',
+  'settings.general.accessibility_support.off': 'Off',
 
   // errors.MAIN_* (27)
   'errors.AGENT_AUTH_REQUEST_NOT_PENDING': 'Authorization request is no longer pending',
@@ -526,6 +531,8 @@ export const en = {
   'panels.terminal.exit_press_any_key': 'Press any key to close the terminal.',
   'panels.terminal.exited_suffix': '(exited)',
   'panels.terminal.default_title': 'Terminal {n}',
+  'panels.terminal.input_aria_label': 'Terminal, {title}',
+  'panels.terminal.input_aria_label_numbered': 'Terminal {n}, {title}',
   // VSCode terminal.integrated.confirmOnKill:关闭仍有子程序在跑的终端前确认。
   'panels.terminal.kill_confirm.title': 'Terminate running process?',
   'panels.terminal.kill_confirm.detail': '“{process}” is still running in “{title}”. Closing the terminal will terminate it.',

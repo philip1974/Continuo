@@ -73,6 +73,7 @@ import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notification
 import { errorCodeOf } from '../../../electron/shared/error-message';
 import { debounce, type DebouncedFn } from '@/lib/debounce';
 import { t } from '@/i18n';
+import { useScreenReaderOptimized } from '@/lib/accessibility-support';
 import { shouldAutoCloseExitedSession } from '@/shell/dock/terminal-panel-id';
 import { detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 import { hasOpenModalIn } from '@/design/Modal';
@@ -413,6 +414,11 @@ export interface UseTerminalOptions {
    * lazy 面板挂载,激活事件已错过)→ 返回 true,用户可直接键入;后台创建(agent 会话不抢焦点)→ false。
    */
   readonly focusOnInit?: () => boolean;
+  /**
+   * xterm 输入框(helper textarea)的可访问名(VSCode「Terminal 1, zsh」,见 terminalInputAriaLabel)。xterm 只在 open 时写一次
+   * 内置英文「Terminal input」;这里 open 后覆盖,值变化(改名 / 切语言)即时同步。
+   */
+  readonly inputAriaLabel?: string;
 }
 
 /**
@@ -427,6 +433,9 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
   onExitDismissRef.current = options?.onExitDismiss;
   const focusOnInitRef = useRef(options?.focusOnInit);
   focusOnInitRef.current = options?.focusOnInit;
+  const inputAriaLabel = options?.inputAriaLabel;
+  const inputAriaLabelRef = useRef(inputAriaLabel);
+  inputAriaLabelRef.current = inputAriaLabel;
   // 首次 PTY stdout 到达前 = 还在 spawn shell + 跑 .zshrc。让上层显示 loading
   // overlay,用户看到"启动中..."而非纯黑框,减弱"卡顿"感(尤其 .zshrc 重的用户)。
   const [isReady, setIsReady] = useState(false);
@@ -439,10 +448,13 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
   const lineHeight = resolveTerminalLineHeight(useSettingValue(TERMINAL_LINE_HEIGHT.id, TERMINAL_LINE_HEIGHT.default));
   const cursorStyle = useSettingValue(TERMINAL_CURSOR_STYLE.id, TERMINAL_CURSOR_STYLE.default);
   const { resolved } = useTheme();
+  // 读屏优化(VSCode editor.accessibilitySupport + 系统检测)→ xterm screenReaderMode:输出进 .xterm-accessibility DOM 树供读屏朗读。
+  // 关闭时 xterm 不建该树,无额外开销。
+  const screenReaderMode = useScreenReaderOptimized();
   // 创建 xterm 时读这里的最新值。创建 effect 只依赖 termId,其闭包里的字号 / 光标 / 主题是挂载时的;
   // 0 尺寸挂载会推迟创建,期间的变化同步 effect 又因 term 尚不存在而跳过 → 不读 ref 就会用旧值创建。
-  const initOptionsRef = useRef({ fontSize, fontFamily, lineHeight, cursorStyle, resolved });
-  initOptionsRef.current = { fontSize, fontFamily, lineHeight, cursorStyle, resolved };
+  const initOptionsRef = useRef({ fontSize, fontFamily, lineHeight, cursorStyle, resolved, screenReaderMode });
+  initOptionsRef.current = { fontSize, fontFamily, lineHeight, cursorStyle, resolved, screenReaderMode };
   // term + fit 跨 effect 共享(创建 effect 写 ref,settings effect 读 ref 改 options)
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -518,6 +530,7 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
       fontFamily: initOptions.fontFamily,
       lineHeight: initOptions.lineHeight,
       cursorStyle: initOptions.cursorStyle,
+      screenReaderMode: initOptions.screenReaderMode,
       theme: initOptions.resolved === 'dark' ? DARK_THEME : LIGHT_THEME,
       // light 7 (AAA), dark 1 — 见 LIGHT_THEME 注释 (issue #24)
       minimumContrastRatio: initOptions.resolved === 'dark' ? 1 : 7,
@@ -544,6 +557,7 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
       ),
     );
     term.open(container);
+    if (inputAriaLabelRef.current) term.textarea?.setAttribute('aria-label', inputAriaLabelRef.current);
     // 安全(pastejacking):粘贴先剥离控制字符(防伪造 \x1b[201~ 跳出 bracketed paste),见 terminal-paste-sanitize。
     const disposePasteSanitizer = installTerminalPasteSanitizer(container, term);
     // 性能(Phase-5 终端新建加载):WebGL renderer 安装是**同步 GPU 初始化**(创建
@@ -937,6 +951,17 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     }
     if (layoutChanged) fitAndResize(term, fit, termId, lastSentSizeRef);
   }, [fontSize, fontFamily, lineHeight, cursorStyle, termId]);
+
+  // 读屏优化开关 → 所有已开终端即时生效(不重建)。
+  useEffect(() => {
+    const term = termRef.current;
+    if (term && term.options.screenReaderMode !== screenReaderMode) term.options.screenReaderMode = screenReaderMode;
+  }, [screenReaderMode, termId]);
+
+  // 输入框可访问名(改名 / 切语言)→ 已有 term 同步;创建时由 open 之后那行写入。
+  useEffect(() => {
+    if (inputAriaLabel) termRef.current?.textarea?.setAttribute('aria-label', inputAriaLabel);
+  }, [inputAriaLabel, termId]);
 
   // 主题切换 → 已有 term 实例同步 theme(不重建,保留历史输出)
   useEffect(() => {

@@ -8,6 +8,7 @@
 //   - 未显示隐藏文件时,方向键 / Home / End 不会把焦点 / 选中落到看不见的 . 开头项(删不到它们)
 //   - mod+C / mod+X / mod+V(mac ⌘、其它 Ctrl):与右键剪切 / 复制 / 粘贴同一实现;粘贴落点 = 焦点目录或焦点文件的父目录
 //   - 键入字母:跳到名称以已键入前缀开头的下一项(VSCode type-to-navigate)
+//   - Shift+F10 / 菜单键:打开焦点行的右键菜单(多选作用于整组),Esc 关闭后焦点回该行
 //   - 重命名输入框内的按键不触发上述任何动作
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -529,5 +530,45 @@ describe('FolderTree · 选中随方向键高频变化后右键菜单仍按最�
     });
     const trash = await findByText(/Move to Trash|移到废纸篓/);
     expect(trash.closest('[role="menuitem"]')!.textContent).toMatch(/2/);
+  });
+});
+
+describe('FolderTree · Shift+F10 / 菜单键打开焦点行的右键菜单(VSCode 列表同)', () => {
+  it('焦点行上 Shift+F10 → 打开该行的右键菜单;Esc 关闭 → 焦点回到该行', async () => {
+    const { container, findByText } = await mount();
+    await focusRow(container, '/work/bravo.ts');
+    // jsdom 的 click 不移 DOM 焦点;真实点击行时焦点在行上(Esc 关菜单后 Radix 还给打开前的焦点元素)
+    row(container, '/work/bravo.ts')!.focus();
+    key(row(container, '/work/bravo.ts')!, { key: 'F10', code: 'F10', shiftKey: true });
+    const trash = await findByText(TRASH_LABEL);
+    const menu = trash.closest('[role="menu"]') as HTMLElement;
+    expect(menu).not.toBeNull();
+    // 文件行菜单:无「新建文件」(那是目录 / 空白处菜单)
+    expect(menu.textContent).not.toMatch(/New File|新建文件/);
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+    act(() => {
+      fireEvent.keyDown(document.activeElement!, { key: 'Escape', code: 'Escape' });
+    });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(row(container, '/work/bravo.ts')));
+  });
+
+  it('菜单键(ContextMenu)同样打开;多选时作用于整组(显示 2 项)', async () => {
+    const { container, findByText } = await mount();
+    await focusRow(container, '/work/beta.ts');
+    act(() => {
+      fireEvent.click(row(container, '/work/charlie.ts')!, { ctrlKey: true });
+    });
+    await waitFor(() => expect(row(container, '/work/charlie.ts')!.getAttribute('aria-selected')).toBe('true'));
+    key(row(container, '/work/charlie.ts')!, { key: 'ContextMenu', code: 'ContextMenu' });
+    const trash = await findByText(TRASH_LABEL);
+    expect(trash.closest('[role="menuitem"]')!.textContent).toMatch(/2/);
+  });
+
+  it('目录行上 Shift+F10 → 目录菜单(含「新建文件」)', async () => {
+    const { container, findByText } = await mount();
+    await focusRow(container, '/work/alpha');
+    key(row(container, '/work/alpha')!, { key: 'F10', code: 'F10', shiftKey: true });
+    expect(await findByText(/^(New File…|新建文件…|New File|新建文件)$/)).toBeTruthy();
   });
 });

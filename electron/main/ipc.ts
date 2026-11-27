@@ -36,6 +36,7 @@ import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
 import { registerWindowIpc, type WindowIpcDeps } from './ipc/window.ipc';
 import { registerI18nIpc } from './ipc/i18n.ipc';
+import { registerAccessibilityIpc } from './ipc/accessibility.ipc';
 import { registerMarketplaceIpc } from './ipc/marketplace.ipc';
 import { registerPluginFsIpc } from './ipc/plugin-fs.ipc';
 import { registerPluginDataIpc } from './ipc/plugin-data.ipc';
@@ -352,4 +353,7 @@ export function registerIpc(deps: WindowIpcDeps): void {
   );
 
   registerI18nIpc();
+
+  // 系统读屏检测(初值 + 变化广播;终端 screenReaderMode 用)
+  registerAccessibilityIpc();
 }

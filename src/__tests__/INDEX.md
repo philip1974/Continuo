@@ -2003,6 +2003,12 @@
 - [`resize-debounce.spec.ts`](./terminal-resize-debounce/resize-debounce.spec.ts)
 - [`sidebar-width-subscription.spec.ts`](./terminal-resize-debounce/sidebar-width-subscription.spec.ts)
 
+## [终端读屏支持(screenReaderMode + 输入框可访问名)](./terminal-screen-reader/README.md)
+
+- [`accessibility-main.spec.ts`](./terminal-screen-reader/accessibility-main.spec.ts)
+- [`screen-reader-mode.spec.tsx`](./terminal-screen-reader/screen-reader-mode.spec.tsx)
+- [`terminal-input-aria-label.spec.tsx`](./terminal-screen-reader/terminal-input-aria-label.spec.tsx)
+
 ## [terminal-search](./terminal-search/README.md)
 
 - [`byte-identical.spec.ts`](./terminal-search/byte-identical.spec.ts)

@@ -111,6 +111,11 @@ export const zh: Record<TranslationKey, string> = {
   'settings.general.zoom_level': '缩放级别',
   'settings.general.zoom_level.desc':
     '调整所有窗口的缩放级别。大于 0（例如 1）或小于 0（例如 -1）的每一级表示放大或缩小 20%。也可以输入小数以更精细地调整。「放大」「缩小」「重置缩放」命令改的就是这个值。',
+  'settings.general.accessibility_support': '辅助功能支持',
+  'settings.general.accessibility_support.desc': '控制界面是否以针对屏幕阅读器优化的模式运行。终端中会把输出提供给屏幕阅读器。',
+  'settings.general.accessibility_support.auto': '自动',
+  'settings.general.accessibility_support.on': '开',
+  'settings.general.accessibility_support.off': '关',
 
   // errors.MAIN_*
   'errors.AGENT_AUTH_REQUEST_NOT_PENDING': '授权请求已失效',
@@ -507,6 +512,8 @@ export const zh: Record<TranslationKey, string> = {
   'panels.terminal.exit_press_any_key': '按任意键关闭终端。',
   'panels.terminal.exited_suffix': '(已退出)',
   'panels.terminal.default_title': '终端 {n}',
+  'panels.terminal.input_aria_label': '终端，{title}',
+  'panels.terminal.input_aria_label_numbered': '终端 {n}，{title}',
   'panels.terminal.kill_confirm.title': '终止正在运行的进程？',
   'panels.terminal.kill_confirm.detail': '「{title}」中的「{process}」仍在运行，关闭终端将终止该进程。',
   'panels.terminal.kill_confirm.detail_process': '「{process}」仍在运行，关闭终端将终止该进程。',

@@ -87,6 +87,10 @@ import {
   type DebugGetVariablesInput,
 } from '../shared/debug-view-channels';
 import type { Locale } from '../shared/i18n-types';
+import {
+  ACCESSIBILITY_CHANNELS,
+  isAccessibilitySupportChangedPayload,
+} from '../shared/accessibility-channels';
 import { pluginDataRaw } from './plugin-data.preload';
 import { pluginFsRaw } from './plugin-fs.preload';
 import { pluginShellStreamRaw } from './plugin-shell-stream.preload';
@@ -613,6 +617,21 @@ const api = {
       const wrapped = (_evt: unknown, payload: unknown) => listener(payload);
       return subscribeIpc(I18N_CHANNELS.CHANGED, wrapped);
     },
+  },
+  /** 系统读屏检测(VSCode accessibilitySupport 的平台侧):终端 screenReaderMode 按它 + 设置 editor.accessibilitySupport 判定。 */
+  accessibility: {
+    /** 当前是否检测到辅助技术(main app.isAccessibilitySupportEnabled())。 */
+    getSupport: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke(ACCESSIBILITY_CHANNELS.GET_SUPPORT),
+    /** 订阅系统辅助技术状态变化(main 广播);畸形 payload 丢弃。返 unsubscribe。 */
+    onSupportChanged: (cb: (enabled: boolean) => void): (() => void) =>
+      subscribeIpc(
+        ACCESSIBILITY_CHANNELS.SUPPORT_CHANGED,
+        guardedListener(
+          isAccessibilitySupportChangedPayload,
+          '[accessibility] dropped malformed support-changed payload',
+          (payload) => cb(payload.enabled),
+        ),
+      ),
   },
   mcp: {
     /** 拿当前 stdio MCP 配置(状态栏"复制 MCP 配置"按钮用). */

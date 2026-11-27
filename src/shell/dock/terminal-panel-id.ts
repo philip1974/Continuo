@@ -36,6 +36,19 @@ export function terminalPanelTitle(input: TerminalTitleInput): string {
   return input.exited ? `${titled} ${t('panels.terminal.exited_suffix')}` : titled;
 }
 
+/**
+ * 终端输入框的可访问名(VSCode terminalInstance:「Terminal {id}, {title}」/ 无标题时「Terminal {id}」):有默认序号 →
+ * 「终端 N,标题」(标题就是「终端 N」本身时只读「终端 N」);无序号 →「终端,标题」。标题同面板 tab(terminalPanelTitle)。
+ * BDD: src/__tests__/terminal-screen-reader/
+ */
+export function terminalInputAriaLabel(input: TerminalTitleInput): string {
+  const title = terminalPanelTitle(input);
+  const n = input.defaultTitleIndex;
+  if (n === undefined) return t('panels.terminal.input_aria_label', { title });
+  if (title === t('panels.terminal.default_title', { n })) return title;
+  return t('panels.terminal.input_aria_label_numbered', { n, title });
+}
+
 export interface TerminalTitleInput {
   readonly sessionId: string | undefined;
   readonly sessionTitle?: string;
