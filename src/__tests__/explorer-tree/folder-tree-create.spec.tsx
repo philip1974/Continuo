@@ -92,6 +92,7 @@ import { useEditorStore } from '../../stores/editor.store';
 import { registerEditorFocus } from '../../panels/Editor/editor-focus-registry';
 import { FolderTree } from '../../panels/Explorer/FolderTree';
 import { useExplorerClipboardStore } from '../../panels/Explorer/clipboard-store';
+import { requestExplorer } from '../../panels/Explorer/explorer-requests';
 
 const row = (container: HTMLElement, p: string) =>
   container.querySelector(`[title="${p}"]`) as HTMLElement | null;
@@ -347,5 +348,98 @@ describe('FolderTree · 放弃新建后焦点回树', () => {
     await waitFor(() => expect(document.querySelector('input[placeholder]')).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(row(r.container, '/work/alpha')));
     expect(coApi.fs.createFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('FolderTree · 再次新建与失焦(VSCode 行内输入框同款)', () => {
+  const input = () => document.querySelector<HTMLInputElement>('input[placeholder]');
+  /** 树外的可聚焦元素(编辑器的替身)。 */
+  function outside(): HTMLButtonElement {
+    const b = document.body.appendChild(document.createElement('button'));
+    b.textContent = 'editor';
+    return b;
+  }
+  const flush = () =>
+    act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+  it('输入条开着时再新建(换类型)→ 输入条换成新的:清空、类型随之改变,且焦点进新输入框', async () => {
+    const r = await mount();
+    const first = await startCreateIn(r, '/work/alpha', NEW_FILE);
+    await waitFor(() => expect(document.activeElement).toBe(first));
+    act(() => {
+      fireEvent.change(first, { target: { value: 'draft' } });
+    });
+    // 命令面板「资源管理器: 新建文件夹…」/ 标题栏按钮同一入口
+    act(() => requestExplorer({ kind: 'create', type: 'dir' }));
+    await waitFor(() => expect(input()?.placeholder).toMatch(/新建文件夹名|New folder name/i));
+    await waitFor(() => expect(document.activeElement).toBe(input()));
+    expect(input()!.value).toBe('');
+    // 输入即落在新输入条:Enter 新建的是文件夹
+    submit(input()!, 'made');
+    await waitFor(() => expect(coApi.fs.createDir).toHaveBeenCalledWith('/work/alpha', 'made'));
+  });
+
+  it('有名字时焦点移到别处 → 提交新建;焦点留在用户点的地方', async () => {
+    h.openFileByPath = vi.fn(async () => ({ ok: true as const }));
+    h.editorFile = { openFileByPath: h.openFileByPath };
+    const r = await mount();
+    const el = await startCreateIn(r, '/work/alpha', NEW_FILE);
+    await waitFor(() => expect(document.activeElement).toBe(el));
+    act(() => {
+      fireEvent.change(el, { target: { value: 'blurred.ts' } });
+    });
+    const other = outside();
+    act(() => other.focus());
+    await flush();
+    await waitFor(() => expect(coApi.fs.createFile).toHaveBeenCalledWith('/work/alpha', 'blurred.ts'));
+    await waitFor(() => expect(input()).toBeNull());
+    other.remove();
+  });
+
+  it('空名时焦点移到别处 → 放弃新建(不创建),焦点不被拉回树', async () => {
+    const r = await mount();
+    const el = await startCreateIn(r, '/work/alpha', NEW_FILE);
+    await waitFor(() => expect(document.activeElement).toBe(el));
+    const other = outside();
+    act(() => other.focus());
+    await flush();
+    await waitFor(() => expect(input()).toBeNull());
+    await act(async () => {
+      await new Promise((res) => setTimeout(res, 50));
+    });
+    expect(document.activeElement).toBe(other);
+    expect(coApi.fs.createFile).not.toHaveBeenCalled();
+    other.remove();
+  });
+
+  it('失焦提交尚未完成时又开了新的新建 → 新输入条不被那次提交关掉', async () => {
+    let release!: () => void;
+    vi.mocked(coApi.fs.createFile).mockImplementationOnce(
+      (dir: string, name: string) =>
+        new Promise((res) => {
+          release = () => res(createIn(dir, name, false) as never);
+        }) as never,
+    );
+    const r = await mount();
+    const el = await startCreateIn(r, '/work/alpha', NEW_FILE);
+    await waitFor(() => expect(document.activeElement).toBe(el));
+    act(() => {
+      fireEvent.change(el, { target: { value: 'pending.ts' } });
+    });
+    const other = outside();
+    act(() => other.focus());
+    await flush();
+    await waitFor(() => expect(coApi.fs.createFile).toHaveBeenCalledWith('/work/alpha', 'pending.ts'));
+    other.remove();
+    act(() => requestExplorer({ kind: 'create', type: 'dir' }));
+    await waitFor(() => expect(input()?.placeholder).toMatch(/新建文件夹名|New folder name/i));
+    await act(async () => {
+      release();
+      await new Promise((res) => setTimeout(res, 0));
+    });
+    expect(input()).not.toBeNull();
+    expect(input()!.placeholder).toMatch(/新建文件夹名|New folder name/i);
   });
 });

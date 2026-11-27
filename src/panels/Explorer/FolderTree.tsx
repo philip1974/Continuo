@@ -104,6 +104,11 @@ import {
 interface CreatingState {
   type: 'file' | 'dir';
   parentDir: string;
+  /**
+   * 第几次新建(递增)。作输入条的 key:每次新建都重挂载 → 聚焦并清空(VSCode 每次新建都是新的行内输入框);
+   * 提交 / 放弃的回写只作用于同一次新建,不误关随后开的新输入条。
+   */
+  seq: number;
   /** 上次提交失败的原因(已本地化);输入框保留,显示在其下方。 */
   error?: string;
 }
@@ -382,6 +387,11 @@ export function FolderTree({ root }: { root: string }) {
     if (index >= 0) virtualizerRef.current?.scrollToIndex(index, { align: 'auto' });
   }, []);
   const [creating, setCreating] = useState<CreatingState | null>(null);
+  const createSeqRef = useRef(0);
+  const startCreating = useCallback((type: CreatingState['type'], parentDir: string) => {
+    createSeqRef.current += 1;
+    setCreating({ type, parentDir, seq: createSeqRef.current });
+  }, []);
   // explorer.showHiddenFiles=false(默认)不显示 . 开头的项(.git / .env 等)。在 loader 层过滤(见 tree-config
   // showHidden):库的键盘导航 / 全选 / 范围选都基于 tree.getItems(),须与渲染一致。loader 与刷新经 ref 读最新值。
   const showHidden = useSettingValue(EXPLORER_SHOW_HIDDEN_FILES.id, EXPLORER_SHOW_HIDDEN_FILES.default);
@@ -1107,8 +1117,8 @@ export function FolderTree({ root }: { root: string }) {
   const contextActions = useMemo<ContextMenuActions>(
     () => ({
       onRename: (path) => treeRef.current?.getItemInstance(path)?.startRenaming(),
-      onNewFile: (parentDir) => setCreating({ type: 'file', parentDir }),
-      onNewDir: (parentDir) => setCreating({ type: 'dir', parentDir }),
+      onNewFile: (parentDir) => startCreating('file', parentDir),
+      onNewDir: (parentDir) => startCreating('dir', parentDir),
       onCopyPath: (paths: string[]) => {
         // 多选 → \n 拼接;空数组(防御性)→ 不动.
         // 走 cached clipboard:PROD sandboxSweep 后 navigator.clipboard 已被涂掉,
@@ -1164,7 +1174,7 @@ export function FolderTree({ root }: { root: string }) {
         );
       },
     }),
-    [focusNeighborOf, root, runBatchTransfer, runTrash, tt],
+    [focusNeighborOf, root, runBatchTransfer, runTrash, startCreating, tt],
   );
 
   // 撤销 / 重做文件操作(键盘 mod+Z / mod+shift+Z 与命令 explorer.undo / explorer.redo 共用,见 file-undo.ts)。
@@ -1222,18 +1232,17 @@ export function FolderTree({ root }: { root: string }) {
   // 失败(含同名冲突)→ 输入框与已输入的名字保留,下方内联显示本地化原因,可改名重试或 Esc 放弃。
   const submitCreate = async (name: string): Promise<boolean> => {
     if (!creating) return true;
-    const { type, parentDir } = creating;
+    const { type, parentDir, seq } = creating;
     const action = type === 'dir' ? createNewDir : createNewFile;
     const r = await action(parentDir, name, mutateDeps, treeApi);
     if (!r.ok) {
       const error = localizeErrorByCode(r.code, r.message);
-      // 只回写仍是这次新建的输入框(等待期间已 Esc / 换了新建目标则不动)
-      setCreating((c) =>
-        c !== null && c.type === type && c.parentDir === parentDir ? { ...c, error } : c,
-      );
+      // 只回写仍是这次新建的输入框(等待期间已 Esc / 又开了新的新建则不动)
+      setCreating((c) => (c?.seq === seq ? { ...c, error } : c));
       return false;
     }
-    setCreating(null);
+    // 失焦提交期间用户已开了新的新建(如点了「新建文件夹」)→ 不关那个新输入条
+    setCreating((c) => (c?.seq === seq ? null : c));
     // 一次输入嵌套路径(`a/b/c.ts`,VSCode 同款逐级创建):撤销记录的是本次新建的最上层项(created),删它即覆盖整条链、
     // 已存在的中间目录不动;rest = 其下余下的段,供重做按原样逐级重建。
     const rest =
@@ -1256,9 +1265,10 @@ export function FolderTree({ root }: { root: string }) {
 
   // 放弃新建(Esc / ✕ / 空名 Enter):输入框卸载,焦点还给树的焦点行(VSCode:取消后焦点回资源管理器树;
   // 没有焦点行时库回落首项),不掉到 body。树为空时没有行可聚焦,不动。
-  const cancelCreate = () => {
-    setCreating(null);
-    if (renderedItemsRef.current.length > 0) tree.updateDomFocus();
+  // 失焦放弃(reason='blur'):焦点已在用户点的地方(编辑器等),不拉回树。
+  const cancelCreate = (seq: number, reason?: 'blur') => {
+    setCreating((c) => (c?.seq === seq ? null : c));
+    if (reason !== 'blur' && renderedItemsRef.current.length > 0) tree.updateDomFocus();
   };
 
   // 子目录错误行「重试」:焦点先回到该目录行(错误行随后卸载,不掉到 body),再重新读取。
@@ -1364,9 +1374,9 @@ export function FolderTree({ root }: { root: string }) {
       const t = treeRef.current;
       const parentDir =
         t && t.getState().focusedItem != null ? focusedTargetDir(t, renderedItemsRef.current, root) : root;
-      setCreating({ type, parentDir });
+      startCreating(type, parentDir);
     },
-    [root],
+    [root, startCreating],
   );
 
   // 命令请求(explorer-requests):新建文件 / 文件夹 → 在树焦点项所在目录(目录 → 自身,文件 → 所在目录,无 → 根;
@@ -1687,11 +1697,12 @@ export function FolderTree({ root }: { root: string }) {
       {dragActive && <DropOverlay targetDir={dropTargetDir} />}
       {creating && (
         <CreateInput
+          key={creating.seq}
           type={creating.type}
           parentDir={creating.parentDir}
           rootPath={root}
           onSubmit={submitCreate}
-          onCancel={cancelCreate}
+          onCancel={(reason) => cancelCreate(creating.seq, reason)}
           error={creating.error}
           onEdit={() => setCreating((c) => (c?.error ? { ...c, error: undefined } : c))}
         />

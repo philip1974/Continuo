@@ -16,7 +16,8 @@ interface CreateInputProps {
    * 其它结果视为成功(父层随后卸载本输入)。
    */
   onSubmit: (name: string) => void | Promise<boolean>;
-  onCancel: () => void;
+  /** 放弃新建。reason='blur':失焦放弃(焦点已在别处,父层不要再把焦点拉回树)。 */
+  onCancel: (reason?: 'blur') => void;
   /** 上次提交失败的原因(已本地化),显示在输入框下方;修改输入时父层经 onEdit 清除。 */
   error?: string | null;
   /** 输入内容变化(父层据此清除 error)。 */
@@ -31,6 +32,10 @@ const ICON_SIZE = 14;
 //
 // Esc/Enter 用原生 capture-phase listener,先于 headless-tree hotkeys 拦截
 // (CreateInput 在树容器外,但 React 合成事件分发时机仍可能晚)。
+//
+// 失焦(VSCode InlineEditInputBox 同款):焦点移到输入条之外 → 有可创建的名字且无错误提示就提交,否则放弃。
+// 失焦后等一个宏任务再判定(VSCode timeout(0)):焦点仍在输入条里(点了 ✕ / 窗口失焦后 activeElement 仍是输入框)→ 继续编辑。
+// 每次新建由父层换 key 重挂载本组件(见 FolderTree creating.seq)→ 挂载即聚焦,不会出现「输入条开着但焦点不在」再新建时落空。
 export function CreateInput({
   type,
   parentDir,
@@ -55,10 +60,31 @@ export function CreateInput({
   // 后续 Enter 忽略(ref 同步生效,不依赖 React state commit)。创建失败(onSubmit 结果为 false)时复位,
   // 用户改名后可重试。
   const submittedRef = useRef(false);
+  // 已经 Esc / 空名 Enter 放弃(父层随后卸载):之后的失焦不再处理。
+  const finishedRef = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const errorRef = useRef(error);
+  errorRef.current = error;
+
+  const submit = (raw: string): boolean => {
+    const t = normalizeLeafNameInput(raw);
+    if (t === null) return false;
+    submittedRef.current = true;
+    const result = onSubmitRef.current(t);
+    if (result) {
+      void result.then((ok) => {
+        if (ok === false) submittedRef.current = false;
+      });
+    }
+    return true;
+  };
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    let disposed = false;
 
     // 延迟到下一帧 focus,让 Radix ContextMenu 的 focus restore 先跑完,
     // 否则我们 sync 调的 el.focus() 会被它 microtask 覆盖,active 又跑回 body。
@@ -70,34 +96,41 @@ export function CreateInput({
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
+        finishedRef.current = true;
         onCancelRef.current();
       } else if (e.key === 'Enter') {
         e.preventDefault();
         e.stopPropagation();
         if (submittedRef.current) return; // race(R82):已提交,忽略重复 Enter
-        const t = normalizeLeafNameInput(el.value);
-        if (t !== null) {
-          submittedRef.current = true;
-          const result = onSubmitRef.current(t);
-          if (result) {
-            void result.then((ok) => {
-              if (ok === false) submittedRef.current = false;
-            });
-          }
-        } else {
+        if (!submitRef.current(el.value)) {
+          finishedRef.current = true;
           onCancelRef.current();
         }
       }
     };
+    const onBlur = () => {
+      setTimeout(() => {
+        if (disposed || finishedRef.current || submittedRef.current) return;
+        const active = el.ownerDocument.activeElement;
+        if (active && rootRef.current?.contains(active)) return; // 仍在输入条里(✕ 按钮 / 窗口失焦)
+        // 上次提交失败(错误提示还在)= 输入无效 → 放弃(VSCode:无效输入失焦即取消)
+        if (!errorRef.current && submitRef.current(el.value)) return;
+        finishedRef.current = true;
+        onCancelRef.current('blur');
+      }, 0);
+    };
     el.addEventListener('keydown', handler, { capture: true });
+    el.addEventListener('blur', onBlur);
     return () => {
+      disposed = true;
       cancelAnimationFrame(rafId);
       el.removeEventListener('keydown', handler, { capture: true });
+      el.removeEventListener('blur', onBlur);
     };
   }, []);
 
   return (
-    <div className="shrink-0 border-b border-line bg-panel-soft px-2 py-1 text-xs">
+    <div ref={rootRef} className="shrink-0 border-b border-line bg-panel-soft px-2 py-1 text-xs">
       <div className="flex items-center gap-2">
         <span className="inline-flex shrink-0" aria-hidden="true">
           {type === 'dir' ? (
@@ -147,7 +180,10 @@ export function CreateInput({
         </span>
         <IconButton
           size="xs"
-          onClick={onCancel}
+          onClick={() => {
+            finishedRef.current = true;
+            onCancel();
+          }}
           title={tx('panels.explorer.confirm.cancel_esc')}
           aria-label={tx('panels.explorer.confirm.cancel')}
         >

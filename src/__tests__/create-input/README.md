@@ -39,6 +39,18 @@
 
 - 点叉号 → onCancel
 
+### 失焦(VSCode `InlineEditInputBox` 同款)
+
+- 焦点移到输入条之外(点编辑器 / 树 / 标题栏按钮、打开命令面板或右键菜单等)→ 等一个宏任务再判定(VSCode `timeout(0)`):
+  - 有可创建的名字且无错误提示 → onSubmit(同 Enter,受同一 once 守卫)
+  - 空名 / 全空白,或上次提交失败(错误提示还在 = 输入无效)→ `onCancel('blur')`(父层据此不把焦点拉回树)
+- 焦点仍在输入条里(点了 ✕ 按钮)或 activeElement 仍是输入框(窗口失焦:切应用 / 输入法切换)→ 继续编辑
+- Enter 已提交 / Esc、空名 Enter、✕ 已放弃之后的失焦不再处理
+
 ### 卸载
 
-- 移除 keydown listener,cancelAnimationFrame
+- 移除 keydown / blur listener,cancelAnimationFrame;卸载后到期的失焦判定不再回调
+
+### 每次新建都聚焦
+
+- 父层(FolderTree)每次新建换 key 重挂载本组件(`creating.seq`)→ 挂载即聚焦、清空;见 `explorer-tree` 新建一节

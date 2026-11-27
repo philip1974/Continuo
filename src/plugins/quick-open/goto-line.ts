@@ -1,4 +1,5 @@
-// Quick Open 的「转到行 / 列」模式(VSCode GotoLineQuickAccessProvider:查询以 `:` 开头)。纯函数:解析与夹取。
+// Quick Open 的「转到行 / 列」模式(VSCode GotoLineQuickAccessProvider:查询以 `:` 开头)。纯函数:解析与夹取
+//(夹取也用于 ⌘P `文件:行` 打开时,见 co-app openFileInEditor clampToDocument)。
 // BDD: src/__tests__/editor-goto-line/
 
 /** 转到行模式的查询前缀(VSCode 同:⌃G 打开 Quick Open 并预填它)。 */
@@ -34,6 +35,12 @@ export function parseGotoLineQuery(query: string): GotoLineRequest | null {
 export interface GotoLineDoc {
   readonly lines: number;
   line(n: number): { readonly length: number };
+}
+
+/** 纯文本(如 Markdown 标签的源码)按行切开的 GotoLineDoc(\n / \r\n / \r 都算换行,同 CodeMirror)。 */
+export function textGotoLineDoc(text: string): GotoLineDoc {
+  const lines = text.split(/\r\n|\r|\n/);
+  return { lines: lines.length, line: (n) => ({ length: lines[n - 1]?.length ?? 0 }) };
 }
 
 /**

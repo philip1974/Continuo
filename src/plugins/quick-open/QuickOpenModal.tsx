@@ -34,10 +34,11 @@ import { focusActiveEditor } from '@/panels/Editor/editor-focus-registry';
 import { normalizeSearchQuery } from '@/lib/search-query';
 import { useGotoLine } from './use-goto-line';
 import { parseFileLineQuery, type GotoLineRequest } from './goto-line';
-import { openFileInEditor } from '@/plugins/co-app';
+import { openFileInEditor, type EditorRevealOptions } from '@/plugins/co-app';
 
 /** ⌘P 打开为常驻(VSCode workbench.editor.enablePreviewFromQuickOpen 默认 false)。 */
 const PINNED: OpenFileOptions = { preview: false };
+const CLAMP: EditorRevealOptions = { clampToDocument: true };
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
 const EMPTY_RESULTS: readonly QuickOpenFile[] = [];
@@ -213,9 +214,10 @@ function QuickOpenBody() {
       // 打开失败弹 error toast(modal 已关,旧实现只 console.warn → 用户点了没反应;P1-AX),按 code 本地化(I8)。
       // 成功 → 焦点进编辑器(VSCode:回车后可直接打字;否则弹窗还焦点给的旧编辑器随即卸载,焦点掉到 body)。
       // 带行号:与搜索结果同一条「打开并定位」(居中;Markdown 编辑 / 预览按源码行),导航记录只记目标一条。
-      // 常驻打开(见 PINNED;已是预览 tab 的转常驻)
+      // 常驻打开(见 PINNED;已是预览 tab 的转常驻);行列越界夹到文档范围(VSCode 同;同 ⌃G 转到行)
       const open = at
-        ? () => openFileInEditor(file.absPath, { line: at.line, ...(at.column ? { column: at.column } : {}) }, PINNED)
+        ? () =>
+            openFileInEditor(file.absPath, { line: at.line, ...(at.column ? { column: at.column } : {}) }, PINNED, CLAMP)
         : () => openFileByPath(file.absPath, editorFileDeps, PINNED);
       if (await openFileOrNotify(open, file.name)) {
         focusActiveEditor();

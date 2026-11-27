@@ -15,8 +15,9 @@
 ## 行为
 
 - **入口**:焦点在 Milkdown 编辑区(编辑模式的 ProseMirror,或预览模式的只读 ProseMirror —— 预览区可聚焦,tabIndex=0)或已打开的
-  查找条内时,⌘F 被编辑器拦下(preventDefault + 不再冒泡):打开查找条并聚焦、全选查找词;不触发其它全局命令。焦点在正文里的代码块
-  (CodeMirror)时 ⌘F 仍归代码块自己的查找面板(CodeMirror 先处理并 preventDefault,Milkdown 不再拦)。
+  查找条内时,⌘F(「查找」`actions.find` 的默认键)打开查找条并聚焦、全选查找词。按键经命令注册表分发(外层带
+  `data-co-markdown-editor` → `editorFocus` 成立,见 `editor-find-keybindings`):改键后跟随新键,旧键交给新绑定的命令。焦点在正文里
+  的代码块(CodeMirror)时 ⌘F 仍归代码块自己的查找面板(代码块不算 `editorFocus`)。
 - **查找条**:复用终端查找条(`TerminalSearchBar`)的结构、样式与文案 —— 查找输入、计数(`role=status`)、正则 / 区分大小写 /
   全字匹配开关、上一个 / 下一个 / 关闭;计数文案同代码编辑器查找面板(`find-widget-model` 的 `formatFindCount`:「3 / 154」、
   选区不在匹配上时「154 个匹配」、「无结果」、「1000+」,空查找词不显示);窄宽收缩规则同终端(容器 < 24rem 计数只给读屏,< 20rem 只剩输入框 + 关闭);IME 组合中的
@@ -24,7 +25,8 @@
   不是终端的「搜索」);查找框 ↑ / ↓ 翻查找历史(与代码编辑器共享 `editorFindHistory`,回车与关闭时记入)。
 - **带入选区**:焦点在正文、有单行非空选区时 ⌘F 把选区文字带入查找框(全选)并查找;正则模式下转义元字符;多行选区不带入
   (沿用上次查找词)。VSCode `seedSearchStringFromSelection`。
-- **F3 / ⌘G**:F3 / ⇧F3(mac 另有 ⌘G / ⇧⌘G;Windows / Linux 的 Ctrl+G 是「转到行」,不拦)在正文与查找框里都跳下一个 / 上一个;
+- **F3 / ⌘G**(「查找下一个 / 上一个」的默认键,同经注册表分发、可改键):F3 / ⇧F3(mac 另有 ⌘G / ⇧⌘G;Windows / Linux 的
+  Ctrl+G 是「转到行」)在正文与查找框里都跳下一个 / 上一个;
   查找条已关闭时用上次的查找词(没有则取单行选区)重新显示查找条并从选区起跳,焦点留在正文;没有可查的词时同 ⌘F。代码块内归
   CodeMirror(其 searchKeymap 自带 F3 / Mod-g)。
 - **非法正则**:计数区显示「正则表达式无效」(错误色),查找框 `aria-invalid`,`new RegExp` 的错误信息作 `title`(同代码编辑器 /
@@ -47,7 +49,7 @@
 | File | Role |
 |---|---|
 | `src/panels/Editor/markdown-find.ts` | ProseMirror 查找插件:`buildFindRegExp` / `findTextMatches`(纯函数)、装饰状态、`setMarkdownFindQuery` / `stepMarkdownFind` / `markdownFindResult` / `revealMarkdownFindMatch` |
-| `src/panels/Editor/MilkdownEditor.tsx` | 注册插件、⌘F 拦截、查找条状态与渲染 |
+| `src/panels/Editor/MilkdownEditor.tsx` | 注册插件、登记查找入口(markdown-find-registry)、查找条状态与渲染 |
 | `src/panels/Terminal/TerminalSearchBar.tsx` | 查找条 UI(复用;`formatResult` 传入编辑器计数文案) |
 | `src/lib/search-query.ts` | `regexSyntaxError`:非法正则判据与错误信息(查找条提示用) |
 | `src/panels/Editor/find-widget-model.ts` | 计数文案 `formatFindCount` 与上限 `FIND_MATCH_LIMIT`(与代码编辑器查找共用) |

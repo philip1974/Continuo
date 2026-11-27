@@ -128,3 +128,43 @@ test('菜单「编辑 → 查找」在 Markdown 编辑 / 预览里打开查找�
   await clickMenu(app, 'actions.find');
   await expect(findInput).toBeFocused();
 });
+
+test('Markdown 编辑 / 预览里同样跟随改键:「查找」改到 ⇧⌘J、⌘F 绑给切换侧栏、查找下一个改到 ⌘J → 旧键失效且交给新命令', async () => {
+  test.setTimeout(90_000);
+  const { win } = await launch();
+  await openTreeItem(win, /^notes\.md$/);
+  await win.evaluate(() => {
+    globalThis.__continuoTest!.setHotkey('actions.find', 'mod+shift+j');
+    globalThis.__continuoTest!.setHotkey('explorer.toggleSidebar', 'mod+f');
+    globalThis.__continuoTest!.setHotkey('editor.action.nextMatchFindAction', 'mod+j');
+  });
+  const pm = win.locator('main .milkdown .ProseMirror');
+  const findInput = win.getByRole('textbox', { name: FIND_INPUT });
+  const status = win.locator('main [role="status"]', { hasText: /\d+ \/ 2/ });
+  const tree = win.getByRole('treeitem', { name: /^notes\.md$/ });
+  for (const mode of [EDITOR_MODE_EDIT, EDITOR_MODE_PREVIEW]) {
+    await editorModeButton(win, mode).click();
+    await expect(pm).toContainText('beta gamma', { timeout: 10_000 });
+    await pm.locator('h1').click();
+    // ⌘F:交给切换侧栏(不打开查找条、不被吞)
+    await expect(tree).toBeVisible();
+    await win.keyboard.press('ControlOrMeta+f');
+    await expect(tree).toBeHidden();
+    await expect(findInput).toHaveCount(0);
+    await win.keyboard.press('ControlOrMeta+f');
+    await expect(tree).toBeVisible();
+    // ⇧⌘J 打开查找条
+    await pm.locator('h1').click();
+    await win.keyboard.press('ControlOrMeta+Shift+j');
+    await expect(findInput).toBeFocused();
+    await findInput.fill('beta');
+    await expect(status).toHaveText('1 / 2');
+    // 查找下一个:旧键无效,⌘J 生效(查找框里)
+    await win.keyboard.press(FIND_NEXT);
+    await expect(status).toHaveText('1 / 2');
+    await win.keyboard.press('ControlOrMeta+j');
+    await expect(status).toHaveText('2 / 2');
+    await win.keyboard.press('Escape');
+    await expect(findInput).toHaveCount(0);
+  }
+});

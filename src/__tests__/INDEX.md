@@ -587,6 +587,7 @@
 ## [编辑器查找类命令经命令注册表分发(可改键);菜单「查找」在 Markdown 编辑 / 预览里同样生效](./editor-find-keybindings/README.md)
 
 - [`find-keybindings.spec.ts`](./editor-find-keybindings/find-keybindings.spec.ts)
+- [`markdown-find-keybindings.spec.tsx`](./editor-find-keybindings/markdown-find-keybindings.spec.tsx)
 - [`markdown-menu-find.spec.tsx`](./editor-find-keybindings/markdown-menu-find.spec.tsx)
 
 ## [编辑器查找控件:计数 / 无结果、快捷键、历史、强制颜色(对齐 VSCode findWidget)](./editor-find-widget/README.md)
@@ -1646,6 +1647,7 @@
 
 ## [Quick Open(⌘P)支持 `文件名:行号`](./quick-open-file-line/README.md)
 
+- [`open-clamp-markdown.spec.ts`](./quick-open-file-line/open-clamp-markdown.spec.ts)
 - [`quick-open-file-line.spec.tsx`](./quick-open-file-line/quick-open-file-line.spec.tsx)
 
 ## [QuickOpenModal(VSCode ⌘P 文件搜索)](./quick-open-modal/README.md)

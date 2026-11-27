@@ -1,11 +1,16 @@
 // 命令的上下文条件(对齐 VSCode 同名 context key):
 // - `editorTextFocus`:按键落在代码编辑器(CodeEditor 的 CodeMirror)正文里;
-// - `editorFocus`:按键落在代码编辑器里,含其查找面板等编辑器内控件(VSCode:查找 / 查找下一个等 find 命令用它,查找框里同样生效)。
-// CodeEditor 的 .cm-editor 带 TEXT_EDITOR_ATTR 标记;Milkdown 代码块里的 CodeMirror 没有 → 都不算。输入法组字中都不算(按键属于组字)。
+// - `editorFocus`:按键落在编辑器里,含其查找面板等编辑器内控件(VSCode:查找 / 查找下一个等 find 命令用它,查找框里同样生效)。
+//   Markdown 编辑 / 预览(Milkdown,外层带 MARKDOWN_EDITOR_ATTR)及其查找条也算:查找类命令在其中转给它的查找条(可改键)。
+// CodeEditor 的 .cm-editor 带 TEXT_EDITOR_ATTR 标记;Milkdown 代码块里的 CodeMirror 没有 → 都不算(代码块保留 CodeMirror 自带的
+// 查找键)。输入法组字中都不算(按键属于组字)。
 // BDD: src/__tests__/editor-text-commands/、src/__tests__/editor-find-keybindings/
 
 /** CodeEditor 根元素(.cm-editor)上的标记属性。 */
 export const TEXT_EDITOR_ATTR = 'data-co-text-editor';
+
+/** Markdown 编辑 / 预览(MilkdownEditor)外层(含查找条)上的标记属性。 */
+export const MARKDOWN_EDITOR_ATTR = 'data-co-markdown-editor';
 
 /** 命令的上下文条件(CommandSpec.when)。 */
 export type CommandWhen = 'editorTextFocus' | 'editorFocus';
@@ -29,10 +34,15 @@ export function isEditorTextElement(el: Element | null): boolean {
   return content?.closest('.cm-editor')?.hasAttribute(TEXT_EDITOR_ATTR) === true;
 }
 
-/** 元素是否在代码编辑器里(正文或查找面板等编辑器内控件)。 */
+/**
+ * 元素是否在编辑器里:代码编辑器(正文或查找面板等编辑器内控件),或 Markdown 编辑 / 预览(正文或其查找条);
+ * Markdown 代码块里的 CodeMirror 不算。
+ */
 export function isEditorElement(el: Element | null): boolean {
   if (typeof el?.closest !== 'function') return false;
-  return el.closest('.cm-editor')?.hasAttribute(TEXT_EDITOR_ATTR) === true;
+  const cm = el.closest('.cm-editor');
+  if (cm) return cm.hasAttribute(TEXT_EDITOR_ATTR);
+  return el.closest(`[${MARKDOWN_EDITOR_ATTR}]`) !== null;
 }
 
 function holdsFor(when: CommandWhen, el: Element | null): boolean {

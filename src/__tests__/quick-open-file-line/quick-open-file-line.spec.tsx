@@ -179,6 +179,21 @@ describe('⌘P 输入 `文件:行`', () => {
     expect(cursorLine(views.get(A)!)).toBe(5);
   });
 
+  it('行号越界(`long.ts:9999`,共 400 行)→ 夹到最后一行(VSCode 同;同 ⌃G 转到行),不是只打开不动光标', async () => {
+    const input = await quickOpen('long.ts:9999');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(views.get(B) && cursorLine(views.get(B)!)).toBe(400));
+    expect(entries()).toEqual([`${A}@5`, `${B}@400`]);
+  });
+
+  it('列越界(`long.ts:3:999`)→ 夹到该行行尾', async () => {
+    const input = await quickOpen('long.ts:3:999');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(views.get(B) && cursorLine(views.get(B)!)).toBe(3));
+    const view = views.get(B)!;
+    expect(view.state.selection.main.head).toBe(view.state.doc.line(3).to);
+  });
+
   it('不带行列:照旧打开文件,不改光标位置', async () => {
     const input = await quickOpen('long');
     fireEvent.keyDown(input, { key: 'Enter' });

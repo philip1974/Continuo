@@ -70,3 +70,16 @@ test('`long.ts(120,7)`:跳到第 120 行第 7 列', async () => {
   await win.keyboard.type('X');
   await expect(win.locator('.cm-activeLine')).toHaveText('const Xline120 = 120;');
 });
+
+test('行号越界 `long.ts:9999`(共 400 行)→ 夹到最后一行(VSCode 同;同 ⌃G 转到行)', async () => {
+  test.setTimeout(90_000);
+  const win = await launch();
+  await win.keyboard.press('ControlOrMeta+p');
+  await win.keyboard.type('long.ts:9999');
+  await expect(win.getByRole('option')).toHaveCount(1);
+  await win.keyboard.press('Enter');
+  const active = win.locator('.cm-activeLine');
+  await expect(active).toHaveText('const line400 = 400;', { timeout: 10_000 });
+  await expect(active).toBeInViewport();
+  await expect(win.locator('.cm-content')).toBeFocused();
+});

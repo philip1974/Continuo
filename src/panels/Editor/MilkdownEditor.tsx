@@ -58,6 +58,7 @@ import { rebindCodeMirrorRoots } from './codemirror-root';
 import { markdownCodeBlockTheme } from './code-editor-theme';
 import { codeMirrorContentLabel, codeMirrorPhrases, editorContentLabel, previewContentLabel } from './codemirror-phrases';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
+import { MARKDOWN_EDITOR_ATTR } from '@/lib/editor-text-focus';
 import { markdownImageNodeView } from './markdown-image-view';
 import {
   escapeRegExp,
@@ -81,7 +82,6 @@ import {
   DEFAULT_TERMINAL_SEARCH_OPTIONS,
   type TerminalSearchOptions,
 } from '@/panels/Terminal/terminal-search-state';
-import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
 interface MilkdownEditorProps {
   /**
@@ -703,26 +703,6 @@ function CrepeEditor({
   return <Milkdown />;
 }
 
-const IS_MAC = detectPlatform() === 'mac';
-
-/** ⌘F(mac)/ Ctrl+F(其它平台),不带 ⇧ / ⌥ / 另一个修饰键。按物理键或字符判(非拉丁布局也认 KeyF)。 */
-function isFindHotkey(e: React.KeyboardEvent): boolean {
-  if (e.shiftKey || e.altKey || (IS_MAC ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey)) return false;
-  return e.code === 'KeyF' || e.key.toLowerCase() === 'f';
-}
-
-/**
- * 查找下一个 / 上一个的快捷键(VSCode editor.action.nextMatchFindAction / previousMatchFindAction):F3 / ⇧F3,mac 另有
- * ⌘G / ⇧⌘G。Windows / Linux 的 Ctrl+G 是「转到行」,不拦。返回步向;不是则 null。
- */
-function findStepHotkey(e: React.KeyboardEvent): 1 | -1 | null {
-  if (e.altKey) return null;
-  const step = e.shiftKey ? -1 : 1;
-  if (e.key === 'F3') return e.metaKey || e.ctrlKey ? null : step;
-  if (IS_MAC && e.metaKey && !e.ctrlKey && (e.code === 'KeyG' || e.key.toLowerCase() === 'g')) return step;
-  return null;
-}
-
 export function MilkdownEditor(props: MilkdownEditorProps) {
   // Crepe theme 内部很多元素是相对单位(em/rem),容器 font-size 变,
   // ProseMirror 文本会跟着变。如果某些元素用 px 绝对值,可在
@@ -858,11 +838,13 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       formatFindCount({ empty: !findTermRef.current, total: r.count, current: r.index + 1, capped: r.count >= FIND_MATCH_LIMIT }),
     [],
   );
-  // ⌘F:打开查找条(已打开则重新聚焦并全选查找词)。焦点在正文且有单行选区 → 选区文字带入查找框并查找;否则关闭后重开
-  // 沿用上次的查找词与选项重新查(VSCode 同)。
-  // F3 / ⇧F3(mac 另有 ⌘G / ⇧⌘G):正文与查找框里都跳下一个 / 上一个;查找条已关则用上次的查找词(没有则取选区)重新显示
-  // 查找条(焦点不动)再跳 —— VSCode 同;没有可查的词时同 ⌘F 打开查找条。
-  // inBody:焦点 / 按键在正文里(选区文字才带入查找框)
+  // 查找类命令经命令注册表分发(可改键;外层带 MARKDOWN_EDITOR_ATTR → editorFocus 成立,见 editor-text-commands),
+  // 经 markdown-find-registry 转到这里。代码块里的 CodeMirror 不算 editorFocus,保留其自带的查找键。
+  // 「查找」(默认 ⌘F):打开查找条(已打开则重新聚焦并全选查找词)。焦点在正文且有单行选区 → 选区文字带入查找框并查找;否则关闭后
+  // 重开沿用上次的查找词与选项重新查(VSCode 同)。
+  // 「查找下一个 / 上一个」(默认 F3 / ⇧F3,mac 另有 ⌘G / ⇧⌘G):正文与查找框里都跳下一个 / 上一个;查找条已关则用上次的查找词
+  //(没有则取选区)重新显示查找条(焦点不动)再跳 —— VSCode 同;没有可查的词时同「查找」打开查找条。
+  // inBody:焦点在正文里(选区文字才带入查找框)
   const startFind = useCallback(
     (inBody: boolean) => {
       const seed = inBody ? selectionSeed() : null;
@@ -878,18 +860,8 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   );
   const startFindRef = useRef(startFind);
   startFindRef.current = startFind;
-  const handleFindKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (e.defaultPrevented) return; // 代码块的 CodeMirror 已处理(自己的查找面板 / F3 / ⌘G)
-      const step = findStepHotkey(e);
-      if (!step && !isFindHotkey(e)) return;
-      e.preventDefault();
-      e.stopPropagation(); // 不再交给全局快捷键(这些键在编辑器里只做查找)
-      const inBody = wrapperRef.current?.contains(e.target as Node) ?? false;
-      if (!step) {
-        startFind(inBody);
-        return;
-      }
+  const stepFromCommand = useCallback(
+    (step: 1 | -1, inBody: boolean) => {
       let term = findTermRef.current;
       if (!term) {
         term = (inBody ? selectionSeed() : null) ?? '';
@@ -908,8 +880,10 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       setFindOpen(true);
       stepFind(step);
     },
-    [findOpen, openFind, selectionSeed, startFind, stepFind],
+    [findOpen, openFind, selectionSeed, stepFind],
   );
+  const stepFromCommandRef = useRef(stepFromCommand);
+  stepFromCommandRef.current = stepFromCommand;
   // layout 清理:此时 DOM 仍在文档里(量得到位置),Crepe 尚未销毁。tab 已关闭 / 已改名(旧 id 不在了)不记。
   useLayoutEffect(
     () => () => {
@@ -926,15 +900,17 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   const getViewRef = useRef<() => EditorView | null>(() => null);
   const restoringScrollRef = useRef(false);
   const groupId = useEditorGroupId();
-  // 菜单「编辑 → 查找」/ 命令面板的「查找」(actions.find)转到这里,同按 ⌘F(BDD: src/__tests__/editor-find-keybindings/)
-  useEffect(
-    () =>
-      registerMarkdownFind(tabId, groupId, () => {
-        const el = wrapperRef.current;
-        startFindRef.current(el?.contains(el.ownerDocument.activeElement) ?? false);
-      }),
-    [tabId, groupId],
-  );
+  // 查找 / 查找下一个·上一个(按键、菜单「编辑 → 查找」、命令面板)转到这里(BDD: src/__tests__/editor-find-keybindings/)
+  useEffect(() => {
+    const inBody = (): boolean => {
+      const el = wrapperRef.current;
+      return el?.contains(el.ownerDocument.activeElement) ?? false;
+    };
+    return registerMarkdownFind(tabId, groupId, {
+      open: () => startFindRef.current(inBody()),
+      step: (direction) => stepFromCommandRef.current(direction, inBody()),
+    });
+  }, [tabId, groupId]);
   const onViewReadyRef = useRef(props.onViewReady);
   onViewReadyRef.current = props.onViewReady;
   const handleReady = useCallback<OnEditorReady>(
@@ -1067,7 +1043,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   return (
     <MilkdownProvider key={locale}>
       {/* 外层不滚动:查找条浮在右上角不随正文滚动。@container/terminal:复用的终端查找条按此名的容器查询收缩窄宽布局。 */}
-      <div className="@container/terminal relative h-full w-full" onKeyDown={handleFindKeyDown}>
+      <div className="@container/terminal relative h-full w-full" {...{ [MARKDOWN_EDITOR_ATTR]: '' }}>
       <div
         ref={wrapperRef}
         className="h-full w-full overflow-auto"

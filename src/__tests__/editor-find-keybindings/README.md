@@ -16,16 +16,20 @@
    | `editor.action.nextMatchFindAction` | Find Next | ⌘G(另有 F3) | F3 |
    | `editor.action.previousMatchFindAction` | Find Previous | ⇧⌘G(另有 ⇧F3) | ⇧F3 |
 
-   上下文条件 `when: editorFocus`:按键落在代码编辑器里(正文**或其查找面板**)才执行;终端(⌘F = 终端查找)、其它输入框、
-   Milkdown 及其代码块不受影响。Windows / Linux 的 Ctrl+G 仍是转到行(VSCode 同)。
+   上下文条件 `when: editorFocus`:按键落在代码编辑器里(正文**或其查找面板**)或 Markdown 编辑 / 预览里(正文或其查找条,见第 6 条)
+   才执行;终端(⌘F = 终端查找)、其它输入框、Markdown 代码块不受影响。Windows / Linux 的 Ctrl+G 仍是转到行(VSCode 同)。
 2. **改键**:这些键已从 CodeEditor 的 CodeMirror 键表去掉,统一经注册表分发 —— 改键后旧键失效(交给新绑定的命令)、新键生效、
    不被 CodeMirror 抢走;解绑同理。Esc 关闭查找面板、查找框里 Enter / ⇧Enter、⌥⌘C / W / R 选项切换仍由面板处理。
 3. **查找面板里**:按「查找」的键 → 聚焦并全选查找框(VSCode 同);按「查找下一个 / 上一个」的键 → 跳到下一个 / 上一个匹配;
    按「替换」的键 → 聚焦替换框。
 4. **Markdown 代码块**(Crepe 的 CodeMirror,不经注册表)保留 CodeMirror 自带的查找键与 ⌥⌘F / Ctrl+H 替换键,行为不变。
 5. **菜单 / 命令面板的「查找」在 Markdown 编辑 / 预览(Milkdown)里**:打开该编辑器的查找条(同在其中按 ⌘F:焦点在正文且有单行
-   选区 → 带入选区文字)。「替换」在 Markdown 编辑 / 预览里不支持 → 静默(同 VSCode 对不支持替换的编辑器)。Milkdown 里直接按
-   ⌘F / F3 的既有行为不变。
+   选区 → 带入选区文字)。「替换」在 Markdown 编辑 / 预览里不支持 → 静默(同 VSCode 对不支持替换的编辑器)。
+6. **Markdown 编辑 / 预览里的按键同样经注册表分发**:MilkdownEditor 外层(含查找条)带 `data-co-markdown-editor` 标记 →
+   `editorFocus` 成立;「查找」转给其查找条的打开入口,「查找下一个 / 上一个」转给其步进入口(markdown-find-registry)。
+   不再硬匹配 ⌘F / ⌘G / F3:改键后旧键失效(交给新绑定的命令,不被吞)、新键生效;默认键行为不变(⌘F 打开 / 聚焦查找条,
+   F3 / ⌘G 跳转,查找条已关时用上次查找词重新显示)。查找框里的 Enter / ⇧Enter / Esc / ↑↓ / 选项键仍由查找条自己处理。
+   Markdown 代码块里的 CodeMirror 不算 `editorFocus`,保留其自带键。
 
 ## 模块
 
@@ -35,10 +39,12 @@
 | `src/panels/Editor/codemirror-text-commands.ts` | 命令 id → CodeMirror 命令(openFindPanel / openReplacePanel / findNext / findPrevious);ROUTED_KEYMAP_COMMANDS |
 | `src/panels/Editor/codemirror-basic-setup.ts` | 从 basicSetup 键表去掉 ⌘F / ⌘G / F3 等(按命令) |
 | `src/panels/Editor/codemirror-find.ts` | `codeEditorFind`(CodeEditor,无替换键)/ `codeMirrorFind`(Markdown 代码块,带替换键);openFindPanel 全选查找框 |
-| `src/lib/editor-text-focus.ts` | `editorFocus` 判定(按键在 CodeEditor 里,含查找面板) |
-| `src/panels/Editor/markdown-find-registry.ts` | Markdown 查找条的打开入口(MilkdownEditor 按组 + tab 登记) |
+| `src/lib/editor-text-focus.ts` | `editorFocus` 判定(按键在 CodeEditor 里,含查找面板;或在 Markdown 编辑 / 预览里,代码块除外) |
+| `src/panels/Editor/markdown-find-registry.ts` | Markdown 查找条的打开 / 步进入口(MilkdownEditor 按组 + tab 登记) |
 
 ## 规范
 
 - `find-keybindings.spec.ts`:命令表、按键分发(正文 / 查找面板 / 终端 / 代码块)、改键后旧键失效新键生效、CodeMirror 键表去掉这些键
 - `markdown-menu-find.spec.tsx`:Markdown 编辑 / 预览里执行「查找」打开查找条(带入选区),「替换」静默
+- `markdown-find-keybindings.spec.tsx`:Markdown 编辑 / 预览里按键经注册表分发 —— 默认键不回退、改键后旧键失效新键生效、旧键交给
+  新绑定的命令;`editorFocus` 判定(代码块除外)

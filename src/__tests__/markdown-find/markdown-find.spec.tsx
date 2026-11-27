@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // Markdown 编辑 / 预览模式 ⌘F 查找(真实 Crepe)。行为见同目录 README。
+// 查找类按键经命令注册表分发(editor-find-keybindings):挂上真实的全局快捷键分发(useCommandHotkeys + 核心插件的命令)。
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Crepe as CrepeType } from '@milkdown/crepe';
 import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
 import { buildFindRegExp, findTextMatches } from '../../panels/Editor/markdown-find';
@@ -12,6 +13,10 @@ import { editorFindHistory } from '../../panels/Editor/find-widget-model';
 import { clearMarkdownFindSessions } from '../../panels/Editor/markdown-find';
 import { createTab, useEditorStore } from '../../stores/editor.store';
 import { TextSelection } from '@milkdown/kit/prose/state';
+import { bootCorePlugins, shutdownCorePlugins } from '../../core-plugins';
+import { coApp } from '../../plugins/co-app';
+import { useCommandHotkeys } from '../../plugins/command-palette/useCommandHotkeys';
+import { useKeybindingsStore } from '../../plugins/keybindings/keybindings-store';
 
 const MOD = detectPlatform() === 'mac' ? { metaKey: true } : { ctrlKey: true };
 
@@ -26,15 +31,20 @@ vi.mock('@milkdown/crepe', async (importOriginal) => {
   }
   return { ...mod, Crepe: RecordingCrepe };
 });
-vi.mock('../../plugins/settings/values-store', () => ({
+vi.mock('../../plugins/settings/values-store', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   useSettingValue: <T,>(_id: string, fallback: T) => fallback,
 }));
 vi.mock('../../lib/co-api', () => ({ coApi: { fs: { readImage: vi.fn() } } }));
+
+beforeAll(() => bootCorePlugins());
+afterAll(() => shutdownCorePlugins());
 
 // jsdom 没有 Range 的布局接口(ProseMirror 量坐标 / 选区要用),与其它编辑器规范同样补上。
 beforeEach(() => {
   // 打开着的 tab(查找状态按 tab 保留;tab 已关闭时卸载即丢弃)
   useEditorStore.setState({ tabs: [createTab('/w/a.md', ''), createTab('/w/b.md', '')] });
+  useKeybindingsStore.setState({ overrides: {} });
   Range.prototype.getClientRects ??= () => [] as unknown as DOMRectList;
   Range.prototype.getBoundingClientRect ??= () => new DOMRect();
 });
@@ -55,6 +65,13 @@ interface PmView {
 }
 
 async function mount(markdown: string, readonly = false, tabId = '/w/a.md') {
+  // 挂载的 tab 是编辑器组的活动 tab(查找类命令作用于触发窗口编辑器组的活动 tab)
+  useEditorStore.setState((s) => ({
+    activeTabId: tabId,
+    activeGroupId: 'editor',
+    groups: [{ id: 'editor', tabIds: s.tabs.map((tab) => tab.id), activeTabId: tabId }],
+  }));
+  renderHook(() => useCommandHotkeys(coApp.commands));
   const utils = render(<MilkdownEditor tabId={tabId} fileName={tabId} defaultValue={markdown} readonly={readonly} />);
   for (let i = 0; i < 100; i++) {
     const crepe = mocks.instances.at(-1);
@@ -245,6 +262,7 @@ function posOf(view: PmView, word: string, n = 0): number {
 describe('与代码编辑器查找一致(VSCode findWidget)', () => {
   it('⌘F 把单行选区带入查找框(全选)并查找;多行选区不带入', async () => {
     const { pm, view } = await mount(DOC);
+    act(() => pm.focus()); // 按键落在获焦的正文里(选区文字才带入查找框)
     const at = posOf(view, 'beta');
     select(view, at, at + 4);
     openFind(pm);
@@ -287,7 +305,7 @@ describe('与代码编辑器查找一致(VSCode findWidget)', () => {
       press(findInput(), { key: 'g', code: 'KeyG', metaKey: true, shiftKey: true });
       expect(countText()).toBe(t('editor.find.match_count', { n: 2, total: '4' }));
     } else {
-      expect(press(pm, { key: 'g', code: 'KeyG', ctrlKey: true }).defaultPrevented).toBe(false);
+      press(pm, { key: 'g', code: 'KeyG', ctrlKey: true }); // 归「转到行」,不跳匹配
       expect(countText()).toBe(t('editor.find.match_count', { n: 2, total: '4' }));
     }
   });

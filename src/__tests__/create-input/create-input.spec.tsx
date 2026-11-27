@@ -193,3 +193,100 @@ describe('CreateInput — 提交失败可重试 + 内联错误', () => {
     expect(onEdit).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('CreateInput — 失焦(VSCode InlineEditInputBox 同款)', () => {
+  const tick = () =>
+    act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  function focusIn(input: HTMLInputElement) {
+    act(() => input.focus());
+    expect(document.activeElement).toBe(input);
+  }
+  function outsideButton(): HTMLButtonElement {
+    return document.body.appendChild(document.createElement('button'));
+  }
+
+  it('有名字时焦点移到输入条之外 → onSubmit(trim 后)', async () => {
+    const { input, onSubmit, onCancel } = setup();
+    focusIn(input);
+    fireEvent.change(input, { target: { value: '  b.ts ' } });
+    const other = outsideButton();
+    act(() => other.focus());
+    await tick();
+    expect(onSubmit).toHaveBeenCalledWith('b.ts');
+    expect(onCancel).not.toHaveBeenCalled();
+    other.remove();
+  });
+
+  it('空名时焦点移到之外 → onCancel("blur")(父层据此不把焦点拉回树)', async () => {
+    const { input, onSubmit, onCancel } = setup();
+    focusIn(input);
+    const other = outsideButton();
+    act(() => other.focus());
+    await tick();
+    expect(onCancel).toHaveBeenCalledWith('blur');
+    expect(onSubmit).not.toHaveBeenCalled();
+    other.remove();
+  });
+
+  it('上次提交失败(错误提示还在)时失焦 → 放弃,不再重复提交', async () => {
+    const { input, onSubmit, onCancel } = setup({ error: '已存在' });
+    focusIn(input);
+    fireEvent.change(input, { target: { value: 'dup.ts' } });
+    const other = outsideButton();
+    act(() => other.focus());
+    await tick();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledWith('blur');
+    other.remove();
+  });
+
+  it('焦点移到输入条里的 ✕ 按钮 → 继续编辑(随后点击 = 放弃,不先提交)', async () => {
+    const { input, container, onSubmit, onCancel } = setup();
+    focusIn(input);
+    fireEvent.change(input, { target: { value: 'c.ts' } });
+    const cancelBtn = container.querySelector<HTMLButtonElement>('button[aria-label="取消"]')!;
+    act(() => cancelBtn.focus());
+    await tick();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    fireEvent.click(cancelBtn);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onCancel).toHaveBeenCalledWith();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('失焦但 activeElement 仍是输入框(窗口失焦:切应用 / 输入法切换)→ 继续编辑', async () => {
+    const { input, onSubmit, onCancel } = setup();
+    focusIn(input);
+    fireEvent.change(input, { target: { value: 'd.ts' } });
+    act(() => {
+      input.dispatchEvent(new FocusEvent('blur'));
+    });
+    await tick();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('Enter 已提交 / Esc 已放弃之后的失焦不再处理', async () => {
+    const a = setup();
+    focusIn(a.input);
+    fireEvent.change(a.input, { target: { value: 'e.ts' } });
+    fireKey(a.input, 'Enter');
+    const other = outsideButton();
+    act(() => other.focus());
+    await tick();
+    expect(a.onSubmit).toHaveBeenCalledTimes(1);
+    expect(a.onCancel).not.toHaveBeenCalled();
+    cleanup();
+    const b = setup();
+    focusIn(b.input);
+    fireKey(b.input, 'Escape');
+    act(() => other.focus());
+    await tick();
+    expect(b.onCancel).toHaveBeenCalledTimes(1);
+    expect(b.onCancel).toHaveBeenCalledWith();
+    other.remove();
+  });
+});

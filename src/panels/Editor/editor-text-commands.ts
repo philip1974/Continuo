@@ -3,7 +3,7 @@
 //   `when: 'editorTextFocus'` 限定按键落在代码编辑器正文里才执行(终端 / 输入框 / Milkdown 代码块里照常)。
 // - 执行:命令 id → CodeMirror 命令的实现在引擎 chunk(codemirror-text-commands,CodeEditor 挂载时登记);本模块在启动路径上
 //   (EditorPlugin 注册命令),不静态引入编辑器引擎。有活动文本视图时它必已登记。
-// - 没有文本编辑器(无 tab / 图片 / Markdown 编辑·预览模式)→ 静默;「查找」在 Markdown 编辑·预览里打开其查找条。
+// - 没有文本编辑器(无 tab / 图片 / Markdown 编辑·预览模式)→ 静默;「查找」/「查找下一个·上一个」在 Markdown 编辑·预览里转给其查找条。
 // BDD: src/__tests__/editor-text-commands/
 
 import type { EditorView } from '@codemirror/view';
@@ -12,7 +12,7 @@ import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import type { Platform } from '@/plugins/command-palette/format-hotkey';
 import type { CommandWhen } from '@/lib/editor-text-focus';
 import { commandEditorGroupId } from './editor-groups-actions';
-import { openMarkdownFind } from './markdown-find-registry';
+import { markdownFindOf } from './markdown-find-registry';
 
 interface TextCommandDef {
   readonly id: string;
@@ -73,8 +73,8 @@ export const EDITOR_TEXT_COMMANDS: readonly TextCommandDef[] = [
   { id: 'cursorUndo', key: 'cursor_undo', title: 'Cursor Undo', mac: 'mod+u' },
   // 查找 / 替换 / 查找下一个·上一个(VSCode actions.find ⌘F、startFindReplaceAction ⌥⌘F / Ctrl+H、nextMatchFindAction ⌘G + F3 /
   // F3、previousMatchFindAction ⇧⌘G + ⇧F3 / ⇧F3):键已从 CodeMirror 键表去掉,经注册表分发(可改键);when: editorFocus ——
-  // 查找面板里同样生效(面板里再按 ⌘F 全选查找词)。Markdown 编辑 / 预览的查找条另有自己的键(见 MilkdownEditor),菜单 / 命令面板
-  // 的「查找」转给它。BDD: src/__tests__/editor-find-keybindings/
+  // 查找面板里同样生效(面板里再按 ⌘F 全选查找词)。Markdown 编辑 / 预览(及其查找条)里 editorFocus 同样成立,查找 / 查找下一个·
+  // 上一个转给它的查找条(同一套可改键的绑定;替换不支持,静默)。BDD: src/__tests__/editor-find-keybindings/
   { id: 'actions.find', key: 'find', title: 'Find', mac: 'mod+f', when: 'editorFocus' },
   {
     id: 'editor.action.startFindReplaceAction',
@@ -129,20 +129,24 @@ function activeTextView(): EditorView | undefined {
   return view?.dom.isConnected ? view : undefined;
 }
 
-/** 活动 tab 是 Markdown 编辑 / 预览(Milkdown)→ 打开其查找条(同在其中按 ⌘F)。 */
-function openActiveMarkdownFind(): void {
+/** 活动 tab 是 Markdown 编辑 / 预览(Milkdown)→ 查找类命令转给其查找条;其余命令(含替换)静默。 */
+function runInActiveMarkdown(id: string): void {
   const target = activeTabTarget();
-  if (target) openMarkdownFind(target.tabId, target.groupId);
+  const find = target && markdownFindOf(target.tabId, target.groupId);
+  if (!find) return;
+  if (id === 'actions.find') find.open();
+  else if (id === 'editor.action.nextMatchFindAction') find.step(1);
+  else if (id === 'editor.action.previousMatchFindAction') find.step(-1);
 }
 
 /**
- * 在活动文本编辑器上执行命令;焦点交回该编辑器(从命令面板执行时)。没有文本编辑器 → 静默;其中「查找」在 Markdown 编辑 / 预览
- * 里转给其查找条(替换不支持,静默)。
+ * 在活动文本编辑器上执行命令;焦点交回该编辑器(从命令面板执行时)。没有文本编辑器 → 静默;其中「查找」「查找下一个 / 上一个」
+ * 在 Markdown 编辑 / 预览里转给其查找条(替换不支持,静默)。
  */
 export function runTextCommand(id: string): void {
   const view = activeTextView();
   if (!view) {
-    if (id === 'actions.find') openActiveMarkdownFind();
+    runInActiveMarkdown(id);
     return;
   }
   if (!runner) return;

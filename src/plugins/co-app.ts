@@ -34,6 +34,7 @@ import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
 import { revealInMarkdown, type MarkdownRevealOutcome } from '@/panels/Editor/markdown-reveal-registry';
 import type { EditorView } from '@codemirror/view';
 import { isAbsolutePath } from '@/lib/path-cross';
+import { clampGotoLine, textGotoLineDoc, type GotoLineRequest } from './quick-open/goto-line';
 import { useEditorStore, usesMilkdownEngine } from '@/stores/editor.store';
 import { errorMessage } from '../../electron/shared/error-message';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
@@ -90,17 +91,33 @@ const invalidPathResult = {
   message: 'path must be absolute',
 } as const;
 
+/** 宿主内部「打开并定位」的定位方式。 */
+export interface EditorRevealOptions {
+  /**
+   * 行列越界时夹到文档范围(行 → 第 1 行 / 最后一行,列 → 行尾),而不是只打开不定位(⌘P `文件:行`,VSCode 同;与 ⌃G 转到行同一
+   * 夹取规则 clampGotoLine)。缺省 false:越界报 line-out-of-range(插件 API 契约)。BDD: src/__tests__/quick-open-file-line/
+   */
+  readonly clampToDocument?: boolean;
+}
+
 /**
  * 宿主内部的「打开并定位」(同 editor.openFile),可指定打开方式(OpenFileOptions.preview:搜索结果单击以预览方式、⌘P 常驻;
- * BDD: src/__tests__/editor-preview-tab/)。插件 API 不暴露打开方式。
+ * BDD: src/__tests__/editor-preview-tab/)与定位方式(EditorRevealOptions)。插件 API 不暴露这两项。
  */
 export async function openFileInEditor(
   path: string,
   opts: EditorOpenOptions | undefined,
   openOpts?: OpenFileOptions,
+  revealOpts?: EditorRevealOptions,
 ): Promise<EditorOpenResult> {
   if (!isAbsolutePath(path)) return invalidPathResult;
-  return openInEditor(path, opts, undefined, () => openFileByPath(path, editorFileDeps, openOpts));
+  return openInEditor(
+    path,
+    opts,
+    undefined,
+    () => openFileByPath(path, editorFileDeps, openOpts),
+    revealOpts?.clampToDocument === true,
+  );
 }
 
 const editor: CoHostEditorApi = {
@@ -131,6 +148,8 @@ async function openInEditor(
   /** 插件原路径(openVerifiedFile):找标签跳行与打开时的判重同一口径(findPluginOpenedTab)。 */
   requestedPath: string | undefined,
   open: () => Promise<FileOpResult>,
+  /** 行列越界时夹到文档范围(见 EditorRevealOptions.clampToDocument)。 */
+  clamp = false,
 ): Promise<EditorOpenResult> {
   let openResult;
   try {
@@ -154,6 +173,7 @@ async function openInEditor(
   if (opts?.line === undefined) {
     return { ok: true, lineApplied: false, reason: 'no-line-arg' };
   }
+  const target = { ...opts, line: opts.line };
 
   // 跨平台(复查 P2,X10 的 SDK 兄弟):用平台感知 pathEquals 找已开 tab —— Windows
   // 上插件传的 path 与既有 tab id 仅大小写不同时,openFileByPath(X10)已切到既有 tab,但
@@ -170,8 +190,10 @@ async function openInEditor(
   if (activeTab && inMilkdown) {
     // Markdown 编辑 / 预览(Milkdown):视图就绪后按源码行 / 列定位并选中(在文件中查找打开结果;BDD: src/__tests__/search-open-markdown/)
     let outcome: MarkdownRevealOutcome;
+    // 按源码行定位:夹取也按标签的源码文本
+    const at: GotoLineRequest = clamp ? clampGotoLine(target, textGotoLineDoc(activeTab.content)) : target;
     try {
-      outcome = await revealInMarkdown(viewKey, { line: opts.line, column: opts.column, length: opts.length });
+      outcome = await revealInMarkdown(viewKey, { line: at.line, column: at.column, length: opts.length });
     } catch (err) {
       return { ok: false, code: 'EXCEPTION', message: errorMessage(err) };
     }
@@ -211,7 +233,8 @@ async function openInEditor(
     if (now.activeTabId !== viewKey || now.viewRefs.get(viewKey) !== view) {
       return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
     }
-    outcome = scrollToLine(view, opts.line, opts.column, opts.length);
+    const at: GotoLineRequest = clamp ? clampGotoLine(target, view.state.doc) : target;
+    outcome = scrollToLine(view, at.line, at.column, opts.length);
   } catch (err) {
     return {
       ok: false,

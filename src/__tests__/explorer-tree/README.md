@@ -117,7 +117,11 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
   不掉到 body(VSCode:取消后焦点回资源管理器树)
 - 失败(含同名冲突 FS_EEXIST):输入框与已输入的名字保留,下方 `role="alert"` 显示按错误码本地化的原因
   (`localizeErrorByCode`),不弹 toast;改名后提示消失,Enter 重试;Esc 放弃(输入框与提示一并消失)
-- 输入框组件契约(重试守卫 / aria-invalid / onEdit)见 `create-input` 主题
+- 再次新建(输入条已开着,不论是否获焦;右键菜单 / 标题栏按钮 / 命令面板「资源管理器: 新建文件…」)→ 换成新的输入条:清空、
+  类型与目录随之改变,焦点进新输入框(`creating.seq` 递增作 key 重挂载;VSCode 每次新建都是新的行内输入框并聚焦)
+- 失焦(VSCode `InlineEditInputBox`):有名字 → 提交新建(同 Enter);空名 → 放弃,焦点留在用户点的地方(不拉回树)。
+  失焦提交尚未完成时又开了新的新建 → 那次提交的成功 / 失败只回写它自己(按 seq),不关掉新输入条
+- 输入框组件契约(重试守卫 / aria-invalid / onEdit / 失焦)见 `create-input` 主题
 
 ## 空列表三态(`folder-tree-load-state.spec.tsx`,VSCode 同款)
 
