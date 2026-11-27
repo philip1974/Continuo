@@ -21,6 +21,11 @@
      新建的编辑器组、设置、输出、插件面板、没有终端可参照的新终端)不落进它 —— 改落主窗最近使用的其它组;主窗没有其它组 →
      在它右侧新建一组。点结果打开的文件落在编辑器组,搜索结果保持可见。用户经该组「⋯」菜单显式加入的面板照旧落在该组。
    - 「重置布局」:search 面板回到最左侧独立组(见 dock-reset-layout)。
+   - **侧栏组保持自身宽度**(第五十二轮审计 A3 / B;VSCode 侧栏 `LayoutPriority.Low`、最小宽 170,窗口变窄时编辑区先缩到 220):
+     主网格里全高的只含侧栏面板的组,在它旁边新建组(主窗只剩它时新开文件 / 终端)、窗口缩放、资源管理器侧栏开关后宽度不变,
+     由其它组吸收;窗口窄到编辑区不足 220 时它才缩,最窄 170(组最小宽约束)。用户拖分隔条 / 双击等分改的宽被记住。dockview 6
+     网格按比例布局、无每视图优先级,由 `keepSidePanelWidth` 在布局变化后校正(此前被劈成一半宽并随窗口按比例缩放,最窄到 100,
+     选项按钮被裁掉)。查询框一行在窄宽下选项按钮(Aa / ab / .* / 详细信息)换到下一行靠右,不被裁。
 2. **查询**(`search-query.spec.ts`):查询框 + 三个开关「使用正则表达式 / 区分大小写 / 全词匹配」(`aria-pressed`,成组)。
    字面量按字面匹配(元字符转义);全词按 VSCode `createRegExp` 规则在首 / 尾是单词字符时加 `\b`;不区分大小写加 `i`。
    正则模式下非法正则 → 不发起搜索,查询框 `aria-invalid`、提示「正则表达式无效」(`regexSyntaxError`,错误信息作 title)。
@@ -97,7 +102,7 @@
 - `search-ipc.spec.ts` — 4 的 IPC / 服务(窗口根、取消、事件转发、schema、preload 守卫)
 - `search-view.spec.tsx` — 5
 - `search-command.spec.ts` — 1
-- `search-panel-placement.spec.ts` — 1a
+- `search-panel-placement.spec.ts` — 1a(含侧栏组保持宽度:新建组 / 窗口缩放 / 拖分隔条)
 - `search-open-editors.spec.tsx` — 6(及 5 的跳过大文件 / 无结果时的范围提示)
 - `search-path-gone.spec.ts` — 7
 - `search-input-restart.spec.ts` — 8

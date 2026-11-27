@@ -54,6 +54,7 @@ import { readDockLayout } from './layout-prefetch';
 import { trackPopoutDocuments } from './popout-documents';
 import { trackPopoutWindowTitles } from './popout-window-titles';
 import { isMainWindowDockEmpty, mainWindowAddPosition, trackGroupMru } from './group-mru';
+import { keepSidePanelWidth } from './side-panel-width';
 import { trackDropFocus } from './panel-focus';
 import { trackActiveTabReveal } from './reveal-active-tab';
 import { notify } from '@/notifications/notify';
@@ -385,6 +386,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         trackExplorerEditorDrop(event.api),
         // 双击组之间的分隔条 → 该排等分(VSCode sash 双击;BDD: dock-group-sizes)。
         trackSashReset(event.api),
+        // 侧栏组(搜索)保持自身宽度:窗口缩放 / 在它旁边新建组不按比例改它的宽,最窄 170(VSCode 侧栏;BDD: workspace-search 1a)。
+        keepSidePanelWidth(event.api),
       );
       event.api.panels.forEach(wrapPanelCloseGuarded);
     },

@@ -9,6 +9,7 @@ import { coApp } from '@/plugins/co-app';
 import { __resetSearchForTest } from '@/panels/Search/search-store';
 import { markDockLayoutRestored, openOrFocusPanel, setDockApi } from '@/shell/dock/dock-api-ref';
 import { mainWindowAddPosition, trackGroupMru } from '@/shell/dock/group-mru';
+import { keepSidePanelWidth, SIDE_PANEL_MIN_WIDTH } from '@/shell/dock/side-panel-width';
 import { HeaderActions } from '@/shell/dock/HeaderActions';
 import { resetDockLayout } from '@/shell/dock/layout.default';
 import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
@@ -18,6 +19,7 @@ import { createDock, openFakePopout } from '../dock-terminal-vscode-focus/dock-f
 
 const FIND_IN_FILES = 'workbench.action.findInFiles';
 let mru: { dispose(): void } | null = null;
+let widths: { dispose(): void } | null = null;
 
 beforeEach(() => {
   bootCorePlugins();
@@ -27,6 +29,8 @@ afterEach(async () => {
   cleanup();
   mru?.dispose();
   mru = null;
+  widths?.dispose();
+  widths = null;
   setDockApi(null);
   await shutdownCorePlugins();
   __resetSearchForTest();
@@ -43,6 +47,7 @@ function dockWith(...ids: string[]) {
     api.addPanel({ id, component: id.startsWith('editor') ? 'editor' : id, title: id, ...(i > 0 ? { position: { direction: 'right' } } : {}) });
   });
   mru = trackGroupMru(api);
+  widths = keepSidePanelWidth(api);
   setDockApi(api);
   markDockLayoutRestored(api);
   return { dock, api };
@@ -173,5 +178,59 @@ describe('重置布局', () => {
     resetDockLayout(api);
     expect(gridLeaves(api)).toEqual([['search'], ['editor'], ['editor:2']]);
     expect(search(api)!.group.api.width).toBe(SIDEBAR_DEFAULT_WIDTH);
+  });
+});
+
+// 第五十二轮审计 A3 / B:侧栏组保持自身宽度(VSCode 侧栏 LayoutPriority.Low,最小宽 170;编辑区先缩到 220)
+describe('搜索组保持自身宽度', () => {
+  /** 等 dockview 的布局变化事件(微任务合并派发)与校正后的再一轮。 */
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 3; i += 1) await new Promise((r) => setTimeout(r, 0));
+  };
+  const width = (api: DockviewApi): number => search(api)!.group.api.width;
+
+  it('主窗只剩搜索组时新开面板 → 在它右侧新建组,搜索组仍是原来的宽(不被劈成一半)', async () => {
+    const { api } = dockWith('editor');
+    await findInFiles();
+    await settle();
+    api.getPanel('editor')!.api.close();
+    await vi.waitFor(() => expect(api.getPanel('editor')).toBeUndefined());
+    await settle();
+    api.addPanel({ id: 'terminal-1', component: 'terminal', title: 'terminal-1', position: mainWindowAddPosition(api) });
+    await settle();
+    expect(gridLeaves(api)).toEqual([['search'], ['terminal-1']]);
+    expect(width(api)).toBe(SIDEBAR_DEFAULT_WIDTH);
+  });
+
+  it('窗口缩放 → 搜索组宽不变,编辑区吸收;变窄时编辑区先缩到 220,之后搜索组才缩,最窄 170;放宽后回到原宽', async () => {
+    const { dock, api } = dockWith('editor');
+    await findInFiles();
+    await settle();
+    expect(search(api)!.group.minimumWidth).toBe(SIDE_PANEL_MIN_WIDTH);
+    for (const [w, expected] of [
+      [720, SIDEBAR_DEFAULT_WIDTH],
+      [1600, SIDEBAR_DEFAULT_WIDTH],
+      [420, 200],
+      [300, SIDE_PANEL_MIN_WIDTH],
+      [1200, SIDEBAR_DEFAULT_WIDTH],
+    ] as const) {
+      dock.layout(w, 800);
+      await settle();
+      expect(width(api), `dock ${w}`).toBe(expected);
+    }
+  });
+
+  it('用户拖分隔条改的宽被记住,之后窗口缩放 / 增删组都保持它', async () => {
+    const { dock, api } = dockWith('editor');
+    await findInFiles();
+    await settle();
+    search(api)!.group.api.setSize({ width: 360 });
+    await settle();
+    dock.layout(900, 800);
+    await settle();
+    expect(width(api)).toBe(360);
+    api.addPanel({ id: 'editor:2', component: 'editor', title: 'editor:2', position: { referenceGroup: api.getPanel('editor')!.group, direction: 'right' } });
+    await settle();
+    expect(width(api)).toBe(360);
   });
 });

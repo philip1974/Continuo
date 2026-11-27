@@ -98,3 +98,31 @@ test('用户把搜索拖进编辑器组 → 重启后仍在编辑器组,再按 �
   await expect(main.getByRole('textbox', { name: QUERY })).toBeFocused({ timeout: 10_000 });
   await expect(main.locator('.dv-groupview')).toHaveCount(1);
 });
+
+// 第五十二轮审计 A3 / B:侧栏组保持自身宽度 —— 主窗只剩搜索组时新开文件不把它撑到一半宽;窗口缩放时编辑区先让位,
+// 搜索组最窄 170,选项按钮不被面板右边界裁掉
+test('主窗只剩搜索组时打开文件 → 搜索组仍约 280 宽;窗口变窄 / 放宽时编辑区先让位,搜索组最窄 170、按钮不被裁', async () => {
+  test.setTimeout(120_000);
+  const { app, main } = await launch();
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(1400, 900));
+  await openWorkspaceFile(main, ['a.ts']);
+  await main.keyboard.press('ControlOrMeta+Shift+KeyF');
+  await expect(main.getByRole('textbox', { name: QUERY })).toBeFocused({ timeout: 10_000 });
+  const searchWidth = async () => (await groupOf(main, SEARCH_PANEL).boundingBox())!.width;
+  await expect.poll(searchWidth).toBeCloseTo(280, -1);
+  // 关掉编辑器面板,只剩搜索组;再从资源管理器打开文件
+  await main.getByRole('button', { name: /^(关闭 (编辑器|Editor)|Close (编辑器|Editor)|(편집기|Editor) 닫기)$/ }).first().click();
+  await expect(main.locator('[data-editor-panel-root]')).toHaveCount(0, { timeout: 10_000 });
+  await openWorkspaceFile(main, ['b.ts']);
+  await expect(main.locator('.dv-groupview')).toHaveCount(2);
+  await expect.poll(searchWidth).toBeCloseTo(280, -1);
+  // 窗口变窄:编辑区先缩,搜索组随后缩到不小于 170;「切换搜索详细信息」按钮整个在面板内
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(720, 900));
+  await expect.poll(searchWidth).toBeGreaterThanOrEqual(169);
+  const group = (await groupOf(main, SEARCH_PANEL).boundingBox())!;
+  const details = (await main.getByRole('button', { name: /^(切换搜索详细信息|Toggle Search Details|검색 세부 정보 설정\/해제)$/ }).boundingBox())!;
+  expect(details.x + details.width).toBeLessThanOrEqual(group.x + group.width + 0.5);
+  // 放宽后回到原宽,不随窗口按比例变化
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(1600, 900));
+  await expect.poll(searchWidth).toBeCloseTo(280, -1);
+});

@@ -253,7 +253,8 @@ export function SearchPanel() {
   return (
     <div className="flex h-full w-full min-w-0 flex-col bg-canvas text-fg" data-testid="search-panel" onKeyDown={onViewKeyDown}>
       <div className="flex flex-col gap-1.5 border-b border-line p-2">
-        <div className="flex min-w-0 items-center gap-1">
+        {/* 窄宽(侧栏最窄 170)时选项按钮换到下一行靠右,不被面板右边界裁掉 */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           <Input
             ref={inputRef}
             size="sm"
@@ -264,23 +265,25 @@ export function SearchPanel() {
             aria-label={t('panels.search.query_label')}
             aria-invalid={regexError ? true : undefined}
             title={regexError ?? undefined}
-            className="min-w-0 flex-1"
+            className="min-w-24 flex-1"
           />
-          {/* 选项 toggle 组与终端 / Markdown 查找条共用(Aa / ab / .*) */}
-          <FindOptionToggles
-            values={{ caseSensitive: s.matchCase, wholeWord: s.wholeWord, regex: s.isRegex }}
-            onToggle={(option) => actions.toggleOption(STORE_OPTION[option])}
-          />
-          <IconButton
-            size="xs"
-            aria-label={t('panels.search.toggle_details')}
-            title={t('panels.search.toggle_details')}
-            aria-expanded={s.detailsOpen}
-            onClick={actions.toggleDetails}
-            className="shrink-0"
-          >
-            {DETAILS_ICON}
-          </IconButton>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {/* 选项 toggle 组与终端 / Markdown 查找条共用(Aa / ab / .*) */}
+            <FindOptionToggles
+              values={{ caseSensitive: s.matchCase, wholeWord: s.wholeWord, regex: s.isRegex }}
+              onToggle={(option) => actions.toggleOption(STORE_OPTION[option])}
+            />
+            <IconButton
+              size="xs"
+              aria-label={t('panels.search.toggle_details')}
+              title={t('panels.search.toggle_details')}
+              aria-expanded={s.detailsOpen}
+              onClick={actions.toggleDetails}
+              className="shrink-0"
+            >
+              {DETAILS_ICON}
+            </IconButton>
+          </div>
         </div>
         {s.detailsOpen && (
           <>
