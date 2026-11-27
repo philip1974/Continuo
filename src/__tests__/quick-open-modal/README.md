@@ -1,8 +1,8 @@
 # QuickOpenModal(VSCode ⌘P 文件搜索)
 
 行为契约:**isOpen=true 时弹 Modal,展示搜索框 + 文件列表;打开/root 切换时异步 walk 工作区。
-query 输入用 fuzzyFilter(relPath)过滤;ArrowUp/Down 移 selectedIndex,Enter 调
-openFileByPath + close。无 root 显「请先在 Explorer 打开工作区」;扫描中显 spinner;
+query 输入用 VSCode 文件打分过滤排序(文件名优先、空格拆段,见 `quick-open-fuzzy-score`);ArrowUp/Down 移 selectedIndex,Enter 调
+openFileByPath + close(⌘Enter / ⌥Enter 在侧边打开,见 `open-to-side-from-pickers`)。无 root 显「请先在 Explorer 打开工作区」;扫描中显 spinner;
 列表为空显「工作区无文件」/「无匹配文件」。候选扫描达上限(`QUICK_OPEN_MAX_FILES` = 50000)被截断 → 底部截断提示
 「只搜索了前 N 个文件」(有结果与无匹配时都显示)。**
 
@@ -13,7 +13,7 @@ openFileByPath + close。无 root 显「请先在 Explorer 打开工作区」;�
 | `src/plugins/quick-open/QuickOpenModal.tsx` | UI |
 | `src/plugins/quick-open/store.ts` | isOpen/query/selectedIndex/results/loading |
 | `src/plugins/quick-open/walk-files.ts` | walk(已测) |
-| `src/plugins/command-palette/fuzzy.ts` | fuzzyFilter(已测) |
+| `src/plugins/quick-open/quick-open-filter.ts` | 打分排序(`src/lib/fuzzy-scorer.ts`,见 quick-open-fuzzy-score) |
 
 ## 关键行为
 

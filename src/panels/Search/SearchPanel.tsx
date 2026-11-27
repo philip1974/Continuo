@@ -16,7 +16,9 @@ import { localizeErrorByCode } from '@/lib/localize-error';
 import { regexSyntaxError } from '@/lib/search-query';
 import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
-import { ChevronDownIcon, MoreActionsIcon } from '@/lib/ui-icons';
+import { ChevronDownIcon, ExcludeIcon, MoreActionsIcon } from '@/lib/ui-icons';
+import { matchesHotkey } from '@/plugins/command-palette/useCommandHotkeys';
+import { OPEN_TO_SIDE_HOTKEY } from '@/panels/Explorer/tree-keyboard';
 import { PICKER_MATCH_CLASS_NAME, pickerRowClassName, pickerRowSecondaryClassName } from '@/plugins/picker/picker-row';
 import { isVirtualIndexRendered } from '@/plugins/picker/use-picker-list';
 import { measurePageNavGeometry, pageNavTarget } from '@/lib/list-page-nav';
@@ -30,6 +32,7 @@ import {
   dismissSearchResult,
   matchRowKey,
   openSearchMatch,
+  openSearchMatchToSide,
   rerunSearch,
   useSearchStore,
   type SearchRowKey,
@@ -45,6 +48,7 @@ const STORE_OPTION: Readonly<Record<FindOption, 'matchCase' | 'wholeWord' | 'isR
 };
 const CHEVRON_ICON = <ChevronDownIcon size={14} />;
 const DETAILS_ICON = <MoreActionsIcon size={14} />;
+const EXCLUDE_ICON = <ExcludeIcon size={14} />;
 const PRE_STYLE = { whiteSpace: 'pre' } as const;
 
 type Row =
@@ -77,6 +81,7 @@ export function SearchPanel() {
       wholeWord: st.wholeWord,
       include: st.include,
       exclude: st.exclude,
+      useExcludesAndIgnoreFiles: st.useExcludesAndIgnoreFiles,
       detailsOpen: st.detailsOpen,
       status: st.status,
       files: st.files,
@@ -185,7 +190,9 @@ export function SearchPanel() {
       case ' ':
         e.preventDefault();
         actions.setActiveKey(row.key);
-        activate(row);
+        // 在侧边打开(VSCode search.action.openResultToSide:mac ⌃Enter、其它 Ctrl+Enter;只对匹配行)
+        if (row.kind === 'match' && matchesHotkey(OPEN_TO_SIDE_HOTKEY, e.nativeEvent)) void openSearchMatchToSide(row.file, row.index);
+        else activate(row);
         return;
     }
   };
@@ -295,14 +302,28 @@ export function SearchPanel() {
               aria-label={t('panels.search.include_label')}
               title={t('panels.search.include_placeholder')}
             />
-            <Input
-              size="sm"
-              value={s.exclude}
-              onChange={(e) => actions.setExclude(e.target.value)}
-              placeholder={t('panels.search.exclude_placeholder')}
-              aria-label={t('panels.search.exclude_label')}
-              title={t('panels.search.exclude_placeholder')}
-            />
+            {/* VSCode 排除框内的「使用排除设置与忽略文件」开关(默认开;关 → 本次搜索不用构建产物排除表与 .gitignore / .ignore) */}
+            <div className="flex min-w-0 items-center gap-1">
+              <Input
+                size="sm"
+                value={s.exclude}
+                onChange={(e) => actions.setExclude(e.target.value)}
+                placeholder={t('panels.search.exclude_placeholder')}
+                aria-label={t('panels.search.exclude_label')}
+                title={t('panels.search.exclude_placeholder')}
+                className="min-w-0 flex-1"
+              />
+              <IconButton
+                size="xs"
+                aria-label={t('panels.search.use_excludes_and_ignore_files')}
+                title={t('panels.search.use_excludes_and_ignore_files')}
+                aria-pressed={s.useExcludesAndIgnoreFiles}
+                onClick={actions.toggleUseExcludesAndIgnoreFiles}
+                className="shrink-0"
+              >
+                {EXCLUDE_ICON}
+              </IconButton>
+            </div>
           </>
         )}
         <div
@@ -405,13 +426,16 @@ export function SearchPanel() {
                 >
                   {/* 预览用 UI 比例字体(VSCode .linematch 不设 font-family,继承工作台字体)。命中前文已按词边界截短
                       (workspace-search previewBefore);行仍放不下时先截后文(收缩权重大)、再从左侧截前文(TruncateStart,
-                      省略号在左),命中词始终可见,过长的命中自身在末尾截断。white-space 用内联样式保留行内连续空白。 */}
+                      省略号在左),命中词始终可见,过长的命中自身在末尾截断。三段都保留空白(white-space: pre):后文 / 命中
+                      不用 truncate(它的 nowrap 会合并空格);前文的 Tab 与行尾空白由 TruncateStart 处理(rtl 截断下的双向重排)。 */}
                   <span className="flex min-w-0 whitespace-pre" data-search-preview="">
                     <TruncateStart text={m.preview.slice(0, m.previewStart)} title={m.preview} style={PRE_STYLE} data-preview-before="" />
-                    <mark className={`${PICKER_MATCH_CLASS_NAME} max-w-full shrink-0 truncate`}>
+                    <mark className={`${PICKER_MATCH_CLASS_NAME} max-w-full shrink-0 overflow-hidden text-ellipsis whitespace-pre`}>
                       {m.preview.slice(m.previewStart, m.previewStart + m.previewLength)}
                     </mark>
-                    <span className="min-w-0 shrink-[1000] truncate">{m.preview.slice(m.previewStart + m.previewLength)}</span>
+                    <span className="min-w-0 shrink-[1000] overflow-hidden text-ellipsis whitespace-pre">
+                      {m.preview.slice(m.previewStart + m.previewLength)}
+                    </span>
                   </span>
                 </div>
               );

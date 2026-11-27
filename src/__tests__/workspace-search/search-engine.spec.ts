@@ -76,6 +76,16 @@ describe('排除规则与跳过的文件', () => {
     expect([...summary.skippedLargePaths].sort()).toEqual([path.join(root, 'big.txt'), path.join(root, 'sub/big.log')].sort());
   });
 
+  // VSCode / ripgrep:二进制文件静默跳过,不出现在「已跳过的大文件」提示里(第五十三轮:1 MiB 以上的二进制被计入)
+  it('超过 1 MiB 的二进制(开头含 NUL)静默跳过、不计入大文件;带 UTF-16 BOM 的大文件仍计入', async () => {
+    write('big.bin', Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00]), Buffer.alloc(SEARCH_MAX_FILE_BYTES, 0x41)]));
+    write('big-utf16.txt', Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('needle\n'.repeat(80_000), 'utf16le')]));
+    write('big.txt', `needle\n${'x'.repeat(SEARCH_MAX_FILE_BYTES)}`);
+    const { summary } = await search(query('needle'));
+    expect(summary.skippedLargeCount).toBe(2);
+    expect([...summary.skippedLargePaths].sort()).toEqual([path.join(root, 'big-utf16.txt'), path.join(root, 'big.txt')].sort());
+  });
+
   it.skipIf(process.platform === 'win32')('符号链接与 FIFO 不搜(不跟随链接、不读非普通文件)', async () => {
     write('real/a.txt', 'needle');
     const outside = mkdtempSync(path.join(tmpdir(), 'ws-search-out-'));

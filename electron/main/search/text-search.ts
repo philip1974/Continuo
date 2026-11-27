@@ -1,16 +1,17 @@
 // 工作区文本搜索引擎(在文件中查找,对齐 VSCode Search):在 worker 线程里运行(text-search.worker.ts),也可直接调用(单测)。
-// 枚举复用 fs:list-dir 的 walker 与 Quick Open 同一排除表;逐文件有界读(≤ 1 MiB、只读普通文件、含 NUL 视作二进制;带 BOM 的
+// 枚举复用 fs:list-dir 的 walker 与 Quick Open 同一排除表,并遵从工作区内的 .gitignore / .ignore(VSCode search.useIgnoreFiles);逐文件有界读(≤ 1 MiB、只读普通文件、含 NUL 视作二进制;带 BOM 的
 // UTF-8 / UTF-16 LE / BE 按 BOM 可逆解码、BOM 不计入列号(VSCode 默认 files.encoding=utf8 时 ripgrep 按 BOM 嗅探);
 // 无 BOM 的须是合法 UTF-8,GBK 等不猜编码、跳过),
 // 逐行匹配(matchSearchText,renderer 搜已打开编辑器的内存内容用同一实现),命中文件按时间窗攒批经 onFiles 推出;
-// 因过大跳过的文件计数并报告路径(renderer 显示「已跳过 N 个大文件」);读不了的子目录跳过并计数(根读不了才整体失败),
+// 因过大跳过的文件计数并报告路径(renderer 显示「已跳过 N 个大文件」;开头含 NUL 的二进制大文件静默跳过、不计);读不了的子目录跳过并计数(根读不了才整体失败),
 // 单个文件读失败(EACCES / EISDIR / ELOOP / ENAMETOOLONG 等)静默跳过该文件。BDD: src/__tests__/workspace-search/
 
 import path from 'node:path';
 import { scanDir } from '../ipc/fs/list-dir';
-import { readBytesCappedFd } from '../lib/read-fh-capped';
+import type { FileHandle } from 'node:fs/promises';
+import { openForReadNonBlocking, readBytesCappedFromHandle } from '../lib/read-fh-capped';
 import { decodeTextFile, detectEncodingByBom } from '../lib/text-codec';
-import { LIST_DIR_MAX_DEPTH, WORKSPACE_SCAN_EXCLUDE } from '../../shared/fs-limits';
+import { LIST_DIR_DEFAULT_EXCLUDE, LIST_DIR_MAX_DEPTH, WORKSPACE_SCAN_EXCLUDE } from '../../shared/fs-limits';
 import {
   buildSearchRegExp,
   compileSearchPathFilter,
@@ -59,9 +60,10 @@ export async function runTextSearch(opts: TextSearchOptions): Promise<TextSearch
 
   const { entries, skippedDirs: skippedUnreadableDirs } = await scanDir(root, {
     maxDepth: LIST_DIR_MAX_DEPTH,
-    exclude: WORKSPACE_SCAN_EXCLUDE,
+    exclude: query.disregardExcludeSettings === true ? LIST_DIR_DEFAULT_EXCLUDE : WORKSPACE_SCAN_EXCLUDE,
     maxFiles,
     withStats: false,
+    useIgnoreFiles: query.disregardIgnoreFiles !== true,
   });
   const files: { abs: string; rel: string }[] = [];
   let enumerated = 0;
@@ -132,14 +134,27 @@ const TOO_LARGE: unique symbol = Symbol('too-large');
  * 无 BOM 且非 UTF-8 / BOM 编码不可逆 / 含 NUL / 读失败)→ null。BDD: src/__tests__/workspace-search/(search-bom-encoding.spec.ts)
  */
 async function readSearchableText(abs: string): Promise<string | typeof TOO_LARGE | null> {
+  let fh: FileHandle | undefined;
   try {
-    const r = await readBytesCappedFd(abs, SEARCH_MAX_FILE_BYTES);
-    if (r.bytes === null) return TOO_LARGE;
+    fh = await openForReadNonBlocking(abs);
+    const r = await readBytesCappedFromHandle(fh, abs, SEARCH_MAX_FILE_BYTES);
+    if (r.bytes === null) return (await looksBinary(fh)) ? null : TOO_LARGE;
     const text = decodeSearchable(r.bytes);
     return text === null || text.includes('\0') ? null : text;
   } catch {
     return null;
+  } finally {
+    await fh?.close().catch(() => {});
   }
+}
+
+/** 过大文件先看开头:二进制(无 BOM 且含 NUL,ripgrep / git 同口径)静默跳过,不计入「已跳过的大文件」(VSCode 不提示二进制)。 */
+const BINARY_SNIFF_BYTES = 8192;
+async function looksBinary(fh: FileHandle): Promise<boolean> {
+  const buf = Buffer.alloc(BINARY_SNIFF_BYTES);
+  const { bytesRead } = await fh.read(buf, 0, BINARY_SNIFF_BYTES, 0);
+  const head = buf.subarray(0, bytesRead);
+  return detectEncodingByBom(head) === null && head.includes(0);
 }
 
 /** 带 BOM → 按 BOM 的编码(编辑器打开同一实现);否则严格 UTF-8(无 BOM 的 UTF-16 / GBK 等不猜,同改动前)。 */

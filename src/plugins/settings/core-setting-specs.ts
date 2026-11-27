@@ -515,6 +515,21 @@ export const SEARCH_DECORATIONS_BADGES: CoreSettingSpec<boolean> = {
   priority: 21,
 };
 
+// VSCode search.useIgnoreFiles(默认开):在文件中查找与 Quick Open(⌘P)遵从 .gitignore / .ignore(工作区内各层,不要求是
+// git 仓库;不读工作区之上的)。搜索视图「使用排除设置与忽略文件」关闭时本次搜索不用。BDD: src/__tests__/search-ignore-files/
+export const SEARCH_USE_IGNORE_FILES: CoreSettingSpec<boolean> = {
+  id: 'search.useIgnoreFiles',
+  category: 'explorer',
+  group: 'search',
+  groupKey: 'settings.group.search',
+  title: 'Use ignore files',
+  titleKey: 'settings.search.use_ignore_files',
+  descriptionKey: 'settings.search.use_ignore_files.desc',
+  type: 'boolean',
+  default: true,
+  priority: 22,
+};
+
 // ── 通用(general)────────────────────────────────────────────────────────────
 
 // Record<ThemeMode, …>:新增主题模式漏配选项即编译报错。

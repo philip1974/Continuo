@@ -4,7 +4,7 @@
 // 只读 editor.store 的 state,不改它。BDD: src/__tests__/workspace-search/(search-open-editors.spec.ts)
 
 import { containmentFold, isSameOrInsidePath, stripRootPrefix } from '@/lib/path-cross';
-import { WORKSPACE_SCAN_EXCLUDE } from '../../../electron/shared/fs-limits';
+import { LIST_DIR_DEFAULT_EXCLUDE, WORKSPACE_SCAN_EXCLUDE } from '../../../electron/shared/fs-limits';
 import { isImagePreviewPath } from '../../../electron/shared/image-preview';
 import {
   compileSearchPathFilter,
@@ -31,6 +31,8 @@ export interface OpenEditorSearch {
 }
 
 const EXCLUDED_SEGMENTS: ReadonlySet<string> = new Set(WORKSPACE_SCAN_EXCLUDE);
+// 「使用排除设置与忽略文件」关:只排除版本控制元数据等(同 main 的 LIST_DIR_DEFAULT_EXCLUDE)
+const DEFAULT_EXCLUDED_SEGMENTS: ReadonlySet<string> = new Set(LIST_DIR_DEFAULT_EXCLUDE);
 
 /** 覆盖键:相对工作区根的 `/` 路径,按平台大小写策略折叠(与 main 结果的 relPath 对齐)。 */
 export function searchOverrideKey(relPath: string, fold: (s: string) => string = containmentFold()): string {
@@ -52,6 +54,7 @@ export function searchOpenEditors(
 ): OpenEditorSearch {
   const fold = containmentFold();
   const filter = compileSearchPathFilter(query.include, query.exclude);
+  const excluded = query.disregardExcludeSettings === true ? DEFAULT_EXCLUDED_SEGMENTS : EXCLUDED_SEGMENTS;
   const files: SearchFileResult[] = [];
   const searched = new Set<string>();
   let total = 0;
@@ -61,7 +64,7 @@ export function searchOpenEditors(
     if (isImagePreviewPath(doc.filePath)) continue; // 图片 tab 的 content 是磁盘指纹,不是文本
     const rel = searchRelPath(root, doc.filePath);
     if (rel === null) continue;
-    if (rel.split('/').some((seg) => EXCLUDED_SEGMENTS.has(seg))) continue; // 同 main 的工作区排除表
+    if (rel.split('/').some((seg) => excluded.has(seg))) continue; // 同 main 的工作区排除表(已打开的被忽略文件照常搜,VSCode 同)
     if (filter !== null && !filter(rel)) continue;
     const key = searchOverrideKey(rel, fold);
     if (searched.has(key)) continue;

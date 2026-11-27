@@ -933,6 +933,7 @@ export async function initExplorerPersistence(
       s.wholeWord !== prev.wholeWord ||
       s.include !== prev.include ||
       s.exclude !== prev.exclude ||
+      s.useExcludesAndIgnoreFiles !== prev.useExcludesAndIgnoreFiles ||
       s.detailsOpen !== prev.detailsOpen
     ) {
       markDirtyAndPersist();

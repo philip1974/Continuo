@@ -18,5 +18,7 @@ export const ListDirOptionsSchema = z
     maxFiles: z.number().int().positive().max(LIST_DIR_TOTAL_ENTRIES_MAX).optional(),
     // 性能:false 时不 lstat、不回传 size/mtime/ctime(Quick Open 用)。见 ListDirOptions.withStats。
     withStats: z.boolean().optional(),
+    // 递归扫描遵从 .gitignore / .ignore(Quick Open,VSCode search.useIgnoreFiles)。见 ListDirOptions.useIgnoreFiles。
+    useIgnoreFiles: z.boolean().optional(),
   })
   .strict();

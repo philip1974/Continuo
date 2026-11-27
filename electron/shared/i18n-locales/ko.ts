@@ -438,6 +438,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.editor.decorations_badges': '장식 배지',
   'settings.search.decorations_colors': '검색 결과 장식 색상',
   'settings.search.decorations_badges': '검색 결과 장식 배지',
+  'settings.search.use_ignore_files': '무시 파일 사용',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': '이 카테고리에 설정이 없습니다',
@@ -479,6 +480,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.editor.decorations_badges.desc': '편집기 탭 제목 뒤에 Git 상태 문자(M / U / A 등)를 표시합니다.',
   'settings.search.decorations_colors.desc': 'Git 상태에 따라 검색 결과의 파일 이름에 색을 입힙니다.',
   'settings.search.decorations_badges.desc': '검색 결과의 파일 이름 옆에 Git 상태 문자(M / U / A 등)를 표시합니다.',
+  'settings.search.use_ignore_files.desc': '파일에서 찾기와 빠른 열기 시 작업 영역의 .gitignore 및 .ignore 파일과 일치하는 파일과 폴더를 건너뜁니다.',
 
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
@@ -1237,6 +1239,7 @@ export const ko: Record<TranslationKey, string> = {
   'panels.search.include_placeholder': '포함할 파일(예: *.ts, src/**/include)',
   'panels.search.exclude_label': '제외할 파일',
   'panels.search.exclude_placeholder': '제외할 파일(예: *.ts, src/**/exclude)',
+  'panels.search.use_excludes_and_ignore_files': '제외 설정 및 무시 파일 사용',
   'panels.search.results_label': '검색 결과',
   'panels.search.searching': '검색 중…',
   'panels.search.no_results': '결과 없음',

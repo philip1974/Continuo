@@ -12,6 +12,7 @@ import { create } from 'zustand';
 import { coApi } from '@/lib/co-api';
 import { clampSearchQuery, regexSyntaxError } from '@/lib/search-query';
 import { openFileInEditor } from '@/plugins/co-app';
+import { takeSideEditorGroup } from '@/shell/dock/explorer-editor-drop';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { onEditorPathChange, useEditorStore } from '@/stores/editor.store';
@@ -27,6 +28,13 @@ import {
   type SearchQuery,
 } from '../../../electron/shared/workspace-search';
 import type { PersistedSearchInput } from '../../../electron/shared/explorer-persistence-schema';
+import { getStoredSettingValue } from '@/plugins/settings/values-store';
+import { SEARCH_USE_IGNORE_FILES } from '@/plugins/settings/core-setting-specs';
+
+/** 设置 search.useIgnoreFiles(发起搜索时读;未存值 → 默认开)。 */
+function ignoreFilesSettingOn(): boolean {
+  return (getStoredSettingValue(SEARCH_USE_IGNORE_FILES.id) ?? SEARCH_USE_IGNORE_FILES.default) !== false;
+}
 
 export const SEARCH_DEBOUNCE_MS = 300;
 
@@ -43,6 +51,8 @@ interface SearchState {
   readonly wholeWord: boolean;
   readonly include: string;
   readonly exclude: string;
+  /** 「使用排除设置与忽略文件」(VSCode 排除框内的开关,默认开):关 → 不用工作区排除表的构建产物目录与 .gitignore / .ignore。 */
+  readonly useExcludesAndIgnoreFiles: boolean;
   readonly detailsOpen: boolean;
   readonly status: SearchStatus;
   readonly files: readonly SearchFileResult[];
@@ -65,6 +75,7 @@ interface SearchState {
   toggleOption(option: 'isRegex' | 'matchCase' | 'wholeWord'): void;
   setInclude(include: string): void;
   setExclude(exclude: string): void;
+  toggleUseExcludesAndIgnoreFiles(): void;
   toggleDetails(): void;
   toggleCollapsed(path: string, collapsed?: boolean): void;
   setActiveKey(key: SearchRowKey | null): void;
@@ -81,6 +92,7 @@ const INITIAL = {
   wholeWord: false,
   include: '',
   exclude: '',
+  useExcludesAndIgnoreFiles: true,
   detailsOpen: false,
   status: 'idle' as SearchStatus,
   files: [] as readonly SearchFileResult[],
@@ -121,6 +133,10 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   },
   setExclude: (exclude) => {
     set({ exclude: exclude.slice(0, SEARCH_GLOB_MAX) });
+    schedule();
+  },
+  toggleUseExcludesAndIgnoreFiles: () => {
+    set((s) => ({ useExcludesAndIgnoreFiles: !s.useExcludesAndIgnoreFiles }));
     schedule();
   },
   toggleDetails: () => set((s) => ({ detailsOpen: !s.detailsOpen })),
@@ -206,6 +222,9 @@ function run(): void {
     wholeWord: s.wholeWord,
     include: s.include,
     exclude: s.exclude,
+    // VSCode QueryBuilder:disregardIgnoreFiles = !useExcludesAndIgnoreFiles || !search.useIgnoreFiles
+    ...(!s.useExcludesAndIgnoreFiles || !ignoreFilesSettingOn() ? { disregardIgnoreFiles: true } : null),
+    ...(s.useExcludesAndIgnoreFiles ? null : { disregardExcludeSettings: true }),
   };
   // 已打开编辑器:内存内容上先搜(只读 editor.store),结果先显示;main 推来的同一文件结果在 applyEvent 里丢弃。
   const local = searchOpenEditors(useEditorStore.getState().tabs, root, query, buildSearchRegExp(query));
@@ -360,16 +379,26 @@ export function rerunSearch(): void {
 
 /**
  * 打开某个匹配并选中它(失败统一提示;列 / 长度均为 UTF-16,与编辑器同一单位)。preview:单击 / F4 以预览方式打开(VSCode;
- * 双击 / Enter 常驻,BDD: src/__tests__/editor-preview-tab/)。
+ * 双击 / Enter 常驻,BDD: src/__tests__/editor-preview-tab/)。groupId:打开到该编辑器组(在侧边打开,见 openSearchMatchToSide)。
  */
-export function openSearchMatch(file: SearchFileResult, index: number, preview = false): Promise<boolean> {
+export function openSearchMatch(file: SearchFileResult, index: number, preview = false, groupId?: string): Promise<boolean> {
   const m = file.matches[index];
   if (!m) return Promise.resolve(false);
   const name = file.relPath.slice(file.relPath.lastIndexOf('/') + 1) || file.relPath;
+  const openOpts = groupId === undefined ? { preview } : { preview, groupId };
   return openFileOrNotify(
-    () => openFileInEditor(file.path, { line: m.line, column: m.column, length: m.length }, { preview }),
+    () => openFileInEditor(file.path, { line: m.line, column: m.column, length: m.length }, openOpts),
     name,
   );
+}
+
+/**
+ * 在侧边打开匹配(VSCode search.action.openResultToSide,mac ⌃Enter、其它 Ctrl+Enter:常驻、侧边组获焦;右边没有编辑器组就
+ * 向右拆出新组)。BDD: src/__tests__/open-to-side-from-pickers/
+ */
+export function openSearchMatchToSide(file: SearchFileResult, index: number): Promise<boolean> {
+  if (!file.matches[index]) return Promise.resolve(false);
+  return openSearchMatch(file, index, false, takeSideEditorGroup());
 }
 
 /**
@@ -396,7 +425,16 @@ export async function focusNextSearchResult(delta: 1 | -1): Promise<void> {
 /** 持久化的搜索输入(只含非默认项;全部默认 → null,窗口段不写该字段)。 */
 export function searchInputSnapshot(): PersistedSearchInput | null {
   const s = useSearchStore.getState();
-  if (s.pattern === '' && !s.isRegex && !s.matchCase && !s.wholeWord && s.include === '' && s.exclude === '' && !s.detailsOpen) {
+  if (
+    s.pattern === '' &&
+    !s.isRegex &&
+    !s.matchCase &&
+    !s.wholeWord &&
+    s.include === '' &&
+    s.exclude === '' &&
+    s.useExcludesAndIgnoreFiles &&
+    !s.detailsOpen
+  ) {
     return null;
   }
   return {
@@ -406,6 +444,7 @@ export function searchInputSnapshot(): PersistedSearchInput | null {
     ...(s.wholeWord ? { wholeWord: true } : null),
     ...(s.include === '' ? null : { include: s.include }),
     ...(s.exclude === '' ? null : { exclude: s.exclude }),
+    ...(s.useExcludesAndIgnoreFiles ? null : { useExcludesAndIgnoreFiles: false }),
     ...(s.detailsOpen ? { detailsOpen: true } : null),
   };
 }
@@ -420,6 +459,7 @@ export function restoreSearchInput(input: PersistedSearchInput | undefined): voi
     wholeWord: input.wholeWord === true,
     include: (input.include ?? '').slice(0, SEARCH_GLOB_MAX),
     exclude: (input.exclude ?? '').slice(0, SEARCH_GLOB_MAX),
+    useExcludesAndIgnoreFiles: input.useExcludesAndIgnoreFiles !== false,
     detailsOpen: input.detailsOpen === true,
   });
 }

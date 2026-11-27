@@ -140,16 +140,31 @@ function restoreActiveEditorGroup(groupId: string): void {
  */
 export async function openFilesToSide(paths: readonly string[], opts: OpenInGroupOptions = {}): Promise<void> {
   if (paths.length === 0) return;
+  const side = sideTarget();
+  await openDroppedFiles(paths, side?.groupId, side?.direction, opts);
+}
+
+/** 侧边组:源组右侧紧挨着的编辑器组;没有 → 在源组右侧拆分(direction)。dock 未就绪 / 没有源组 → undefined。 */
+function sideTarget(): { readonly groupId: string; readonly direction?: 'right' } | undefined {
   const api = getDockApi();
   const source = commandEditorGroupId();
   const sourcePanel = source === undefined ? undefined : api?.getPanel(source);
-  if (!api || source === undefined || !sourcePanel) {
-    await openDroppedFiles(paths, undefined, undefined, opts);
-    return;
-  }
+  if (!api || source === undefined || !sourcePanel) return undefined;
   const side = editorGroupIdOfDockGroup(rightNeighborGroup(api, sourcePanel.group));
-  if (side !== undefined) await openDroppedFiles(paths, side, undefined, opts);
-  else await openDroppedFiles(paths, source, 'right', opts);
+  return side !== undefined ? { groupId: side } : { groupId: source, direction: 'right' };
+}
+
+/**
+ * 「在侧边打开」的目标编辑器组 id(Quick Open ⌘Enter / 搜索结果 ⌃Enter 等自行打开的入口;规则同 openFilesToSide):右边没有
+ * 编辑器组就先向右拆出新组。调用方把它作为 OpenFileOptions.groupId 打开(该组随之成为活动组)。dock 未就绪 / 没有源组 →
+ * undefined(按普通方式在活动组打开)。
+ */
+export function takeSideEditorGroup(): string | undefined {
+  const side = sideTarget();
+  if (side === undefined || side.direction === undefined) return side?.groupId;
+  return splitEditor(side.direction, { groupId: side.groupId, tabId: null })
+    ? useEditorStore.getState().activeGroupId
+    : side.groupId;
 }
 
 export type OpenDroppedFiles = (paths: readonly string[], groupId: string, direction?: SplitDirection) => unknown;

@@ -437,6 +437,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.editor.decorations_badges': '装饰徽标',
   'settings.search.decorations_colors': '搜索结果装饰颜色',
   'settings.search.decorations_badges': '搜索结果装饰徽标',
+  'settings.search.use_ignore_files': '使用忽略文件',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': '本类暂无设置项',
@@ -478,6 +479,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.editor.decorations_badges.desc': '在编辑器标签标题后显示 Git 状态字母（M / U / A 等）。',
   'settings.search.decorations_colors.desc': '按 Git 状态为搜索结果中的文件名着色。',
   'settings.search.decorations_badges.desc': '在搜索结果的文件名旁显示 Git 状态字母（M / U / A 等）。',
+  'settings.search.use_ignore_files.desc': '在文件中查找与快速打开时，跳过工作区中 .gitignore 与 .ignore 文件匹配的文件和文件夹。',
 
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
@@ -1230,6 +1232,7 @@ export const zh: Record<TranslationKey, string> = {
   'panels.search.include_placeholder': '包含的文件（例如 *.ts, src/**/include）',
   'panels.search.exclude_label': '排除的文件',
   'panels.search.exclude_placeholder': '排除的文件（例如 *.ts, src/**/exclude）',
+  'panels.search.use_excludes_and_ignore_files': '使用「排除设置」与「忽略文件」',
   'panels.search.results_label': '搜索结果',
   'panels.search.searching': '正在搜索…',
   'panels.search.no_results': '未找到结果',

@@ -135,6 +135,9 @@ importers:
       iconv-lite:
         specifier: ^0.7.3
         version: 0.7.3
+      ignore:
+        specifier: ^7.0.5
+        version: 7.0.5
       katex:
         specifier: ^0.19.1
         version: 0.19.1

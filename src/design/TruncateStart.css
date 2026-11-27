@@ -12,3 +12,8 @@
 .wm-truncate-start > [dir="ltr"] {
   unicode-bidi: isolate;
 }
+
+/* 行尾空白在 rtl 段落里会被双向算法 L1 重置成 rtl、挪到行首;末尾补一个 LRM(强 ltr)让空白不再处在行尾(见 TruncateStart.tsx) */
+.wm-truncate-start > [dir="ltr"]::after {
+  content: "\200E";
+}

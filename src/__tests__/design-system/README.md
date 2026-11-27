@@ -70,6 +70,8 @@
 - `TruncateStart`(路径等尾部更重要的单行文本):外层 `direction: rtl` + `text-overflow: ellipsis` + `text-align: left`,
   溢出从行首截断、省略号在左;文本在 `dir="ltr"` 内层(`unicode-bidi: isolate`),开头的 `/` 等中性标点不被重排;
   完整文本默认进 `title`;可选 `children` 替换内层的富文本渲染(须是同样的字符,如搜索命中 `<mark>`),`title` 仍取 `text`
+  双向算法 L1 会把行尾空白与 Tab(段分隔符)重置成 rtl 层级(isolate 挡不住,搜索预览前文 `x = ` 的空格跑到行首、`foo\tbar`
+  两段对调):内层末尾由 CSS 生成 LRM(`::after { content: "\200E" }`),`text` 里的 Tab 按 8 列制表位展开成空格(`children` 由调用方负责)
 - `EmptyState`(面板 / 区块空态):占满可用空间(`flex: 1 1 auto`)并居中,`on-surface-variant` 正文色,无边框
 - `Tabs`(面板内竖向视图切换):选中项与设置页导航同一样式 —— 左侧 2px `primary` 竖条 + `surface-container-high` 底,
   不用填充描边药丸

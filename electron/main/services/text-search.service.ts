@@ -97,6 +97,8 @@ export const searchStartInputSchema = z
         wholeWord: z.boolean(),
         include: z.string().max(SEARCH_GLOB_MAX),
         exclude: z.string().max(SEARCH_GLOB_MAX),
+        disregardIgnoreFiles: z.boolean().optional(),
+        disregardExcludeSettings: z.boolean().optional(),
       })
       .strict(),
   })

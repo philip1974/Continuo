@@ -37,6 +37,7 @@ export type ListDirFn = (
     exclude?: readonly string[];
     maxFiles?: number;
     withStats?: boolean;
+    useIgnoreFiles?: boolean;
   },
 ) => Promise<IpcResult<FsScanFilesData>>;
 
@@ -48,6 +49,8 @@ export interface WalkOptions {
   readonly maxFiles?: number;
   /** 追加到 FULL_EXCLUDE 后面的额外 ignore basename. */
   readonly extraExclude?: readonly string[];
+  /** 遵从工作区内的 .gitignore / .ignore(VSCode search.useIgnoreFiles,Quick Open 同样遵从);缺省 false。 */
+  readonly useIgnoreFiles?: boolean;
 }
 
 /** data = 候选文件;skippedDirs = 扫描时因无法读取(无权限 / 路径超长等)整棵跳过的子目录数(缺省 0)。 */
@@ -80,6 +83,7 @@ export async function walkWorkspaceFiles(
     maxFiles,
     // 性能:只用 path/name/isDirectory,不要 size/mtime/ctime → main 免逐项 lstat。
     withStats: false,
+    ...(opts.useIgnoreFiles === true && { useIgnoreFiles: true }),
   });
   if (!r.ok) return r;
   const { entries, skippedDirs } = r.data;

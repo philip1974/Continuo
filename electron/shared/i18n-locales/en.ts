@@ -452,6 +452,7 @@ export const en = {
   'settings.editor.decorations_badges': 'Decoration badges',
   'settings.search.decorations_colors': 'Search result decoration colors',
   'settings.search.decorations_badges': 'Search result decoration badges',
+  'settings.search.use_ignore_files': 'Use ignore files',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': 'No settings in this category',
@@ -493,6 +494,7 @@ export const en = {
   'settings.editor.decorations_badges.desc': 'Show a Git status letter (M / U / A …) after editor tab titles.',
   'settings.search.decorations_colors.desc': 'Color file names in search results by their Git status.',
   'settings.search.decorations_badges.desc': 'Show a Git status letter (M / U / A …) next to file names in search results.',
+  'settings.search.use_ignore_files.desc': 'When searching files and in Go to File (Quick Open), skip files and folders matched by .gitignore and .ignore files in the workspace.',
 
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
@@ -1278,6 +1280,7 @@ export const en = {
   'panels.search.include_placeholder': 'files to include (e.g. *.ts, src/**/include)',
   'panels.search.exclude_label': 'files to exclude',
   'panels.search.exclude_placeholder': 'files to exclude (e.g. *.ts, src/**/exclude)',
+  'panels.search.use_excludes_and_ignore_files': 'Use Exclude Settings and Ignore Files',
   'panels.search.results_label': 'Search results',
   'panels.search.searching': 'Searching…',
   'panels.search.no_results': 'No results found',

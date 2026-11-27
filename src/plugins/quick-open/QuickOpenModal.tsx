@@ -3,8 +3,9 @@
 // 数据流:
 //   挂载(= 打开,body 只在打开时挂载)或 root / reloadToken 变化 → walkWorkspaceFiles →
 //   setLoading(true) → 拿到 files → setResults(files, root) + setLoading(false)
-//   query 变 → fuzzyFilter(results) → 渲染列表
-//   Enter → openFileByPath(absPath) + close()
+//   query 变 → filterQuickOpenFiles(results):VSCode 文件打分(文件名优先、空格拆段,见 quick-open-filter)→ 渲染列表
+//   Enter → openFileByPath(absPath) + close();⌘Enter / ⌥Enter(Windows / Linux Ctrl+Enter / Alt+Enter)→ 在侧边打开
+//   (VSCode anythingQuickAccess SIDE_GROUP;`文件:行` 同样跳行)。BDD: src/__tests__/open-to-side-from-pickers/
 //   最近打开(VSCode 编辑器历史):空查询时本工作区最近打开的文件排最前、首行标「最近打开」;有查询时同分优先。
 //   BDD: src/__tests__/quick-open-recent/
 //   转到行 / 列:查询以 `:` 开头(⌃G 预填)→ 列表换成唯一一行「转到第 N 行」/ 提示,Enter 跳转(见 use-goto-line)。
@@ -21,10 +22,14 @@ import { Button, Input, Modal, Spinner, TruncateStart } from '@/design';
 import { QUICK_OPEN_MAX_FILES, useQuickOpenStore, type QuickOpenFile } from './store';
 import { walkWorkspaceFiles } from './walk-files';
 import { orderByRecent, recentFilesFor } from './recent-files';
-import { fuzzyFilter, fuzzyMatchIndices } from '../command-palette/fuzzy';
+import { fuzzyMatchIndices } from '../command-palette/fuzzy';
+import { filterQuickOpenFiles } from './quick-open-filter';
+import { matchesToIndices, type ItemScore } from '@/lib/fuzzy-scorer';
 import { highlightMatches } from '../picker/highlight-matches';
 import { formatHotkey, detectPlatform } from '../command-palette/format-hotkey';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { useSettingValue } from '@/plugins/settings/values-store';
+import { SEARCH_USE_IGNORE_FILES } from '@/plugins/settings/core-setting-specs';
 import { coApi } from '@/lib/co-api';
 import { translateCount, useT } from '@/i18n';
 import { dirname } from '@/lib/path-cross';
@@ -38,7 +43,14 @@ import { useGotoLine } from './use-goto-line';
 import { useGotoSymbol } from './use-goto-symbol';
 import { parseFileLineQuery, type GotoLineRequest } from './goto-line';
 import { openFileInEditor, type EditorRevealOptions } from '@/plugins/co-app';
+import { takeSideEditorGroup } from '@/shell/dock/explorer-editor-drop';
+import { matchesHotkey } from '../command-palette/useCommandHotkeys';
 import type { TextEncodingId } from '../../../electron/shared/text-encoding';
+
+/** 在侧边打开:⌥Enter,或 ⌘Enter(Windows / Linux Ctrl+Enter)—— VSCode anythingQuickAccess 常驻打开时 keyMods.alt || keyMods.ctrlCmd。 */
+function isOpenToSideEnter(e: KeyboardEvent): boolean {
+  return matchesHotkey('mod+enter', e) || matchesHotkey('alt+enter', e);
+}
 
 /** ⌘P 打开为常驻(VSCode workbench.editor.enablePreviewFromQuickOpen 默认 false)。 */
 const PINNED: OpenFileOptions = { preview: false };
@@ -53,23 +65,12 @@ const QUICK_OPEN_SHORTCUT_LABEL = formatHotkey(
 
 const NO_HIGHLIGHTS = { name: null, dir: null } as const;
 
-/**
- * 行内命中字符(VSCode Quick Open:文件名与路径分别高亮)。查询能在文件名里命中 → 只高亮文件名;否则按相对路径
- *(打分所用的匹配源)取下标,目录段 [0, dir.length) 与文件名段 [relPath.length - name.length, …) 各自高亮。
- * 只为渲染的可见行计算,不参与过滤排序。
- */
+/** 行内命中字符(VSCode Quick Open:文件名与目录分别高亮),取自打分时的命中区段。只为渲染的可见行换算。 */
 function matchHighlights(
-  query: string,
-  f: QuickOpenFile,
+  score: ItemScore | undefined,
 ): { readonly name: readonly number[] | null; readonly dir: readonly number[] | null } {
-  if (!query) return NO_HIGHLIGHTS;
-  // 文件名是相对路径的尾段:小写形式直接从预小写的 relPathLower 截取(不逐行 lowercasing)。
-  const nameStart = f.relPath.length - f.name.length;
-  const inName = fuzzyMatchIndices(query, f.name, f.relPathLower.slice(nameStart));
-  if (inName) return { name: inName, dir: null };
-  const inPath = fuzzyMatchIndices(query, f.relPath, f.relPathLower);
-  if (!inPath) return NO_HIGHLIGHTS;
-  return { name: inPath.map((i) => i - nameStart), dir: inPath };
+  if (!score) return NO_HIGHLIGHTS;
+  return { name: matchesToIndices(score.labelMatch), dir: matchesToIndices(score.descriptionMatch) };
 }
 
 /**
@@ -123,6 +124,8 @@ function QuickOpenBody() {
   const setScanFailed = useQuickOpenStore((s) => s.setScanFailed);
 
   const root = useWorkspaceStore((s) => s.root);
+  // VSCode:Quick Open 的文件列表同样遵从 search.useIgnoreFiles(.gitignore / .ignore);设置变化 → 重扫
+  const useIgnoreFiles = useSettingValue(SEARCH_USE_IGNORE_FILES.id, SEARCH_USE_IGNORE_FILES.default);
   // 重试令牌:walk 失败后用户点"重试"递增 → 重跑 effect。
   const [reloadToken, setReloadToken] = useState(0);
   const inputAriaLabel = t('quick_open.input_aria');
@@ -153,6 +156,7 @@ function QuickOpenBody() {
     void walkWorkspaceFiles({
       rootPath: root,
       listDir: (p, opts) => coApi.fs.scanFiles(p, opts),
+      useIgnoreFiles,
     })
       .then((r) => {
         if (cancelled) return;
@@ -178,11 +182,10 @@ function QuickOpenBody() {
     return () => {
       cancelled = true;
     };
-  }, [root, reloadToken, setResults, setLoading, setScanFailed]);
+  }, [root, reloadToken, useIgnoreFiles, setResults, setLoading, setScanFailed]);
 
-  // fuzzy 用 relPath 做匹配源(让用户能输 'src/foo' 这种路径片段);
-  // 命名优先级保留在 fuzzyScore 词边界加分里(/ 算 boundary)。
-  // 性能 P16:传预计算的 relPathLower(scan 时一次),避免每按键对全部候选(≤ QUICK_OPEN_MAX_FILES)重 lowercasing。
+  // 打分照 VSCode:先对文件名、再对「目录 / 文件名」(能输 'src/foo' 这种路径片段);查询按空格拆段(见 quick-open-filter)。
+  // 性能 P16:打分用预计算的 relPathLower(scan 时一次),不每按键对全部候选(≤ QUICK_OPEN_MAX_FILES)重 lowercasing。
   // race(R2):只信任归属当前 root 的 results;effect 异步清理前的一帧也不展示旧 root 结果。
   const liveResults = useMemo(
     () => (resultsRoot === root ? results : EMPTY_RESULTS),
@@ -194,8 +197,8 @@ function QuickOpenBody() {
   // 最近打开:打开面板时读一次(面板打开期间不会再打开文件)。已删除的文件不在扫描结果里,orderByRecent 自然略去。
   const recentPaths = useMemo(() => (root ? recentFilesFor(root) : []), [root]);
   const ordered = useMemo(() => orderByRecent(liveResults, recentPaths), [liveResults, recentPaths]);
-  const filtered = useMemo(
-    () => fuzzyFilter(ordered.items, effectiveQuery, (f) => f.relPathLower),
+  const { files: filtered, scores } = useMemo(
+    () => filterQuickOpenFiles(ordered.items, ordered.recentCount, effectiveQuery),
     [ordered, effectiveQuery],
   );
   const recentCount = effectiveQuery ? 0 : ordered.recentCount;
@@ -219,19 +222,22 @@ function QuickOpenBody() {
   // FolderTree)。selectedIndex / Enter 语义不变,键盘移动时 scrollToIndex 跟随。
   const lineTarget = fileLine?.target;
   const openFile = useCallback(
-    async (file: QuickOpenFile, at: GotoLineRequest | undefined = lineTarget) => {
+    async (file: QuickOpenFile, at: GotoLineRequest | undefined = lineTarget, toSide = false) => {
       close();
+      // 在侧边打开(VSCode:⌥Enter,或常驻打开时 ⌘Enter / Ctrl+Enter → SIDE_GROUP):右边没有编辑器组就先拆出一个
+      const side = toSide ? takeSideEditorGroup() : undefined;
+      const pinned: OpenFileOptions = side === undefined ? PINNED : { ...PINNED, groupId: side };
       // 打开失败弹 error toast(modal 已关,旧实现只 console.warn → 用户点了没反应;P1-AX),按 code 本地化(I8)。
       // 成功 → 焦点进编辑器(VSCode:回车后可直接打字;否则弹窗还焦点给的旧编辑器随即卸载,焦点掉到 body)。
       // 带行号:与搜索结果同一条「打开并定位」(居中;Markdown 编辑 / 预览按源码行),导航记录只记目标一条。
       // 常驻打开(见 PINNED;已是预览 tab 的转常驻);行列越界夹到文档范围(VSCode 同;同 ⌃G 转到行)
       const open = at
         ? () =>
-            openFileInEditor(file.absPath, { line: at.line, ...(at.column ? { column: at.column } : {}) }, PINNED, CLAMP)
-        : () => openFileByPath(file.absPath, editorFileDeps, PINNED);
+            openFileInEditor(file.absPath, { line: at.line, ...(at.column ? { column: at.column } : {}) }, pinned, CLAMP)
+        : () => openFileByPath(file.absPath, editorFileDeps, pinned);
       // 不是 UTF-8 → 弹编码选择器,选定后按该编码打开(行号定位不保留;BDD: src/__tests__/editor-text-encoding/)
       const openWithEncoding = (encoding: TextEncodingId) =>
-        openFileByPath(file.absPath, editorFileDeps, { ...PINNED, encoding }).then((r) => {
+        openFileByPath(file.absPath, editorFileDeps, { ...pinned, encoding }).then((r) => {
           if (r.ok) focusActiveEditor();
           return r;
         });
@@ -254,7 +260,7 @@ function QuickOpenBody() {
     overscan: 12,
     moveSelection,
     clampSelection,
-    onEnter: (index) => {
+    onEnter: (index, e) => {
       if (gotoLine.active) {
         gotoLine.accept();
         return;
@@ -264,7 +270,7 @@ function QuickOpenBody() {
         return;
       }
       const file = filtered[index];
-      if (file) void openFile(file);
+      if (file) void openFile(file, lineTarget, isOpenToSideEnter(e.nativeEvent));
     },
   });
 
@@ -391,7 +397,7 @@ function QuickOpenBody() {
                 const idx = vRow.index;
                 const f = filtered[idx]!;
                 const dir = dirname(f.relPath);
-                const hl = matchHighlights(effectiveQuery, f);
+                const hl = matchHighlights(scores.get(f));
                 return (
                   <li
                     key={f.absPath}

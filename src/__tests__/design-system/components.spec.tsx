@@ -810,6 +810,14 @@ describe('TruncateStart', () => {
     expect(inner.textContent).toBe('src/lib');
     expect(inner.querySelector('mark')?.textContent).toBe('src');
   });
+
+  // rtl 段落里 Tab 是段分隔符(双向算法 L1 重置成 rtl),两侧文字会对调 → text 中的 Tab 按 8 列制表位展开成空格;title 保留原文
+  it('text 中的 Tab 按 8 列制表位展开成空格,title 仍是原文', () => {
+    const { container } = render(<TruncateStart text={'foo\tbar\t\tx '} />);
+    const outer = container.querySelector<HTMLElement>('.wm-truncate-start')!;
+    expect(outer.title).toBe('foo\tbar\t\tx ');
+    expect((outer.firstElementChild as HTMLElement).textContent).toBe(`foo${' '.repeat(5)}bar${' '.repeat(13)}x `);
+  });
 });
 
 // 面板内容为空时的统一占位(Debug / Output 等共用):居中、弱化正文色,无边框卡片。

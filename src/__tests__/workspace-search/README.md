@@ -40,10 +40,11 @@
      (FIFO / 设备)、> 1 MiB(`SEARCH_MAX_FILE_BYTES`,按磁盘字节)、含 NUL 的文件(二进制)跳过。编码(`search-bom-encoding.spec.ts`;
      VSCode 默认 `files.encoding=utf8` 时 ripgrep 按 BOM 嗅探):带 BOM 的 UTF-8 / UTF-16 LE / BE 按 BOM 可逆解码后搜(与编辑器打开
      同一解码实现),BOM 不计入列号 —— 行 / 列 / 预览与编辑器里(内容不含 BOM)一致,点击打开时 tab 自动识别为同一编码;BOM 后字节
-     不可逆(奇数字节的 UTF-16、非法 UTF-8)的跳过;无 BOM 的须是合法 UTF-8,GBK 等(及无 BOM 的 UTF-16)不猜编码、跳过;不读 `.gitignore`
-     (与 VSCode 默认 `search.useIgnoreFiles` 的偏离,见末节)。文件数上限 `SEARCH_MAX_FILES`,超出标记 `filesLimitHit`。
+     不可逆(奇数字节的 UTF-16、非法 UTF-8)的跳过;无 BOM 的须是合法 UTF-8,GBK 等(及无 BOM 的 UTF-16)不猜编码、跳过;遵从工作区内的
+     `.gitignore` / `.ignore`(VSCode `search.useIgnoreFiles`,见 `search-ignore-files`)。文件数上限 `SEARCH_MAX_FILES`,超出标记 `filesLimitHit`。
      因过大跳过的文件计数(`done.skippedLargeCount`)并报告路径(`done.skippedLargePaths`,至多
-     `SEARCH_SKIPPED_LARGE_REPORT_MAX` 个;其它原因的跳过不计),供视图提示「已跳过 N 个大文件」。
+     `SEARCH_SKIPPED_LARGE_REPORT_MAX` 个;其它原因的跳过不计 —— 过大的二进制(无 BOM、开头 8 KiB 含 NUL,ripgrep / git 同口径)
+     先判二进制、静默跳过,同 VSCode),供视图提示「已跳过 N 个大文件」。
    - 逐行匹配(`\r\n` / `\n`),每个命中一条结果:行号 / 列号 1 起(列按 UTF-16,与编辑器定位一致)、命中长度、预览行
      (`search-preview.spec.ts`,VSCode `Match.preview`:命中前文 `lcut(before, 26, '…')` —— 去前导空白,超过
      `SEARCH_PREVIEW_LEAD`(26)个字符时在「保留至少 26 个字符」的最后一个词边界处截掉并加「…」;无词边界的长前文(整行 CJK /
@@ -92,7 +93,7 @@
    **不自动重搜**,结果为空、状态行空白(VSCode 同:恢复后只在用户提交 / 改输入时搜索);恢复后工作区根变化也不触发搜索
    (还没搜过)。查询词上限 `SEARCH_PATTERN_MAX`、glob 上限 `SEARCH_GLOB_MAX`(与 search:start 入参同一常量,运行时输入已截到
    此上限);超限的快照按损坏处理(同其它字段)。旧数据无该字段 → 输入保持空。新开窗口(fresh)/ 别的窗口段不带入。
-9. **未做**:替换 / 全部替换(跨文件写入需确认与可撤销,超出本轮);搜索历史;`.gitignore`;多行正则;搜索编辑器。
+9. **未做**:替换 / 全部替换(跨文件写入需确认与可撤销,超出本轮);搜索历史;`.git/info/exclude` 与全局 gitignore;多行正则;搜索编辑器。
 
 ## 规范文件
 

@@ -44,6 +44,16 @@ export interface SearchQuery {
   readonly include: string;
   /** 排除的文件(逗号分隔 glob)。 */
   readonly exclude: string;
+  /**
+   * 不用忽略文件(VSCode disregardIgnoreFiles):设置 search.useIgnoreFiles 关、或搜索视图「使用排除设置与忽略文件」关。
+   * 缺省 = 遵从工作区内的 .gitignore / .ignore。
+   */
+  readonly disregardIgnoreFiles?: boolean;
+  /**
+   * 不用排除设置(VSCode disregardExcludeSettings,搜索视图「使用排除设置与忽略文件」关):只排除版本控制元数据等
+   *(LIST_DIR_DEFAULT_EXCLUDE),dist / build / .cache 等构建产物目录照常搜。缺省 = WORKSPACE_SCAN_EXCLUDE。
+   */
+  readonly disregardExcludeSettings?: boolean;
 }
 
 export interface SearchMatch {

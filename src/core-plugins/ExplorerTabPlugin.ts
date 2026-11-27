@@ -15,6 +15,7 @@ import {
   EXPLORER_SHOW_HIDDEN_FILES,
   SEARCH_DECORATIONS_BADGES,
   SEARCH_DECORATIONS_COLORS,
+  SEARCH_USE_IGNORE_FILES,
 } from '@/plugins/settings/core-setting-specs';
 import { renderCategoryTab } from './lazy-category-tab';
 import { ExplorerIcon } from '@/plugins/settings/tab-icons';
@@ -66,5 +67,7 @@ export default class ExplorerTabPlugin extends Plugin {
     this.addSettingItem(SEARCH_DECORATIONS_COLORS);
 
     this.addSettingItem(SEARCH_DECORATIONS_BADGES);
+
+    this.addSettingItem(SEARCH_USE_IGNORE_FILES);
   }
 }

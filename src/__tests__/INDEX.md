@@ -1451,6 +1451,11 @@
 - [`open-panel-focus.spec.tsx`](./open-panel-focus/open-panel-focus.spec.tsx)
 - [`panel-chunk-preload.spec.tsx`](./open-panel-focus/panel-chunk-preload.spec.tsx)
 
+## [Quick Open 与搜索结果「在侧边打开」(VSCode SIDE_GROUP)](./open-to-side-from-pickers/README.md)
+
+- [`open-to-side-from-pickers.spec.tsx`](./open-to-side-from-pickers/open-to-side-from-pickers.spec.tsx)
+- [`side-group.spec.ts`](./open-to-side-from-pickers/side-group.spec.ts)
+
 ## [os-file-drop(从 Finder / 桌面拖入磁盘文件:打开,⇧ 才插入)](./os-file-drop/README.md)
 
 - [`editor-os-drop.spec.tsx`](./os-file-drop/editor-os-drop.spec.tsx)
@@ -1848,6 +1853,10 @@
 - [`open-clamp-markdown.spec.ts`](./quick-open-file-line/open-clamp-markdown.spec.ts)
 - [`quick-open-file-line.spec.tsx`](./quick-open-file-line/quick-open-file-line.spec.tsx)
 
+## [Quick Open 文件打分(VSCode fuzzyScorer 对齐)](./quick-open-fuzzy-score/README.md)
+
+- [`quick-open-fuzzy-score.spec.ts`](./quick-open-fuzzy-score/quick-open-fuzzy-score.spec.ts)
+
 ## [QuickOpenModal(VSCode ⌘P 文件搜索)](./quick-open-modal/README.md)
 
 - [`quick-open-modal.spec.tsx`](./quick-open-modal/quick-open-modal.spec.tsx)
@@ -1958,6 +1967,11 @@
 
 - [`notifications-scoped-wrapper.spec.ts`](./sdk-notifications-namespace/notifications-scoped-wrapper.spec.ts)
 - [`notifications-show-raw.spec.ts`](./sdk-notifications-namespace/notifications-show-raw.spec.ts)
+
+## [在文件中查找 / Quick Open 遵从忽略文件(VSCode `search.useIgnoreFiles`)](./search-ignore-files/README.md)
+
+- [`search-ignore-files.spec.ts`](./search-ignore-files/search-ignore-files.spec.ts)
+- [`search-ignore-toggle.spec.tsx`](./search-ignore-files/search-ignore-toggle.spec.tsx)
 
 ## [在文件中查找:打开 Markdown 结果在编辑 / 预览模式下定位并选中匹配](./search-open-markdown/README.md)
 

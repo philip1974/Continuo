@@ -420,6 +420,32 @@ describe('QuickOpenModal — 搜索过滤', () => {
     expect(marksIn(name)).toEqual(['a']);
   });
 
+  // VSCode fuzzyScorer(BDD: src/__tests__/quick-open-fuzzy-score/):文件名优先打分、查询按空格拆段
+  it('输入完整文件名 → 该文件在第一行;多个词(空格)按段匹配', async () => {
+    installFs();
+    walkMock.mockResolvedValue({
+      ok: true,
+      data: [
+        file('editor-tab-git.spec.tsx', 'src/__tests__/editor-tab-git/editor-tab-git.spec.tsx'),
+        file('CodeEditor.tsx', 'src/panels/Editor/CodeEditor.tsx'),
+        file('QuickOpenModal.tsx', 'src/plugins/quick-open/QuickOpenModal.tsx'),
+      ],
+    });
+    useWorkspaceStore.setState({ root: '/proj', recentRoots: [] });
+    useQuickOpenStore.setState({ isOpen: true });
+    render(<QuickOpenModal />);
+    await waitFor(() => expect(document.querySelectorAll('ul li').length).toBe(3));
+    const input = document.querySelector('.wm-modal-content input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'CodeEditor.tsx' } });
+    await waitFor(() => expect(document.querySelector('ul li')!.getAttribute('title')).toBe('src/panels/Editor/CodeEditor.tsx'));
+    fireEvent.change(input, { target: { value: 'quick open' } });
+    await waitFor(() => {
+      const rows = document.querySelectorAll('ul li');
+      expect(rows.length).toBe(1);
+      expect(rows[0]!.getAttribute('title')).toBe('src/plugins/quick-open/QuickOpenModal.tsx');
+    });
+  });
+
   it('全过滤掉 → 「无匹配文件」', async () => {
     installFs();
     walkMock.mockResolvedValue({

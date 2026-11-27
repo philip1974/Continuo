@@ -159,6 +159,8 @@ const WindowSearchSchema = z
     wholeWord: z.boolean().optional(),
     include: z.string().max(SEARCH_GLOB_MAX).optional(),
     exclude: z.string().max(SEARCH_GLOB_MAX).optional(),
+    // 「使用排除设置与忽略文件」(VSCode query.useExcludesAndIgnoreFiles;默认开,只写关)
+    useExcludesAndIgnoreFiles: z.boolean().optional(),
     detailsOpen: z.boolean().optional(),
   })
   .strict();

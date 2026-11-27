@@ -214,6 +214,11 @@ describe('TruncateStart 样式契约', () => {
     const body = ruleBody(SRC, '.wm-truncate-start > [dir="ltr"]');
     expect(body).toMatch(/unicode-bidi:\s*isolate/);
   });
+
+  it('内层末尾生成 LRM:行尾空白不被双向算法 L1 重置成 rtl 挪到行首', () => {
+    const body = ruleBody(SRC, '.wm-truncate-start > [dir="ltr"]::after');
+    expect(body).toMatch(/content:\s*"\\200E"/);
+  });
 });
 
 describe('EmptyState 样式契约', () => {

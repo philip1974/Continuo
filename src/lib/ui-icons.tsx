@@ -83,3 +83,12 @@ export function CloseIcon({ size }: IconProps) {
     </StrokeIcon>
   );
 }
+
+/** 漏斗:排除设置与忽略文件(搜索视图排除框旁的开关)。 */
+export function ExcludeIcon({ size }: IconProps) {
+  return (
+    <StrokeIcon size={size}>
+      <path d="M2.5 3.5h11l-4.3 5.2v3.8l-2.4 1V8.7z" />
+    </StrokeIcon>
+  );
+}

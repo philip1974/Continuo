@@ -7,6 +7,8 @@ import { fsError, mapNodeErrnoCode } from './path-utils';
 import { direntTypeIsReliable } from '../../lib/dirent-real-type';
 import { LIST_DIR_DEFAULT_EXCLUDE } from '../../../shared/fs-limits';
 import { compareFileNames } from '../../../shared/compare-file-names';
+import { readFileCappedFd } from '../../lib/read-fh-capped';
+import ignore, { type Ignore } from 'ignore';
 
 const MAX_DEPTH_HARD_LIMIT = LIST_DIR_MAX_DEPTH;
 
@@ -47,6 +49,13 @@ export interface ListDirOptions {
    * 差异仅一处:readdir 与 lstat 之间被删的项,withStats:true 跳过,false 仍列出(本就是竞态快照)。
    */
   readonly withStats?: boolean;
+  /**
+   * 递归扫描时遵从忽略文件(VSCode search.useIgnoreFiles,默认开 —— ripgrep 读 `.gitignore` 与 `.ignore`):每层目录的
+   * `.gitignore` / `.ignore` 按 gitignore 语法(否定 `!`、目录 `/`、`**`、锚定 `/`)作用于该目录之下,深层的规则覆盖浅层,同一目录
+   * `.ignore` 覆盖 `.gitignore`;被忽略的目录不再下钻。不读工作区根之上的忽略文件(VSCode search.useParentIgnoreFiles 默认关),
+   * 不要求是 git 仓库(VSCode 给 ripgrep 传 --no-require-git)。缺省 false(资源管理器逐层列目录不受影响)。
+   */
+  readonly useIgnoreFiles?: boolean;
 }
 
 /**
@@ -125,6 +134,7 @@ export async function scanDir(
     maxFiles,
     maxTotalEntries,
     state,
+    opts.useIgnoreFiles === true && maxDepth > 1 ? NO_IGNORE_LAYERS : null,
   );
   return { entries, skippedDirs: state.skippedDirs };
 }
@@ -133,6 +143,57 @@ interface WalkState {
   fileCount: number;
   totalCount: number;
   skippedDirs: number;
+}
+
+/** 某目录下忽略文件的规则(作用于 base 之下的路径)。 */
+interface IgnoreLayer {
+  readonly base: string;
+  readonly ig: Ignore;
+}
+
+const NO_IGNORE_LAYERS: readonly IgnoreLayer[] = [];
+/** 同一目录内后加的规则优先:ripgrep 的 `.ignore` 优先于 `.gitignore`。 */
+const IGNORE_FILE_NAMES = ['.gitignore', '.ignore'] as const;
+/** 忽略文件读取上限(超过视作无规则;防异常大文件拖慢扫描)。 */
+const IGNORE_FILE_MAX_BYTES = 1024 * 1024;
+
+/** 遵从忽略文件时,本层先缓存这么多条目再定规则(见 walk)。 */
+const IGNORE_PROBE_BUFFER = 1024;
+
+/** 读 dir 下的忽略文件 names(按 IGNORE_FILE_NAMES 顺序);都没有(或读不了 / 过大)→ null。 */
+async function loadIgnoreLayer(dir: string, names: readonly string[]): Promise<IgnoreLayer | null> {
+  const ordered = IGNORE_FILE_NAMES.filter((n) => names.includes(n));
+  const texts = await Promise.all(
+    ordered.map((name) =>
+      readFileCappedFd(path.join(dir, name), IGNORE_FILE_MAX_BYTES).then(
+        (r) => r.text,
+        () => null, // 不存在 / 是目录 / 无权限:没有规则
+      ),
+    ),
+  );
+  let ig: Ignore | null = null;
+  for (const text of texts) {
+    if (text) (ig ??= ignore({ ignorecase: false })).add(text.replace(/^\uFEFF/, '')); // ripgrep 默认区分大小写;去 BOM
+  }
+  return ig === null ? null : { base: dir, ig };
+}
+
+/** git 语义:由浅到深逐层判定,深层的「忽略 / 取消忽略(!)」覆盖浅层的结论。 */
+function isIgnoredByLayers(layers: readonly IgnoreLayer[], full: string, isDirectory: boolean): boolean {
+  let ignored = false;
+  for (const layer of layers) {
+    let rel = path.relative(layer.base, full);
+    if (path.sep !== '/') rel = rel.split(path.sep).join('/');
+    if (isDirectory) rel += '/';
+    try {
+      const r = layer.ig.test(rel);
+      if (r.ignored) ignored = true;
+      else if (r.unignored) ignored = false;
+    } catch {
+      // ignore 包拒绝的路径形态(理论上不会出现):按未忽略处理
+    }
+  }
+  return ignored;
 }
 
 function isFsDirTooLarge(err: unknown): boolean {
@@ -240,6 +301,8 @@ async function walk(
   maxFiles: number,
   maxTotalEntries: number,
   state: WalkState,
+  /** 遵从忽略文件时为祖先目录的规则层(由浅到深);null = 不读忽略文件。 */
+  ignoreLayers: readonly IgnoreLayer[] | null,
 ): Promise<FileEntry[]> {
   if (state.fileCount >= maxFiles) return []; // cap 后进入的子树:不 opendir/lstat
   const out: FileEntry[] = [];
@@ -256,6 +319,19 @@ async function walk(
   } catch (err) {
     throw fsError(mapNodeErrnoCode(err), `opendir failed: ${dir}`);
   }
+  // 本目录的忽略规则(遵从忽略文件时):本层条目先缓存到 IGNORE_PROBE_BUFFER 个 —— 目录在此之内读完(绝大多数)就按读到的名字
+  // 判断有没有 .gitignore / .ignore,只读真有的(多数目录一个都没有,免两次 ENOENT 的 open);缓存满了还没读完(超宽目录)
+  // 则直接尝试读两个文件。规则确定后再按块处理缓存的条目。
+  let layers = ignoreLayers;
+  let ownPending = ignoreLayers !== null;
+  const buffered: DirEntryLike[] = [];
+  const seenIgnoreFiles: string[] = [];
+  const resolveOwnLayer = async (names: readonly string[]): Promise<void> => {
+    ownPending = false;
+    if (names.length === 0) return;
+    const own = await loadIgnoreLayer(dir, names);
+    if (own !== null) layers = [...ignoreLayers!, own];
+  };
   const chunk = new Array<DirEntryLike>(LSTAT_CHUNK);
   let chunkCount = 0;
   let stop = false;
@@ -279,6 +355,7 @@ async function walk(
       }
       if (!item) continue;
       const { full, st, isSymlink, isDirectory, isFile } = item;
+      if (layers !== null && layers.length > 0 && isIgnoredByLayers(layers, full, isDirectory)) continue;
       out[out.length] =
         st === null
           ? {
@@ -313,18 +390,41 @@ async function walk(
     }
   };
 
+  // 一项进块,满 LSTAT_CHUNK 即处理(抛 FS_DIR_TOO_LARGE 时 for await 经迭代器 return() 关闭 Dir)。
+  const add = async (dirent: DirEntryLike): Promise<void> => {
+    chunk[chunkCount] = dirent; // 保留 dirent 类型(withStats:false 免 lstat)
+    chunkCount += 1;
+    if (chunkCount >= LSTAT_CHUNK) await flushChunk();
+  };
+  const drainBuffered = async (): Promise<void> => {
+    for (const d of buffered) {
+      if (stop) break;
+      await add(d);
+    }
+    buffered.length = 0;
+  };
+
   // for await 流式遍历:非排除项累积到 LSTAT_CHUNK 即成块处理;break/throw/完成自动 close Dir。
   // 读目录项中途失败(EIO 等)同 opendir 失败映射成业务码。
   try {
     for await (const dirent of dirHandle) {
       if (state.fileCount >= maxFiles) break;
       if (exclude.has(dirent.name)) continue;
-      chunk[chunkCount] = dirent; // 保留 dirent 类型(withStats:false 免 lstat)
-      chunkCount += 1;
-      if (chunkCount >= LSTAT_CHUNK) {
-        await flushChunk(); // 抛 FS_DIR_TOO_LARGE 时 for await 经迭代器 return() 关闭 Dir
+      if (ownPending) {
+        if ((IGNORE_FILE_NAMES as readonly string[]).includes(dirent.name)) seenIgnoreFiles.push(dirent.name);
+        buffered.push(dirent);
+        if (buffered.length < IGNORE_PROBE_BUFFER) continue;
+        await resolveOwnLayer(IGNORE_FILE_NAMES); // 超宽目录:名字还没读全,两个都试
+        await drainBuffered();
         if (stop) break;
+        continue;
       }
+      await add(dirent);
+      if (stop) break;
+    }
+    if (ownPending) {
+      await resolveOwnLayer(seenIgnoreFiles);
+      await drainBuffered();
     }
     // 处理流末尾的残块(for await 正常结束时 Dir 已自动关闭;flushChunk 不依赖 Dir 句柄)。
     if (!stop) await flushChunk();
@@ -339,7 +439,7 @@ async function walk(
     const before = { fileCount: state.fileCount, totalCount: state.totalCount, skippedDirs: state.skippedDirs };
     let children: FileEntry[];
     try {
-      children = await walk(sub, depth + 1, maxDepth, exclude, withStats, maxFiles, maxTotalEntries, state);
+      children = await walk(sub, depth + 1, maxDepth, exclude, withStats, maxFiles, maxTotalEntries, state, layers);
     } catch (err) {
       if (isFsDirTooLarge(err)) throw err;
       state.fileCount = before.fileCount;

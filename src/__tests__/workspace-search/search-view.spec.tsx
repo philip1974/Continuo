@@ -173,6 +173,27 @@ describe('选项与非法正则', () => {
   });
 });
 
+describe('预览的空白与 Tab', () => {
+  // rtl 截断的前文里 Tab 是段分隔符(双向算法 L1),两侧文字会对调:`foo\tbar needle` 显示成 `bar  fooneedle` → Tab 展开成空格
+  it('前文的 Tab 按 8 列展开成空格(文本顺序不变),命中 / 后文原样', () => {
+    render(<SearchPanel />);
+    type('needle');
+    flush();
+    const { id } = lastStart();
+    emit({
+      searchId: id,
+      kind: 'files',
+      files: [{ path: '/w/a.ts', relPath: 'a.ts', matches: [match(1, 9, 'foo\tbar needle\tz', 8, 6)] }],
+    });
+    const before = document.querySelector<HTMLElement>('[data-preview-before]')!;
+    expect(before.textContent).toBe('foo     bar ');
+    expect(before.title).toBe('foo\tbar needle\tz');
+    const mark = before.nextElementSibling!;
+    expect(mark.textContent).toBe('needle');
+    expect(mark.nextElementSibling!.textContent).toBe('\tz');
+  });
+});
+
 describe('结果树与计数', () => {
   function withResults(done: Partial<Extract<SearchEvent, { kind: 'done' }>> = {}) {
     render(<SearchPanel />);
@@ -204,6 +225,11 @@ describe('结果树与计数', () => {
     expect(preview.querySelector('[data-preview-before]')!.className).toContain('wm-truncate-start');
     expect(mark.className).toContain('shrink-0');
     expect(mark.nextElementSibling!.className).toContain('shrink-[1000]');
+    // 三段都保留空白(第五十三轮:后文 / 命中用 truncate 的 nowrap 合并了空格):`x = foo + y` 不显示成 `x =foo+ y`
+    for (const el of [mark, mark.nextElementSibling!]) {
+      expect(el.className).toContain('whitespace-pre');
+      expect(el.className).not.toMatch(/\btruncate\b/);
+    }
     expect(screen.getByRole('status').textContent).toBe('2 个文件中有 3 个结果');
     act(() => {
       setLocale('en');
