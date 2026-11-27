@@ -64,8 +64,9 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * popout 子窗里是否分发该命令:上面的列表,加上限定在代码编辑器里的命令(when: editorTextFocus / editorFocus —— 作用于按键所在
- * 子窗的编辑器,不在主窗画东西;这些键已从 CodeMirror 键表去掉,子窗不分发就失效)。
+ * popout 子窗里是否分发该命令:上面的列表,加上带上下文条件的命令(when: editorTextFocus / editorFocus —— 作用于按键所在
+ * 子窗的编辑器,不在主窗画东西;这些键已从 CodeMirror 键表去掉,子窗不分发就失效。when: terminalFocus —— 只在按键所在子窗的
+ * 终端间切换,BDD: src/__tests__/terminal-focus-cycle/)。
  */
 export function isPopoutHotkeyCommand(cmd: Pick<CommandSpec, 'id' | 'when'>): boolean {
   return POPOUT_HOTKEY_COMMAND_IDS.has(cmd.id) || cmd.when !== undefined;

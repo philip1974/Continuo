@@ -47,7 +47,8 @@ export interface CommandSpec {
   /** i18n key for category（topic-19）。同 titleKey。 */
   readonly categoryKey?: string;
   /**
-   * 按键的上下文条件(VSCode keybinding when 的极简版):'editorTextFocus' = 只在按键落在代码编辑器正文里时分发。
+   * 按键的上下文条件(VSCode keybinding when 的极简版):'editorTextFocus' = 只在按键落在代码编辑器正文里时分发;
+   * 'terminalFocus' = 只在按键落在终端输入区里时分发(BDD: src/__tests__/terminal-focus-cycle/)。
    * 同一层内带条件的绑定排在无条件的之前(编辑器里 ⇧⌘Enter 是在上方插入行,其它地方仍是终端缩放);只在条件不成立时
    * 让给后面的绑定,所以与条件不同的同键绑定不算冲突。命令面板执行不受影响。BDD: src/__tests__/editor-text-commands/
    */

@@ -172,7 +172,7 @@ describe('冲突判定不误报', () => {
   it('注册时拒绝未知的 when', () => {
     const reg = new CommandRegistry('mac');
     expect(() =>
-      reg.register({ id: 'bad', title: 'Bad', when: 'terminalFocus' as unknown as 'editorTextFocus', fn: () => {} }),
+      reg.register({ id: 'bad', title: 'Bad', when: 'listFocus' as unknown as 'editorTextFocus', fn: () => {} }),
     ).toThrow();
   });
 

@@ -23,6 +23,13 @@ import { FOCUS_NEXT_PART_COMMAND, FOCUS_PREVIOUS_PART_COMMAND } from '@/shell/fo
 // 显示所有命令的附加默认键 F1:VSCode showCommands 在 commandsToSkipShell 默认列表里 → 终端里让出。
 import { SHOW_COMMANDS_COMMAND } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { WINDOW_ZOOM_COMMAND_IDS } from '../../../electron/shared/window-zoom';
+import {
+  hasTerminalSplit,
+  TERMINAL_FOCUS_NEXT_COMMAND_ID,
+  TERMINAL_FOCUS_NEXT_PANE_COMMAND_ID,
+  TERMINAL_FOCUS_PREVIOUS_COMMAND_ID,
+  TERMINAL_FOCUS_PREVIOUS_PANE_COMMAND_ID,
+} from '@/shell/dock/terminal-focus-cycle';
 
 export const TERMINAL_ZOOM_COMMAND = { id: 'terminal.zoom.toggle', hotkey: 'shift+mod+enter' } as const;
 export const TERMINAL_SEARCH_COMMAND = { id: 'terminal.search.toggle', hotkey: 'mod+f' } as const;
@@ -172,8 +179,16 @@ export function terminalClearDefaultHotkey(platform: Platform): string | undefin
  *  (XOFF)照常进 shell,与 VSCode 一致。
  * - F6 / ⇧F6 区域切换(focusNextPart / focusPreviousPart)在默认列表里 → 胜出即让出(终端吃掉 Tab,键盘用户靠它离开)。
  * - ⌃Tab / ⌃⇧Tab 切换最近使用的编辑器、⌃` 切换终端、⌃⇧` 新建终端、F1 显示所有命令 → 胜出即让出(VSCode 终端里同样生效)。
+ * - 下一个 / 上一个终端(⇧⌘] / ⇧⌘[,Ctrl+PageDown / PageUp)→ 胜出即让出;下一个 / 上一个窗格(⌥⌘→ / ⌥⌘←,Alt+→ / Alt+←)
+ *   只在该窗口有不止一个终端窗格时让出(VSCode when: terminalSplitActive),没有分屏时照常进 shell。
+ *   BDD: src/__tests__/terminal-focus-cycle/
  */
-const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> = new Map<string, { readonly metaOnly: boolean }>([
+interface SkipShellRule {
+  readonly metaOnly: boolean;
+  /** 另须成立的条件(按键所在文档)。 */
+  readonly onlyIf?: (doc: Document) => boolean;
+}
+const SKIP_SHELL_COMMANDS: ReadonlyMap<string, SkipShellRule> = new Map<string, SkipShellRule>([
   [TERMINAL_CLEAR_COMMAND.id, { metaOnly: false }],
   [FOCUS_NEXT_PART_COMMAND.id, { metaOnly: false }],
   [FOCUS_PREVIOUS_PART_COMMAND.id, { metaOnly: false }],
@@ -188,6 +203,10 @@ const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> =
   [TERMINAL_TOGGLE_COMMAND.id, { metaOnly: false }],
   [TERMINAL_NEW_COMMAND.id, { metaOnly: false }],
   [SHOW_COMMANDS_COMMAND.id, { metaOnly: false }],
+  [TERMINAL_FOCUS_NEXT_COMMAND_ID, { metaOnly: false }],
+  [TERMINAL_FOCUS_PREVIOUS_COMMAND_ID, { metaOnly: false }],
+  [TERMINAL_FOCUS_NEXT_PANE_COMMAND_ID, { metaOnly: false, onlyIf: hasTerminalSplit }],
+  [TERMINAL_FOCUS_PREVIOUS_PANE_COMMAND_ID, { metaOnly: false, onlyIf: hasTerminalSplit }],
   // 放大 / 缩小 / 重置缩放(⌘= / ⌘- / ⌘0):不在 commandsToSkipShell 默认列表 → 只有带 Meta 时让出(VSCode 同;Win/Linux 的
   // Ctrl+= / Ctrl+- 照常进 shell)。BDD: src/__tests__/window-zoom/
   ...WINDOW_ZOOM_COMMAND_IDS.map((id) => [id, { metaOnly: true }] as const),
@@ -232,6 +251,12 @@ interface CommandLookup {
 }
 
 type Overrides = Readonly<Record<string, string>>;
+
+/** 按键所在文档(popout 子窗里的终端 → 子窗文档)。 */
+function eventDocument(event: KeyboardEvent): Document {
+  const target = event.target as Node | null;
+  return target?.ownerDocument ?? document;
+}
 
 /** 按键在分发表里胜出的命令 id(含未注册命令的约定默认键);输入法组合中 / 非 keydown / 有 Modal → null。 */
 function terminalWinner(
@@ -279,6 +304,7 @@ export function terminalYieldedCommandId(
   if (id === null) return null;
   const rule = SKIP_SHELL_COMMANDS.get(id);
   if (!rule || (rule.metaOnly && !event.metaKey)) return null;
+  if (rule.onlyIf && !rule.onlyIf(eventDocument(event))) return null;
   return id;
 }
 

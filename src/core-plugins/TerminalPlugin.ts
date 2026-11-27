@@ -11,6 +11,7 @@ import { activePanelInDocument } from '@/shell/dock/group-mru';
 import { getCommandDocument } from '@/shell/dock/popout-documents';
 import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
 import { toggleTerminal } from '@/shell/dock/toggle-terminal';
+import { terminalFocusCycleCommandSpecs } from '@/shell/dock/terminal-focus-cycle';
 import { clearTerminalPanel, openTerminalSearch, scrollTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import {
@@ -130,5 +131,8 @@ export default class TerminalPlugin extends Plugin {
       categoryKey: 'commands.view.category',
       fn: toggleTerminal,
     });
+    // VSCode workbench.action.terminal.focusNext / focusPrevious / focusNextPane / focusPreviousPane(when 终端获焦):
+    // 在触发窗口的终端 / 终端窗格间轮转。BDD: src/__tests__/terminal-focus-cycle/
+    for (const spec of terminalFocusCycleCommandSpecs(detectPlatform())) this.addCommand(spec);
   }
 }

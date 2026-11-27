@@ -2051,6 +2051,10 @@
 - [`resolve-main.spec.ts`](./terminal-file-links/resolve-main.spec.ts)
 - [`wiring.spec.ts`](./terminal-file-links/wiring.spec.ts)
 
+## [终端获焦时切换终端 / 窗格](./terminal-focus-cycle/README.md)
+
+- [`terminal-focus-cycle.spec.ts`](./terminal-focus-cycle/terminal-focus-cycle.spec.ts)
+
 ## [terminal-history-replay-dedup](./terminal-history-replay-dedup/README.md)
 
 - [`main-offsets.spec.ts`](./terminal-history-replay-dedup/main-offsets.spec.ts)

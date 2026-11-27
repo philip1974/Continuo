@@ -6,7 +6,9 @@
 // 查找键)。输入法组字中都不算(按键属于组字)。
 // - `terminalNormalBufferFocus`:按键落在终端里且终端在主缓冲(VSCode `terminalFocusInAny && !terminalAltBufferActive`,滚动命令用它):
 //   全屏程序(vim / less)切到备用屏时不成立,按键照常交给程序。终端容器带 TERMINAL_ATTR,备用屏时另带 TERMINAL_ALT_BUFFER_ATTR。
-// BDD: src/__tests__/editor-text-commands/、src/__tests__/editor-find-keybindings/、src/__tests__/terminal-scroll-commands/
+// - `terminalFocus`:按键落在终端里(TERMINAL_ATTR 容器内,主缓冲 / 备用屏都算;终端搜索条等不算,同 VSCode terminalFocus)。
+// BDD: src/__tests__/editor-text-commands/、src/__tests__/editor-find-keybindings/、src/__tests__/terminal-scroll-commands/、
+// src/__tests__/terminal-focus-cycle/
 
 /** CodeEditor 根元素(.cm-editor)上的标记属性。 */
 export const TEXT_EDITOR_ATTR = 'data-co-text-editor';
@@ -19,18 +21,31 @@ export const TERMINAL_ATTR = 'data-co-terminal';
 export const TERMINAL_ALT_BUFFER_ATTR = 'data-co-terminal-alt-buffer';
 
 /** 命令的上下文条件(CommandSpec.when)。 */
-export type CommandWhen = 'editorTextFocus' | 'editorFocus' | 'terminalNormalBufferFocus';
+export type CommandWhen = 'editorTextFocus' | 'editorFocus' | 'terminalFocus' | 'terminalNormalBufferFocus';
 
 export function isCommandWhen(value: unknown): value is CommandWhen {
-  return value === 'editorTextFocus' || value === 'editorFocus' || value === 'terminalNormalBufferFocus';
+  return (
+    value === 'editorTextFocus' || value === 'editorFocus' || value === 'terminalFocus' || value === 'terminalNormalBufferFocus'
+  );
+}
+
+/** 两个条件能否同时成立(编辑器类条件之间、终端类条件之间重叠;终端与编辑器互斥)。 */
+export function whenOverlaps(a: CommandWhen, b: CommandWhen): boolean {
+  return whenCoveredBy(a, b) || whenCoveredBy(b, a);
 }
 
 /**
  * 条件 a 成立处 b 是否必然成立(a 的上下文被 b 完全覆盖):b 无条件、两者相同,或 a = editorTextFocus 而 b = editorFocus(正文是
- * 编辑器的一部分)。分发表里前面的绑定 b 在后面同键绑定 a 的全部上下文里都胜出时,a 算冲突落败。
+ * 编辑器的一部分),或 a = terminalNormalBufferFocus 而 b = terminalFocus(主缓冲是终端的一种状态)。分发表里前面的绑定 b 在后面
+ * 同键绑定 a 的全部上下文里都胜出时,a 算冲突落败。
  */
 export function whenCoveredBy(a: CommandWhen | undefined, b: CommandWhen | undefined): boolean {
-  return b === undefined || a === b || (a === 'editorTextFocus' && b === 'editorFocus');
+  return (
+    b === undefined ||
+    a === b ||
+    (a === 'editorTextFocus' && b === 'editorFocus') ||
+    (a === 'terminalNormalBufferFocus' && b === 'terminalFocus')
+  );
 }
 
 /** 元素是否在代码编辑器正文里(CodeEditor 的 .cm-content)。 */
@@ -51,6 +66,11 @@ export function isEditorElement(el: Element | null): boolean {
   return el.closest(`[${MARKDOWN_EDITOR_ATTR}]`) !== null;
 }
 
+/** 元素是否在终端里(TERMINAL_ATTR 容器内;同面板里的搜索条等不算)。 */
+export function isTerminalElement(el: Element | null): boolean {
+  return typeof el?.closest === 'function' && el.closest(`[${TERMINAL_ATTR}]`) !== null;
+}
+
 /** 元素是否在主缓冲(非备用屏)的终端里。 */
 export function isTerminalNormalBufferElement(el: Element | null): boolean {
   if (typeof el?.closest !== 'function') return false;
@@ -59,6 +79,7 @@ export function isTerminalNormalBufferElement(el: Element | null): boolean {
 }
 
 function holdsFor(when: CommandWhen, el: Element | null): boolean {
+  if (when === 'terminalFocus') return isTerminalElement(el);
   if (when === 'terminalNormalBufferFocus') return isTerminalNormalBufferElement(el);
   return when === 'editorFocus' ? isEditorElement(el) : isEditorTextElement(el);
 }
