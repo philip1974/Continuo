@@ -126,12 +126,12 @@ describe('terminal-windows-pty · xterm 获知 Windows PTY 后端与 build 号',
     expect(lastTerminalOptions()).not.toHaveProperty('windowsPty');
   });
 
-  it('后端与 node-pty 默认一致:build ≥ 18309 → conpty,更低 → winpty', () => {
+  it('后端与 node-pty 一致:1.2 起只有 ConPTY(移除 winpty),任意 build 都是 conpty', () => {
     expect(terminalWindowsPtyOptions(true, 22631)).toEqual({
       windowsPty: { backend: 'conpty', buildNumber: 22631 },
     });
     expect(terminalWindowsPtyOptions(true, 17763)).toEqual({
-      windowsPty: { backend: 'winpty', buildNumber: 17763 },
+      windowsPty: { backend: 'conpty', buildNumber: 17763 },
     });
     expect(terminalWindowsPtyOptions(false, 22631)).toEqual({});
     expect(terminalWindowsPtyOptions(true, null)).toEqual({});

@@ -328,26 +328,19 @@ const TERM_OPTIONS = {
   cursorStyle: 'block' as const,
 };
 
-/** node-pty 默认后端判定:Windows build ≥ 18309 用 ConPTY,更低回落 winpty(node-pty windowsPtyAgent)。 */
-const NODE_PTY_CONPTY_MIN_BUILD = 18309;
-
 /**
  * Windows 上告诉 xterm PTY 后端与系统 build 号(同 VS Code)。xterm 6 未设 buildNumber 时 Windows 仍开
  * reflow:ConPTY(build < 21376)自己会重绘,xterm 再对整段 scrollback 做 O(N) reflow 既白做又与之冲突;
  * 设了之后 xterm 按 `backend === 'conpty' && buildNumber >= 21376` 决定是否 reflow。
+ * 后端恒为 ConPTY:node-pty 1.2 起移除 winpty(`useConpty` 被忽略)。
  * 非 Windows / 拿不到 build 号 → 不设(维持旧行为,不猜)。
  */
 export function terminalWindowsPtyOptions(
   isWindows: boolean,
   build: number | null | undefined,
-): { windowsPty?: { backend: 'conpty' | 'winpty'; buildNumber: number } } {
+): { windowsPty?: { backend: 'conpty'; buildNumber: number } } {
   if (!isWindows || typeof build !== 'number' || build <= 0) return {};
-  return {
-    windowsPty: {
-      backend: build >= NODE_PTY_CONPTY_MIN_BUILD ? 'conpty' : 'winpty',
-      buildNumber: build,
-    },
-  };
+  return { windowsPty: { backend: 'conpty', buildNumber: build } };
 }
 
 /** 终端链接需修饰键单击才打开(VSCode):mac ⌘+单击,其它 Ctrl+单击。避免选文本 / 点击定位时误开浏览器。 */

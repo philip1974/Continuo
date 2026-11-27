@@ -27,3 +27,7 @@ overrides:
   'brace-expansion@>=2 <2.1.7': ^2.1.7
   'brace-expansion@>=4 <5.0.12': ^5.0.12
   'undici@>=7 <7.30.1': ^7.30.1
+  # node-pty 1.1.0 在 macOS 每关一个终端漏 1 ptmx 主端 + 1 从端 + 1 kqueue(posix_spawn 后父进程不 close(slave)),
+  # 1.2.0-beta.18 修复;sibling server-node 声明 ^1.1.0(prerelease 不满足),须覆盖成同一份,主进程与测试才加载同一个
+  # native 模块。见 src/__tests__/terminal-pty-fd-leak。升到含该修复的正式版后与 package.json 依赖一并改回 ^。
+  node-pty: 1.2.0-beta.18

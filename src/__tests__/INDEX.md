@@ -2016,6 +2016,10 @@
 - [`paste-sanitize.spec.ts`](./terminal-paste-sanitize/paste-sanitize.spec.ts)
 - [`paste-wiring.spec.ts`](./terminal-paste-sanitize/paste-wiring.spec.ts)
 
+## [terminal-pty-fd-leak](./terminal-pty-fd-leak/README.md)
+
+- [`pty-fd-leak.spec.ts`](./terminal-pty-fd-leak/pty-fd-leak.spec.ts)
+
 ## [terminal-readhistory-failure-feedback](./terminal-readhistory-failure-feedback/)
 
 - [`readhistory-failure-clears-loading.spec.ts`](./terminal-readhistory-failure-feedback/readhistory-failure-clears-loading.spec.ts)

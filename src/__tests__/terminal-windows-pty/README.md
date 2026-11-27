@@ -15,8 +15,8 @@ xterm 每次列数变化再对 20000 行 scrollback 做 O(N) `_reflow`,既白做
 
 ## 关键行为
 
-- Windows + build 号 → `windowsPty: { backend, buildNumber }`;后端与 node-pty 默认一致
-  (sibling `server-node` spawn 不传 `useConpty` → node-pty 1.1 在 build ≥ 18309 用 ConPTY,更低回落 winpty)。
+- Windows + build 号 → `windowsPty: { backend: 'conpty', buildNumber }`;后端与 node-pty 一致
+  (node-pty 1.2 起移除 winpty,`useConpty` 被忽略,恒用 ConPTY;1.1 曾在 build < 18309 回落 winpty)。
 - 非 Windows → 不带 `windowsPty`(即便误注入了 build 号)。
 - Windows 但拿不到 build 号 → 不猜,不带 `windowsPty`(维持旧行为)。
 - xterm 据此在 `backend === 'conpty' && buildNumber >= 21376` 时才 reflow。
