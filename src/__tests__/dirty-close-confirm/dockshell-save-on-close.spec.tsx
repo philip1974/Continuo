@@ -275,6 +275,32 @@ describe('flush 握手的「保存」分支', () => {
     expect(contentAtAutoSaveFlush).toBe('typed');
   });
 
+  // 第五十一轮审计 A1 的关窗兄弟入口:保存写盘期间又打了字(编辑器延迟回写尚未进 store)→ 最终脏检查前先回写,仍脏 → 回执 remaining,
+  // main 中止关窗;此前按 store 的旧脏态放行,窗口关闭、新打的字丢失。
+  it('保存写盘期间又打了字 → 最终检查前回写,回执 remaining(不关窗)', async () => {
+    await mountShell();
+    openDirty('/w/a.ts');
+    let typed = false;
+    const unregister = registerEditorWriteBack('/w/a.ts', () => {
+      if (typed) applyEditorWriteBack('/w/a.ts', 'new+typed', 'new');
+      typed = false;
+    });
+    h.writeFile.mockImplementationOnce(async () => {
+      typed = true;
+      return { ok: true, data: undefined };
+    });
+    try {
+      await act(async () => {
+        await h.flushCb.current!({ windowId: 1, save: true });
+      });
+    } finally {
+      unregister();
+    }
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('new+typed');
+    const ack = h.sendFlushAck.mock.calls.at(-1)![1] as { remaining?: unknown };
+    expect(ack.remaining).toEqual(ds([g('/w/a.ts')]));
+  });
+
   it('保存失败 → toast + 回执 saveFailed:true', async () => {
     await mountShell();
     openDirty('/w/a.ts');

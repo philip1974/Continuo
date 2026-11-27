@@ -31,10 +31,12 @@ export function notifySaveFailed(
   actions?: readonly NotifyAction[],
   /** 给了 → 同一文件只留最新一条保存失败提示(见 saveFailureNotifyKey)。 */
   filePath?: string,
+  /** 原因文案的插值参数(如磁盘冲突说明里的保存键 `{hotkey}`)。 */
+  reasonParams?: Parameters<typeof localizeErrorByCode>[2],
 ): void {
   const replace = filePath === undefined ? null : { replaceKey: saveFailureNotifyKey(filePath) };
   notify.error(
-    t('common.label_detail', { label: `${t('editor.save_failed')} ${name}`, detail: saveFailureReason(failure) }),
+    t('common.label_detail', { label: `${t('editor.save_failed')} ${name}`, detail: saveFailureReason(failure, reasonParams) }),
     actions !== undefined && actions.length > 0 ? { code: failure.code, actions, ...replace } : { code: failure.code, ...replace },
   );
 }

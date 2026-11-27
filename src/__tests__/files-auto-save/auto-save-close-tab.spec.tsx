@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEditorStore, type EditorTab } from '../../stores/editor.store';
 import { EditorPanel } from '../../panels/Editor/EditorPanel';
 import { setLocale, t } from '../../i18n';
+import { registerEditorWriteBack } from '../../panels/Editor/editor-writeback-registry';
+import { saveAllEditors } from '../../panels/Editor/editor-commands';
 
 const mocks = vi.hoisted(() => ({
   readFile: vi.fn(),
@@ -15,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   disk: new Map<string, string>(),
   readonly: new Set<string>(),
   denied: new Set<string>(),
+  /** 保存写盘期间编辑器里又打的字(尚未上抛 store,同 Milkdown 延迟回写):写盘时置上,回写时并进 store。 */
+  typedDuringSave: new Map<string, string>(),
+  pending: new Map<string, string>(),
   settings: new Map<string, unknown>(),
 }));
 
@@ -57,6 +62,8 @@ beforeEach(() => {
   mocks.disk.clear();
   mocks.readonly.clear();
   mocks.denied.clear();
+  mocks.typedDuringSave.clear();
+  mocks.pending.clear();
   mocks.settings.clear();
   mocks.settings.set('files.autoSave', 'onFocusChange');
   mocks.readFile.mockImplementation(async (p: string) =>
@@ -66,6 +73,11 @@ beforeEach(() => {
     if (mocks.readonly.has(p) && !o?.overwriteReadonly) return { ok: false, code: 'FS_READONLY', message: 'ro' };
     if (mocks.denied.has(p)) return { ok: false, code: 'FS_DENIED', message: 'denied' };
     mocks.disk.set(p, c);
+    const typed = mocks.typedDuringSave.get(p);
+    if (typed !== undefined) {
+      mocks.typedDuringSave.delete(p);
+      mocks.pending.set(p, typed);
+    }
     return { ok: true, data: undefined };
   });
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
@@ -73,7 +85,20 @@ beforeEach(() => {
     return 0;
   });
 });
+const offWriteBacks: (() => void)[] = [];
+/** 模拟编辑器的同步回写句柄:把尚未上抛的输入并进 store。 */
+function withEditorWriteBack(path: string): void {
+  offWriteBacks.push(
+    registerEditorWriteBack(path, () => {
+      const typed = mocks.pending.get(path);
+      if (typed === undefined) return;
+      mocks.pending.delete(path);
+      useEditorStore.getState().updateContent(path, typed);
+    }),
+  );
+}
 afterEach(() => {
+  for (const off of offWriteBacks.splice(0)) off();
   cleanup();
   vi.restoreAllMocks();
 });
@@ -132,7 +157,7 @@ describe('onFocusChange:关闭脏 tab 直接保存,不弹框', () => {
     expect(mocks.disk.get(A)).toBe('orig');
   });
 
-  it('磁盘已被外部修改 → 不覆盖、不关 tab,改弹确认框', async () => {
+  it('磁盘已被外部修改 → 不覆盖、不关 tab,改弹确认框;不另弹保存失败提示(第五十一轮审计 A5:此前 toast 主进程英文原文与完整路径)', async () => {
     setup([tab(A, true)]);
     mocks.disk.set(A, 'theirs');
     await openPanel();
@@ -140,6 +165,50 @@ describe('onFocusChange:关闭脏 tab 直接保存,不弹框', () => {
     expect(mocks.disk.get(A)).toBe('theirs');
     expect(openIds()).toEqual([A]);
     expect(screen.getByText(saveTitle('a.ts'))).toBeTruthy();
+    expect(mocks.error).not.toHaveBeenCalled();
+    // 确认框选「保存」→ 覆盖确认(与显式保存遇冲突同一出路)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: t('common.save') }));
+    });
+    await settle();
+    expect(screen.getByText(t('panels.editor.disk_changed_title'))).toBeTruthy();
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  // 第五十一轮审计 A1:保存写盘期间接着打字(编辑器延迟回写还没进 store)→ 保存完先回写再判定,仍脏 → 不关,改弹确认框(VSCode
+  // doHandleCloseConfirmation 保存后再查 isDirty)。此前按 store 的旧脏态判定直接关闭,新打的字丢失。
+  it('保存写盘期间又打了字 → 保存后仍脏,tab 不关、弹确认框,新打的字留在 tab 里', async () => {
+    setup([tab(A, true)]);
+    withEditorWriteBack(A);
+    mocks.typedDuringSave.set(A, 'mine more');
+    await openPanel();
+    await closeTab('a.ts');
+    expect(mocks.disk.get(A)).toBe('mine');
+    expect(openIds()).toEqual([A]);
+    expect(useEditorStore.getState().tabs[0]!.content).toBe('mine more');
+    expect(screen.getByText(saveTitle('a.ts'))).toBeTruthy();
+    // 再选「保存」→ 这次写盘后不再脏 → 关闭
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: t('common.save') }));
+    });
+    await settle();
+    expect(mocks.disk.get(A)).toBe('mine more');
+    expect(openIds()).toEqual([]);
+  });
+
+  it('确认框选「保存」写盘期间又打了字 → 同样不关、重新确认', async () => {
+    setup([tab(MD, true)]); // Markdown 默认 afterDelay:关闭时弹框
+    withEditorWriteBack(MD);
+    await openPanel();
+    await closeTab('n.md');
+    mocks.typedDuringSave.set(MD, 'mine more');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: t('common.save') }));
+    });
+    await settle();
+    expect(mocks.disk.get(MD)).toBe('mine');
+    expect(openIds()).toEqual([MD]);
+    expect(screen.getByText(saveTitle('n.md'))).toBeTruthy();
   });
 
   it('写保护 → 不去写保护、不关 tab,改弹确认框', async () => {
@@ -247,6 +316,21 @@ describe('批量关闭', () => {
     expect(openIds()).toEqual([]);
   });
 
+  it('批量:前一个保存写盘期间又打了字 → 为它重新确认,选「取消」整批不关', async () => {
+    setup([tab(A, true), tab(C, true)]);
+    withEditorWriteBack(A);
+    mocks.typedDuringSave.set(A, 'mine more');
+    await openPanel();
+    await closeAll();
+    expect(screen.getByText(saveTitle('a.ts'))).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: t('panels.explorer.confirm.cancel') }));
+    });
+    await settle();
+    expect(openIds()).toEqual([A, C]);
+    expect(useEditorStore.getState().tabs[0]!.content).toBe('mine more');
+  });
+
   it('其中一个自动保存失败 → 为它弹确认框,选「取消」整批不关', async () => {
     setup([tab(A, true), tab(C, true)]);
     mocks.denied.add(C);
@@ -259,5 +343,27 @@ describe('批量关闭', () => {
     await settle();
     expect(mocks.disk.get(A)).toBe('mine');
     expect(openIds()).toEqual([A, C]);
+  });
+});
+
+// 第五十一轮审计 A5 的兄弟入口:全部保存(⌥⌘S)已弹过一个确认框后,其余 tab 遇磁盘冲突只提示 —— 提示按语言本地化、填保存键,
+// 不显示主进程的英文原文与完整路径。
+describe('全部保存:其余 tab 遇磁盘冲突的提示本地化', () => {
+  it('第二个冲突的 tab → 本地化提示(含保存键),不含完整路径', async () => {
+    mocks.settings.set('files.autoSave', 'off');
+    setLocale('zh');
+    setup([tab(A, true), tab(B, true)]);
+    mocks.disk.set(A, 'theirs');
+    mocks.disk.set(B, 'theirs');
+    await openPanel();
+    await act(async () => {
+      await saveAllEditors();
+    });
+    await settle();
+    expect(mocks.error).toHaveBeenCalledTimes(1);
+    const text = String(mocks.error.mock.calls[0]![0]);
+    expect(text).toContain(t('errors.EDITOR_DISK_CHANGED', { hotkey: '' }).slice(0, 6));
+    expect(text).not.toContain(B);
+    expect(text).not.toMatch(/[A-Za-z]{4,} [A-Za-z]{4,}/); // 没有英文句子
   });
 });

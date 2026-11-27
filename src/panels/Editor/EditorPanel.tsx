@@ -66,7 +66,7 @@ import type { NotifyAction } from '@/notifications/notify';
 import { basenameForChrome } from '@/lib/path-label';
 import { isModalOpenFor, winningCommandFor, withDefaultCommands } from '@/plugins/command-palette/useCommandHotkeys';
 import { coApp } from '@/plugins/co-app';
-import { editorCommandSpecs, openAdjacentEditor, registerEditorPanelActions, registerMarkdownModeAction, SAVE_AS_COMMAND, SAVE_COMMAND, NEXT_EDITOR_COMMAND_ID, PREVIOUS_EDITOR_COMMAND_ID } from './editor-commands';
+import { editorCommandSpecs, openAdjacentEditor, registerEditorPanelActions, registerMarkdownModeAction, saveHotkeyLabel, SAVE_AS_COMMAND, SAVE_COMMAND, NEXT_EDITOR_COMMAND_ID, PREVIOUS_EDITOR_COMMAND_ID } from './editor-commands';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
 /** 面板就地处理的命令(保存 / 另存为 / 下一个 / 上一个编辑器)。 */
@@ -494,7 +494,9 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       return false;
     }
     if (!allowPrompt) {
-      notifySaveFailed(editorTabTitle(target.filePath), r, saveFailureActions(target.id, r.code, false), target.filePath);
+      // 磁盘冲突的说明里写着保存键:填当前生效绑定(不填 → 占位符守卫退回主进程的英文原文与完整路径)
+      const params = r.code === EDITOR_DISK_CHANGED ? { hotkey: saveHotkeyLabel() } : undefined;
+      notifySaveFailed(editorTabTitle(target.filePath), r, saveFailureActions(target.id, r.code, false), target.filePath, params);
       return false;
     }
     if (r.code === EDITOR_DISK_CHANGED) {
@@ -511,7 +513,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     try {
       const r = await saveTab(candidate.id);
       if (r.ok) {
-        advanceBatchClose(candidate.batch);
+        advanceAfterSave(candidate, candidate.batch);
         return;
       }
       if (r.code === EDITOR_DISK_CHANGED) {
@@ -535,18 +537,29 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     if (!tab || tab.orphaned) return false;
     return savesOnClose(resolveAutoSave(tab.filePath, autoSaveSettings), detectPlatform() === 'mac');
   });
-  // 自动保存后关闭:成功(且保存完仍不脏)→ 推进这批关闭;失败(无权限 / 磁盘冲突 / 写保护 / 期间被删除…)→ 提示失败、tab 不关,
-  // 改弹确认框(VSCode:自动保存失败后以 skipAutoSave 重新确认)。不覆盖外部修改、不去写保护、不重建已删除的文件。
+  // 保存成功后推进这批关闭(VSCode doHandleCloseConfirmation 保存后再查 editor.isDirty()):先把保存期间编辑器里新打、尚未上抛的
+  // 输入(Milkdown 延迟回写,单次 200ms 起)刷进 store,仍脏 → 不关,重新确认这个 tab;否则接着推进。不刷就按 store 里的旧脏态判定,
+  // 保存期间打的字随 tab 关闭丢失。BDD: src/__tests__/files-auto-save/(auto-save-close-tab.spec.tsx)
+  const advanceAfterSave = useStableCallback((target: Pick<TabChrome, 'id' | 'filePath'>, batch: BatchClose) => {
+    flushEditorWriteBacks([target.id]);
+    if (groupTabsForClose(groupId).some((tab) => tab.id === target.id && tab.dirty)) {
+      askCloseCandidate({ id: target.id, filePath: target.filePath, dirty: true, batch });
+      return;
+    }
+    advanceBatchClose(batch);
+  });
+  // 自动保存后关闭:成功(且保存完仍不脏)→ 推进这批关闭;失败(无权限 / 写保护 / 期间被删除…)→ 提示失败、tab 不关,
+  // 改弹确认框(VSCode:自动保存失败后以 skipAutoSave 重新确认)。磁盘冲突不另弹提示(同显式保存遇冲突走确认框,不 toast):
+  // 确认框里选「保存」再走覆盖确认。不覆盖外部修改、不去写保护、不重建已删除的文件。
   const autoSaveAndAdvance = useStableCallback(async (candidate: TabChrome & { readonly batch: BatchClose }) => {
     try {
       const r = await saveTab(candidate.id, { recreateMissing: false });
-      const after = findEditorFileTabById(useEditorStore.getState().tabs, candidate.id);
-      if (!after) return;
-      if (r.ok && !after.dirty) {
-        advanceBatchClose(candidate.batch);
+      if (!findEditorFileTabById(useEditorStore.getState().tabs, candidate.id)) return;
+      if (r.ok) {
+        advanceAfterSave(candidate, candidate.batch);
         return;
       }
-      if (!r.ok) notifySaveFailed(editorTabTitle(candidate.filePath), r, undefined, candidate.filePath);
+      if (r.code !== EDITOR_DISK_CHANGED) notifySaveFailed(editorTabTitle(candidate.filePath), r, undefined, candidate.filePath);
     } catch (err) {
       notifyThrownError(err);
     }
@@ -583,11 +596,11 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     try {
       const r = await saveTab(candidate.id, { force: true });
       if (!r.ok) onSaveFailed(candidate, r, { batch: candidate.batch, force: true });
-      else if (candidate.batch) advanceBatchClose(candidate.batch);
+      else if (candidate.batch) advanceAfterSave(candidate, candidate.batch);
     } catch (err) {
       notifyThrownError(err);
     }
-  }, [overwriteCandidate, saveTab, advanceBatchClose, onSaveFailed]);
+  }, [overwriteCandidate, saveTab, advanceAfterSave, onSaveFailed]);
   const confirmOverwriteReadonly = useCallback(async () => {
     const candidate = readonlyCandidate;
     setReadonlyCandidate(null);
@@ -605,11 +618,11 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
             candidate.filePath,
           );
         }
-      } else if (candidate.batch) advanceBatchClose(candidate.batch);
+      } else if (candidate.batch) advanceAfterSave(candidate, candidate.batch);
     } catch (err) {
       notifyThrownError(err);
     }
-  }, [readonlyCandidate, saveTab, advanceBatchClose, saveFailureActions]);
+  }, [readonlyCandidate, saveTab, advanceAfterSave, saveFailureActions]);
   // 冲突时「放弃更改并重新加载」(VSCode Revert):tab 换成磁盘版本、丢弃未保存修改;来自关闭时的「保存」→ 接着推进这批关闭。
   const revertOverwriteCandidate = useCallback(async () => {
     const candidate = overwriteCandidate;

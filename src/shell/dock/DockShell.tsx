@@ -484,6 +484,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       await Promise.all([layoutFlush, explorerFlush, autosaveFlush]);
       // 统一规则:全部 flush 完成后、ACK 前最终脏检查。本轮未选「不保存」且仍有未保存改动(防抖内 autosave
       // 失败 / flush 期间继续输入 / 确认期间变脏)→ 回执 remaining,main 中止关闭 / 退出并按此记账。
+      // 先把保存 / flush 期间编辑器里新打、尚未上抛的输入(Milkdown 延迟回写)刷进 store,否则按旧脏态放行关窗,这段输入丢失。
+      flushEditorWriteBacks();
       const tabs = useEditorStore.getState().tabs;
       // 「不保存」:框里列出的文件照常丢弃,但确认时未列入框的待 autosave .md(pendingAutoSave)仍脏 → remaining。
       const pendingAutoSave = payload?.discard ? payload.pendingAutoSave : undefined;
