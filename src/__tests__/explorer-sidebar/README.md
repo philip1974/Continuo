@@ -42,6 +42,11 @@
   对应 VSCode 侧栏 snap(`SidebarPart.snap = true`:放不下最小宽 170 时整个收起;VSCode 窗口缩放本身不收起侧栏,网格按最小宽
   溢出 —— 这里把 snap 用到窗口缩放上)。只在「放得下 → 放不下」的变化时收起:用户在窄窗口里再打开侧栏不会被立刻收回;
   单组时 dock 最小宽 100,400 宽窗口仍保留最小宽侧栏(e2e `explorer-sidebar-narrow-window`)
+- 布局恢复造成的「放得下 → 放不下」不算(第五十三轮审计 3:1000 宽拆 4 组 → 缩到 600 自动收起 → ⌘B 打开 → 重启,侧栏被收起并把
+  `sidebarOpen:false` 写回 explorer.json):dock 布局恢复(fromJSON / 默认布局,`markDockLayoutRestored`)之前网格是空的(最小宽 0)、
+  popout 恢复在途时开窗失败的组会被收回主窗网格、同一窗口切换 root 后按文件夹快照恢复编辑器组(`rootSwitchesPending > 0`)——
+  这些期间不记基准并清掉旧基准,恢复完成后按当时的结果重新记(放不下 = 侧栏保持打开,之后放大再缩窄才收起)。
+  e2e `explorer-sidebar-narrow-window` › 重启保持
 - 保存的 `sidebarWidth` 不因窗口变窄改写,窗口放大后恢复
 - separator `aria-valuemax` / `aria-valuenow` 为有效上限 / 显示宽度;键盘与拖拽以显示宽度为起点、有效上限为上限
 - 规范:`explorer-sidebar-window-clamp.spec.tsx`

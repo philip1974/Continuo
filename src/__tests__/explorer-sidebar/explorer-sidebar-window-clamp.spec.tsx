@@ -15,9 +15,13 @@ import {
   sidebarMaxWidthFor,
   useLayoutUiStore,
 } from '../../stores/layout-ui.store';
-import { setDockApi } from '../../shell/dock/dock-api-ref';
+import { markDockLayoutRestored, setDockApi } from '../../shell/dock/dock-api-ref';
+import { trackPopoutRestore } from '../../shell/dock/popout-restore-settle';
 import type { DockviewApi } from 'dockview-react';
-import { useWorkspaceStore } from '../../stores/workspace.store';
+import { setBeforeWorkspaceRootSwitch, useWorkspaceStore } from '../../stores/workspace.store';
+
+// 文件树内容与本规范无关(切换 root 的用例里不挂真实文件树,免去 fs 监听)
+vi.mock('@/panels/Explorer', () => ({ Explorer: () => null }));
 
 const originalWidth = window.innerWidth;
 
@@ -43,6 +47,7 @@ beforeEach(() => {
 
 afterEach(() => {
   act(() => setDockApi(null));
+  setBeforeWorkspaceRootSwitch(null);
   delete (window as { api?: unknown }).api;
   cleanup();
   Object.defineProperty(window, 'innerWidth', { value: originalWidth, configurable: true, writable: true });
@@ -110,9 +115,11 @@ function fakeDock(minimumWidth: number) {
   };
   const dock = {
     minimumWidth,
+    groups: [] as unknown[],
     onDidLayoutChange: on,
     onDidAddGroup: on,
     onDidRemoveGroup: on,
+    onDidOpenPopoutWindowFail: () => ({ dispose: () => undefined }),
   };
   return {
     api: dock as unknown as DockviewApi,
@@ -172,5 +179,63 @@ describe('侧栏让位按 dock 网格实际最小宽度(多组并排)', () => {
     expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
     setWindowWidth(340);
     expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+  });
+});
+
+// 第五十三轮审计 3:1000 宽拆 4 组 → 缩到 600 自动收起 → ⌘B 打开(explorer.json sidebarOpen:true)→ 重启 → 侧栏被收起且写回 false。
+// 启动时 dock 布局未恢复,网格最小宽是空网格的 0(「放得下」被记成基准),恢复 4 组后变「放不下」→ 误当成用户操作收起。
+describe('布局恢复造成的「放得下 → 放不下」不收起侧栏', () => {
+  it('启动:布局恢复前(空网格)不记基准;恢复出 4 组放不下 → 侧栏保持打开;之后用户再拆组 / 缩窗照常按变化判定', () => {
+    setWindowWidth(600);
+    const dock = fakeDock(0);
+    act(() => setDockApi(dock.api, { layoutPending: true }));
+    render(<ExplorerSidebar />);
+    dock.setMin(400); // fromJSON 恢复出 4 组:600 − 200 < 400+ → 放不下
+    dock.setMin(440);
+    act(() => markDockLayoutRestored(dock.api));
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+    // 恢复后的真实变化:先放大到放得下,再缩窄 → 收起
+    setWindowWidth(1000);
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+    setWindowWidth(600);
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(false);
+  });
+
+  it('popout 恢复在途(开窗失败的组被收回主窗网格)不算;落定后才记基准', () => {
+    setWindowWidth(600);
+    const dock = fakeDock(100);
+    act(() => setDockApi(dock.api, { layoutPending: true }));
+    render(<ExplorerSidebar />);
+    const tracking = trackPopoutRestore(dock.api as unknown as Parameters<typeof trackPopoutRestore>[0], 1);
+    act(() => markDockLayoutRestored(dock.api));
+    dock.setMin(440); // popout 开窗失败 → 组回到主窗网格
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+    act(() => tracking.dispose()); // 落定
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+    dock.setMin(100);
+    dock.setMin(440); // 落定后用户拆组 → 照常收起
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(false);
+  });
+
+  it('同一窗口切换 root:按文件夹快照恢复编辑器组期间的变化不算(恢复完成后重新记基准)', async () => {
+    setWindowWidth(600);
+    const dock = fakeDock(100);
+    act(() => setDockApi(dock.api));
+    useWorkspaceStore.setState({ root: '/ws/a' });
+    render(<ExplorerSidebar />);
+    let finish!: () => void;
+    setBeforeWorkspaceRootSwitch(() => new Promise<void>((resolve) => (finish = resolve)));
+    act(() => useWorkspaceStore.getState().setRoot('/ws/b'));
+    dock.setMin(440); // 快照恢复出 4 个编辑器组
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+    await act(async () => finish());
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+    expect(useWorkspaceStore.getState().rootSwitchesPending).toBe(0);
+    // 恢复完成后重新记基准(放不下):用户接着缩窄不收回;放大再缩窄才收起
+    setWindowWidth(560);
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+    setWindowWidth(1000);
+    setWindowWidth(600);
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(false);
   });
 });

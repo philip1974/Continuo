@@ -17,6 +17,20 @@ let apiRef: DockviewApi | null = null;
 let layoutRestored = true;
 let queuedOpens: Array<(api: DockviewApi) => void> = [];
 const apiListeners = new Set<(api: DockviewApi | null) => void>();
+const restoredListeners = new Set<(api: DockviewApi) => void>();
+
+/** 当前 dock api 的布局是否已恢复(fromJSON / 默认布局);dock 未就绪 → false。 */
+export function isDockLayoutRestored(): boolean {
+  return apiRef !== null && layoutRestored;
+}
+
+/** 订阅布局恢复完成(markDockLayoutRestored,排队的入口执行之后);返回退订函数。 */
+export function onDockLayoutRestored(listener: (api: DockviewApi) => void): () => void {
+  restoredListeners.add(listener);
+  return () => {
+    restoredListeners.delete(listener);
+  };
+}
 
 /** 订阅 dock api 的出现 / 更换 / 卸载(dock 外的组件据此订阅 dockview 事件);返回退订函数。 */
 export function subscribeDockApi(listener: (api: DockviewApi | null) => void): () => void {
@@ -57,6 +71,7 @@ export function markDockLayoutRestored(api: DockviewApi): void {
       notifyThrownError(err);
     }
   }
+  for (const listener of restoredListeners) listener(api);
 }
 
 /**

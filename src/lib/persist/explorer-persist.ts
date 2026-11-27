@@ -975,7 +975,8 @@ function wireWorkspaceSnapshots(
       const { windowSeq: _seq, ...state } = snapshotFromStores(undefined, windowSeq).windows[0]!;
       save = { ...state, workspace: { root: from } };
     }
-    switchWorkspace({ save, open: to })
+    // 返回恢复的 Promise:落定前 rootSwitchesPending 计入(恢复改动的侧栏 / 组不当成用户操作,见 workspace.store)
+    return switchWorkspace({ save, open: to })
       .then(async (r) => {
         if (!r.ok) {
           console.warn('[explorer-persist] switchWorkspace failed', r.code, r.message);

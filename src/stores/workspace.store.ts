@@ -55,6 +55,11 @@ type WorkspaceState = {
    * (此前另有 hydrated 标志在编辑器 tab 读完后置位,但没有消费方只看它,已删除。)
    */
   rootRestored: boolean;
+  /**
+   * 同一窗口切换 root 后、按文件夹快照恢复(侧栏 / 编辑器 tab / 组)尚未完成的次数(切换钩子返回的 Promise 未落定)。> 0 期间
+   * 布局在被恢复而非用户改动,依赖「布局变化」的逻辑(窄窗口侧栏收起)不把这段变化当成用户操作。
+   */
+  rootSwitchesPending: number;
   /** 切换 root;同时 LRU 维护 recentRoots. null 时只清 root,不动 recent.
    *  副作用:旧 root 外的 clean file tab 自动关闭(dirty 保留). */
   setRoot: (path: string | null) => void;
@@ -87,8 +92,11 @@ export function normalizeWorkspaceRoot(path: unknown): string | null {
   return isBlankString(path) ? null : trimTrailingSeparatorsKeepRoot(path);
 }
 
-/** 切换 root 前的回调(from = 当前 root,to = 新 root;同一文件夹不调)。 */
-export type BeforeWorkspaceRootSwitch = (from: string | null, to: string | null) => void;
+/**
+ * 切换 root 前的回调(from = 当前 root,to = 新 root;同一文件夹不调)。返回 Promise = 新 root 的状态恢复在途,落定前
+ * rootSwitchesPending 计入这次切换。
+ */
+export type BeforeWorkspaceRootSwitch = (from: string | null, to: string | null) => void | Promise<unknown>;
 let beforeRootSwitch: BeforeWorkspaceRootSwitch | null = null;
 
 /**
@@ -103,12 +111,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   root: null,
   recentRoots: [],
   rootRestored: false,
+  rootSwitchesPending: 0,
   markRootRestored: () => set((s) => (s.rootRestored ? s : { rootRestored: true })),
   setRoot: (path) => {
     const normalized = normalizeWorkspaceRoot(path);
     const prev = get().root;
     const switching = normalized === null ? prev !== null : prev === null || !pathEquals(prev, normalized);
-    if (switching) beforeRootSwitch?.(prev, normalized);
+    const restoring = switching ? beforeRootSwitch?.(prev, normalized) : undefined;
+    if (restoring) {
+      set((s) => ({ rootSwitchesPending: s.rootSwitchesPending + 1 }));
+      const settle = () => set((s) => ({ rootSwitchesPending: Math.max(0, s.rootSwitchesPending - 1) }));
+      restoring.then(settle, settle);
+    }
     // 切换/关闭 root 时同步清掉 root 外的 file tab,避免旧路径残留误导
     useEditorStore.getState().closeTabsOutsideRoot(normalized);
     set((s) => {

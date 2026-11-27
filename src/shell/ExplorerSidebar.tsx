@@ -81,7 +81,7 @@ export function ExplorerSidebar() {
  * 显示宽度 = clamp(MIN, sidebarWidth, 窗口宽 − 侧栏左边缘 − max(EDITOR_MIN_WIDTH, dock 网格最小宽)):监听窗口 resize /
  * dock 布局变化重算,保存的 sidebarWidth 不动(窗口放大后恢复);键盘 / 拖拽以显示宽度为起点、以有效上限为上限。
  * 侧栏缩到最小宽 dock 仍放不下 → 收起(sidebarOpen=false,同 VSCode 侧栏 snap;只在「放得下 → 放不下」的变化时收起,
- * 用户在窄窗口里再打开不会被立刻收回)。
+ * 用户在窄窗口里再打开不会被立刻收回;布局恢复(启动 / dock 重建 / popout 恢复 / 切换 root 后的快照恢复)造成的变化不算)。
  * aside 经拖拽条的 parentElement 取得:挂载时父级 aside 的 ref 晚于子组件 layout effect 才挂上,
  * 而本组件自己 DOM 节点的 ref 在其 layout effect 前已就绪。
  */
@@ -95,7 +95,8 @@ function ExplorerSidebarResizer() {
   // 侧栏可用宽度(侧栏左边缘到窗口右边缘);null = 尚未按实际位置量过(首帧按窗口宽估,layout effect 里校正)。
   const [measured, setAvailable] = useState<number | null>(null);
   const available = measured ?? window.innerWidth;
-  const dockMin = useDockMinimumWidth();
+  const { width: dockMin, settled: dockSettled } = useDockMinimumWidth();
+  const switchingRoot = useWorkspaceStore((s) => s.rootSwitchesPending > 0);
   useLayoutEffect(() => {
     const aside = handleRef.current?.parentElement;
     const win = aside?.ownerDocument.defaultView;
@@ -108,11 +109,17 @@ function ExplorerSidebarResizer() {
   const max = sidebarMaxWidthFor(available, dockMin);
   const displayWidth = clampWidth(width, SIDEBAR_MIN_WIDTH, max);
 
-  // 「放得下 → 放不下」时收起;首次量到的结果只记录(打开时已放不下 = 用户在窄窗口里主动打开,不收回)
-  const fits = measured === null ? null : sidebarFitsBesideDock(measured, dockMin);
+  // 「放得下 → 放不下」时收起;首次量到的结果只记录(打开时已放不下 = 用户在窄窗口里主动打开,不收回)。
+  // 布局在被恢复(dock 布局尚未恢复 / popout 恢复在途 —— 启动、dock 重建;同一窗口切换 root 后按文件夹快照恢复侧栏 / 编辑器组):
+  // 网格最小宽是空网格的 0 或恢复途中的值,不记基准、并清掉旧基准,恢复完成后重新记 —— 否则启动时先记下「放得下」(0),布局恢复后
+  // 变成「放不下」就把用户在窄窗口里打开的侧栏收起并写进持久化。
+  const fits = measured === null || !dockSettled || switchingRoot ? null : sidebarFitsBesideDock(measured, dockMin);
   const fitsRef = useRef<boolean | null>(null);
   useLayoutEffect(() => {
-    if (fits === null) return;
+    if (fits === null) {
+      fitsRef.current = null;
+      return;
+    }
     const prev = fitsRef.current;
     fitsRef.current = fits;
     // 同 ⌘B 隐藏:侧栏里有焦点 → 交给活动 dock 面板,不落 body

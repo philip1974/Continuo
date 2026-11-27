@@ -66,6 +66,11 @@ export function trackPopoutRestore(
   return { dispose: () => finish() };
 }
 
+/** 该 api 的 popout 恢复是否在途(恢复失败的组会被 dockview 收回主窗网格,网格最小宽随之变化)。 */
+export function isPopoutRestoreSettling(api: object): boolean {
+  return settling.has(api);
+}
+
 /** 布局快照写盘前等待:该 api 的 popout 恢复落定(未登记 → 立即)。 */
 export function whenPopoutRestoreSettled(api: object): Promise<void> {
   return settling.get(api) ?? Promise.resolve();
