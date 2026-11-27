@@ -118,8 +118,19 @@ function TerminalPanelContent({
   // 扩展创建终端默认 preserveFocus)。搜索条打开时不抢(同下方 issue #38 R2)。
   const searchOpenRef = useRef(false);
   const focusOnInit = useCallback(() => api.isActive && !searchOpenRef.current, [api]);
-  const { containerRef, isReady, fit, requestFit, focus, clear, readText, contextMenuActions, searchApi } =
-    useTerminal(sessionId, { onExitDismiss, focusOnInit, inputAriaLabel });
+  const isVisible = useCallback(() => api.isVisible, [api]);
+  const {
+    containerRef,
+    isReady,
+    fit,
+    requestFit,
+    focus,
+    clear,
+    readText,
+    contextMenuActions,
+    searchApi,
+    setRendererVisible,
+  } = useTerminal(sessionId, { onExitDismiss, focusOnInit, inputAriaLabel, isVisible });
   const { ref: dropZoneRef } = useTerminalDragDrop({ sessionId, focus, api });
   // tab 右键「重命名…」→ 本面板显示重命名框;portal 进面板所在文档的 body(popout 子窗画在子窗),关闭后焦点回终端。
   const renaming = useTerminalRenameRequest((s) => s.sessionId === sessionId);
@@ -176,8 +187,17 @@ function TerminalPanelContent({
         requestFit();
       });
     });
+    // 显隐也告知 WebGL 渲染器:名额满时隐藏终端让出上下文,重新可见再装(见 terminal-webgl)。dockview 切 tab 不卸载 React 组件,
+    // 只能靠本事件知道显隐。
     const visibilityDisposable = api.onDidVisibilityChange((event) => {
+      setRendererVisible(event.isVisible);
       if (event.isVisible) tryFit();
+    });
+    // 拖进 / 拖出 popout 子窗:可见性未必变化,但 canvas 换了窗口,可见时按新窗口重建(VSCode updateGpuRendererWindow)
+    const locationDisposable = api.onDidLocationChange(() => {
+      queueMicrotask(() => {
+        if (api.isVisible) setRendererVisible(true);
+      });
     });
 
     return () => {
@@ -186,8 +206,9 @@ function TerminalPanelContent({
       activeDisposable.dispose();
       dimensionsDisposable.dispose();
       visibilityDisposable.dispose();
+      locationDisposable.dispose();
     };
-  }, [api, fit, requestFit, focus]);
+  }, [api, fit, requestFit, focus, setRendererVisible]);
 
   return (
     <div

@@ -66,6 +66,15 @@ describe('formatFindCount', () => {
     expect(formatFindCount({ total: FIND_MATCH_LIMIT, current: 2, capped: true, empty: false })).toBe('2 / 1000+');
   });
 
+  it('计数进行中(大文档分片扫描):已数到的部分加「+」,一个没数到显示「…」而非「无结果」;封顶优先', () => {
+    setLocale('en');
+    expect(formatFindCount({ total: 0, current: 0, capped: false, empty: false, pending: true })).toBe('…');
+    expect(formatFindCount({ total: 12, current: 0, capped: false, empty: false, pending: true })).toBe('12+ matches');
+    expect(formatFindCount({ total: 1, current: 0, capped: false, empty: false, pending: true })).toBe('1+ matches');
+    expect(formatFindCount({ total: 12, current: 3, capped: false, empty: false, pending: true })).toBe('3 / 12+');
+    expect(formatFindCount({ total: 0, current: 0, capped: false, empty: true, pending: true })).toBe('');
+  });
+
   it('非法正则(VSCode 查找框弹出正则错误):显示「正则表达式无效」(三语),优先于「无结果」;空查询仍无文案', () => {
     setLocale('zh');
     expect(formatFindCount({ total: 0, current: 0, capped: false, empty: false, invalid: true })).toBe('正则表达式无效');

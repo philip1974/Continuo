@@ -9,15 +9,25 @@
 // CodeEditor(代码文件 + Markdown 源码)与 Markdown 代码块(经 markdownCodeBlockTheme)共用。
 // BDD: src/__tests__/editor-find-widget/
 
-import { Prec, type EditorState, type Extension } from '@codemirror/state';
-import { ViewPlugin, keymap, type Command, type EditorView, type ViewUpdate } from '@codemirror/view';
-import { SearchQuery, getSearchQuery, openSearchPanel, search, searchPanelOpen, setSearchQuery } from '@codemirror/search';
+import { EditorSelection, Prec, type ChangeDesc, type Extension } from '@codemirror/state';
+import { EditorView, ViewPlugin, keymap, type Command, type ViewUpdate } from '@codemirror/view';
+import {
+  SearchQuery,
+  findNext,
+  findPrevious,
+  getSearchQuery,
+  openSearchPanel,
+  search,
+  searchPanelOpen,
+  setSearchQuery,
+} from '@codemirror/search';
 import { isImeComposing } from '@/design/ime';
 import { regexSyntaxError } from '@/lib/search-query';
 import { t } from '@/i18n';
 import { FIND_OPTION_GLYPHS, FIND_OPTIONS, FIND_OPTIONS_GROUP_KEY, findOptionTooltip, type FindOption } from '@/lib/find-options';
 import { hotkeyText, withHotkey } from '@/lib/hotkey-label';
-import { editorFindHistory, FIND_MATCH_LIMIT, formatFindCount, type FindCountState } from './find-widget-model';
+import { editorFindHistory, formatFindCount, type FindCountState } from './find-widget-model';
+import { MatchScan } from './find-match-scan';
 
 type ToggleField = 'caseSensitive' | 'wholeWord' | 'regexp';
 
@@ -69,16 +79,56 @@ export const openReplacePanel: Command = (view) => {
   return true;
 };
 
-/** 已数到的匹配(扁平 [from, to, ...])与是否封顶;非法 / 空查询为空。 */
-function collectMatches(state: EditorState, q: SearchQuery): { ranges: number[]; capped: boolean } {
-  const ranges: number[] = [];
-  if (!q.valid) return { ranges, capped: false };
-  const cursor = q.getCursor(state);
-  for (let r = cursor.next(); !r.done; r = cursor.next()) {
-    if (ranges.length >= FIND_MATCH_LIMIT * 2) return { ranges, capped: true };
-    ranges.push(r.value.from, r.value.to);
+/** 文档变化后把已数到的匹配映射到新位置(VSCode 的查找装饰随编辑移动);被删掉 / 改成空的匹配丢弃。 */
+function mapRanges(ranges: readonly number[], changes: ChangeDesc): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < ranges.length; i += 2) {
+    const from = changes.mapPos(ranges[i]!, 1);
+    const to = changes.mapPos(ranges[i + 1]!, -1);
+    if (to > from || (to === from && ranges[i] === ranges[i + 1])) out.push(from, to);
   }
-  return { ranges, capped: false };
+  return out;
+}
+
+/** 第一个起点 >= pos 的匹配下标(匹配数 = 未找到)。 */
+function lowerBound(ranges: readonly number[], pos: number): number {
+  let lo = 0;
+  let hi = ranges.length / 2;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ranges[mid * 2]! < pos) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+const ANNOUNCE_MARGIN = 30;
+const ANNOUNCE_BREAK = /[\s.,:;?!]/;
+
+/** 读屏播报当前匹配(照抄 @codemirror/search 的 announceMatch,其未导出):「当前匹配. <上下文> 在第 N 行.」 */
+function announceMatch(view: EditorView, { from, to }: { from: number; to: number }) {
+  const line = view.state.doc.lineAt(from);
+  const lineEnd = view.state.doc.lineAt(to).to;
+  const start = Math.max(line.from, from - ANNOUNCE_MARGIN);
+  const end = Math.min(lineEnd, to + ANNOUNCE_MARGIN);
+  let text = view.state.sliceDoc(start, end);
+  if (start !== line.from) {
+    for (let i = 0; i < ANNOUNCE_MARGIN; i++)
+      if (!ANNOUNCE_BREAK.test(text[i + 1] ?? '') && ANNOUNCE_BREAK.test(text[i] ?? '')) {
+        text = text.slice(i);
+        break;
+      }
+  }
+  if (end !== lineEnd) {
+    for (let i = text.length - 1; i > text.length - ANNOUNCE_MARGIN; i--)
+      if (!ANNOUNCE_BREAK.test(text[i - 1] ?? '') && ANNOUNCE_BREAK.test(text[i] ?? '')) {
+        text = text.slice(0, i);
+        break;
+      }
+  }
+  return EditorView.announce.of(
+    `${view.state.phrase('current match')}. ${text} ${view.state.phrase('on line')} ${line.number}.`,
+  );
 }
 
 /** 主选区恰好是第几个匹配(1 起;不在已数到的匹配上为 0)。二分。 */
@@ -156,6 +206,11 @@ function arrangeOptionToggles(panel: HTMLElement, after: Element): void {
   after.after(group);
 }
 
+/** 按键路径上同步扫描的时间上限(ms);扫不完的放到后续分片(每片同样上限),期间计数显示「N+」/「…」。 */
+const SCAN_SLICE_MS = 8;
+/** 大文档编辑后重数的延迟(VSCode findModel `_updateDecorationsScheduler` 同为 100ms);期间沿用随编辑映射的旧匹配。 */
+const DOC_CHANGE_RESCAN_DELAY_MS = 100;
+
 class FindWidget {
   private panel: HTMLElement | null = null;
   private input: HTMLInputElement | null = null;
@@ -163,12 +218,22 @@ class FindWidget {
   private query: SearchQuery | null = null;
   private ranges: number[] = [];
   private capped = false;
+  /** ranges 是当前查询在当前文档上的完整结果(查找下一个 / 上一个可直接用,VSCode 同:匹配数在上限内时用装饰跳转)。 */
+  private complete = false;
+  /** 计数还在进行(查询刚变,ranges 是已扫到的部分):计数显示「N+」/「…」,不标红。 */
+  private pending = false;
+  /** 上次全文扫描一个分片没扫完:之后的文档变化走防抖重数,不在按键里同步试扫。 */
+  private large = false;
+  private scan: MatchScan | null = null;
+  private sliceTimer: ReturnType<typeof setTimeout> | undefined;
+  private rescanTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly view: EditorView) {
     this.sync(true);
   }
 
   update(update: ViewUpdate): void {
+    if (update.docChanged && this.ranges.length) this.ranges = mapRanges(this.ranges, update.changes);
     this.sync(update.docChanged);
   }
 
@@ -185,10 +250,117 @@ class FindWidget {
     }
     if (!this.panel) return;
     const q = getSearchQuery(state);
-    if (docChanged || !this.query || !q.eq(this.query)) {
+    if (!this.query || !q.eq(this.query)) {
       this.query = q;
-      ({ ranges: this.ranges, capped: this.capped } = collectMatches(state, q));
+      this.recount(true);
+    } else if (docChanged) {
+      this.complete = false;
+      this.cancelScan();
+      // 小文档照旧当场重数;大文档(上次一个分片扫不完)防抖,期间显示映射后的旧匹配
+      if (this.large) {
+        this.rescanTimer = setTimeout(() => {
+          this.rescanTimer = undefined;
+          this.recount(false);
+          this.render();
+        }, DOC_CHANGE_RESCAN_DELAY_MS);
+      }
+      else this.recount(false);
     }
+    this.render();
+  }
+
+  private cancelScan(): void {
+    clearTimeout(this.sliceTimer);
+    clearTimeout(this.rescanTimer);
+    this.sliceTimer = this.rescanTimer = undefined;
+    this.scan = null;
+  }
+
+  /**
+   * 从头数当前查询:先在当前调用里扫一个分片(小文档就此扫完,行为与同步计数相同),扫不完的分片排到后续宏任务。
+   * showPartial:查询变了 → 期间显示已扫到的部分(「N+」/「…」);文档变了 → 期间保留映射后的旧匹配,扫完再换。
+   */
+  private recount(showPartial: boolean): void {
+    this.cancelScan();
+    const scan = new MatchScan(this.view.state, this.query!);
+    if (scan.run(performance.now() + SCAN_SLICE_MS)) {
+      this.large = false;
+      this.finish(scan);
+      return;
+    }
+    this.large = true;
+    this.scan = scan;
+    this.complete = false;
+    if (showPartial) {
+      this.ranges = scan.ranges;
+      this.capped = false;
+      this.pending = true;
+    }
+    this.scheduleSlice();
+  }
+
+  private scheduleSlice(): void {
+    this.sliceTimer = setTimeout(() => {
+      this.sliceTimer = undefined;
+      const scan = this.scan;
+      if (!scan) return;
+      if (!scan.run(performance.now() + SCAN_SLICE_MS)) {
+        this.scheduleSlice();
+        return;
+      }
+      this.finish(scan);
+      this.render();
+    }, 0);
+  }
+
+  private finish(scan: MatchScan): void {
+    this.scan = null;
+    this.ranges = scan.ranges;
+    this.capped = scan.capped;
+    this.complete = true;
+    this.pending = false;
+  }
+
+  /**
+   * 查找下一个 / 上一个(dir 1 / -1)用已数到的完整匹配跳转(VSCode findModel:匹配数在上限内时 moveToNextMatch 用装饰,不重新搜索);
+   * 语义同 @codemirror/search 的 findNext / findPrevious(从选区往后 / 往前,到头绕回)。计数未完成 / 封顶 / 面板未开 → undefined,
+   * 调用方退回 CodeMirror 自己的搜索。
+   */
+  navigate(dir: 1 | -1): boolean | undefined {
+    const { state } = this.view;
+    if (!this.panel || !this.complete || this.capped || !this.query) return undefined;
+    const q = getSearchQuery(state);
+    if (!q.valid || !q.eq(this.query)) return undefined;
+    const n = this.ranges.length / 2;
+    if (n === 0) return false;
+    const sel = state.selection.main;
+    let i: number;
+    if (dir === 1) {
+      i = lowerBound(this.ranges, sel.to);
+      if (i === n) i = 0;
+    } else {
+      // 最后一个终点 <= 选区起点的匹配;没有则绕到最后一个
+      i = lowerBound(this.ranges, sel.from) - 1;
+      while (i >= 0 && this.ranges[i * 2 + 1]! > sel.from) i--;
+      if (i < 0) i = n - 1;
+    }
+    const from = this.ranges[i * 2]!;
+    const to = this.ranges[i * 2 + 1]!;
+    const selection = EditorSelection.single(from, to);
+    this.view.dispatch({
+      selection,
+      effects: [announceMatch(this.view, { from, to }), EditorView.scrollIntoView(selection.main)],
+      userEvent: 'select.search',
+    });
+    // 同 @codemirror/search 的 selectSearchInput:焦点在查找框时全选
+    if (this.input && this.input === this.view.root.activeElement) this.input.select();
+    return true;
+  }
+
+  private render(): void {
+    if (!this.panel) return;
+    const { state } = this.view;
+    const q = getSearchQuery(state);
     const sel = state.selection.main;
     // 非法正则:错误信息(同 @codemirror/search 编译用的 flags `gmu`)放进查找框与计数区的 title —— 悬停可见,
     // 也是查找框的可访问描述(VSCode 查找框弹出正则错误信息)
@@ -199,11 +371,12 @@ class FindWidget {
       current: currentIndex(this.ranges, sel.from, sel.to),
       capped: this.capped,
       invalid: error !== null,
+      pending: this.pending,
     };
     const text = formatFindCount(count);
     // 文案不变不写 DOM:role=status 只在变化时播报
     if (this.count && this.count.textContent !== text) this.count.textContent = text;
-    const noResults = !count.empty && count.total === 0;
+    const noResults = !count.empty && !count.pending && count.total === 0;
     this.count?.toggleAttribute('data-no-results', noResults);
     if (noResults) this.input?.setAttribute('aria-invalid', 'true');
     else this.input?.removeAttribute('aria-invalid');
@@ -226,6 +399,7 @@ class FindWidget {
     this.input?.after(count);
     arrangeOptionToggles(panel, count);
     panel.addEventListener('keydown', this.onPanelKeyDownCapture, true);
+    panel.addEventListener('click', this.onPanelClickCapture, true);
     this.input?.addEventListener('keydown', this.onKeyDown);
     this.input?.addEventListener('input', this.onInput);
     editorFindHistory.resetCursor();
@@ -236,10 +410,15 @@ class FindWidget {
     // 关闭面板时查找框里的词也进历史(VSCode 同)
     if (this.input) editorFindHistory.add(this.input.value);
     this.panel.removeEventListener('keydown', this.onPanelKeyDownCapture, true);
+    this.panel.removeEventListener('click', this.onPanelClickCapture, true);
     this.input?.removeEventListener('keydown', this.onKeyDown);
     this.input?.removeEventListener('input', this.onInput);
     this.count?.remove();
     this.panel = this.input = this.count = null;
+    this.cancelScan();
+    this.query = null;
+    this.ranges = [];
+    this.complete = this.pending = this.capped = false;
   }
 
   private readonly onInput = (): void => editorFindHistory.resetCursor();
@@ -253,12 +432,24 @@ class FindWidget {
     if (isImeComposing(event)) event.stopPropagation();
   };
 
+  /** 面板「下一个 / 上一个」按钮:同查找框回车,计数已完整时用已数到的匹配跳转(捕获阶段截住按钮自己的 onclick)。 */
+  private readonly onPanelClickCapture = (event: MouseEvent): void => {
+    const name = (event.target as Element | null)?.closest?.('button')?.getAttribute('name');
+    if (name !== 'next' && name !== 'prev') return;
+    if (this.navigate(name === 'next' ? 1 : -1) !== undefined) event.stopPropagation();
+  };
+
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (isImeComposing(event) || event.altKey || event.ctrlKey || event.metaKey) return;
     const input = this.input;
     if (!input) return;
     if (event.key === 'Enter') {
       editorFindHistory.add(input.value);
+      // 计数已完整:用已数到的匹配跳转,不再让默认面板的 findNext 重新整篇搜索(罕见词在大文档上一次 ~0.5s)
+      if (this.navigate(event.shiftKey ? -1 : 1) !== undefined) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       return;
     }
     if (event.shiftKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
@@ -268,6 +459,15 @@ class FindWidget {
     this.view.dispatch({ effects: setSearchQuery.of(withQuery(getSearchQuery(this.view.state), { search: term })) });
   };
 }
+
+const findWidgetPlugin = ViewPlugin.fromClass(FindWidget);
+
+/**
+ * 查找下一个 / 上一个(⌘G / ⇧⌘G、F3 等经命令注册表的入口):查找面板开着且计数已完整时用已数到的匹配跳转(VSCode 匹配数在上限内
+ * 时用装饰跳转),否则同 @codemirror/search 的 findNext / findPrevious。
+ */
+export const findNextMatch: Command = (view) => view.plugin(findWidgetPlugin)?.navigate(1) ?? findNext(view);
+export const findPreviousMatch: Command = (view) => view.plugin(findWidgetPlugin)?.navigate(-1) ?? findPrevious(view);
 
 /**
  * 查找面板补强(面板计数等 + 选项切换键)。计数插件 Prec.lowest:排在面板插件之后更新,打开面板的那次更新里面板 DOM 已在。
@@ -279,7 +479,7 @@ const findWidgetCore: Extension = [
     { key: 'Alt-w', mac: 'Mod-Alt-w', run: toggleSearchOption('wholeWord'), scope: 'editor search-panel' },
     { key: 'Alt-r', mac: 'Mod-Alt-r', run: toggleSearchOption('regexp'), scope: 'editor search-panel' },
   ]),
-  Prec.lowest(ViewPlugin.fromClass(FindWidget)),
+  Prec.lowest(findWidgetPlugin),
 ];
 
 /**

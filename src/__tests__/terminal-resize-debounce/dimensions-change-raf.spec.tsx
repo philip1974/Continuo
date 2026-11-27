@@ -64,6 +64,7 @@ function setup() {
         return { dispose: vi.fn() };
       },
       onDidVisibilityChange: () => ({ dispose: vi.fn() }),
+      onDidLocationChange: () => ({ dispose: vi.fn() }),
     },
     params: { sessionId: 't1' },
   } as unknown as Parameters<typeof TerminalPanelView>[0];

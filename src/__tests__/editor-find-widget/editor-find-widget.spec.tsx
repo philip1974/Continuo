@@ -5,15 +5,15 @@ import React from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorView, runScopeHandlers } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
+import { EditorState, Text } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
 import { getSearchQuery } from '@codemirror/search';
 import { CodeEditor } from '../../panels/Editor/CodeEditor';
 import { markdownCodeBlockTheme } from '../../panels/Editor/code-editor-theme';
 import { editorFindHistory } from '../../panels/Editor/find-widget-model';
-import { openFindPanel } from '../../panels/Editor/codemirror-find';
+import { findNextMatch, findPreviousMatch, openFindPanel } from '../../panels/Editor/codemirror-find';
 import { ThemeContext } from '../../theme/ThemeProvider';
-import { getLocale, notifyLocaleChange, setLocale, t, type Locale } from '../../i18n';
+import { getLocale, notifyLocaleChange, setLocale, t, translateCount, type Locale } from '../../i18n';
 
 vi.mock('../../plugins/settings/values-store', () => ({
   useSettingValue: <T,>(_id: string, fallback: T) => fallback,
@@ -193,6 +193,96 @@ describe('匹配计数与无结果提示(VSCode「1 of 154」/「No results」)'
     expect(countEl(block).textContent).toBe(t('editor.find.match_total_other', { count: 3 }));
     block.destroy();
     parent.remove();
+  });
+});
+
+describe('大文档计数不阻塞按键(VSCode findModel:装饰延迟更新、上限内用装饰跳转)', () => {
+  // 约 23 万字符的日志,罕见词只在开头 / 结尾各出现一次
+  const FILLER = 'INFO 2026-11-27 worker heartbeat ok\n'.repeat(6400);
+  const BIG = `needle at start\n${FILLER}needle at end\n`;
+
+  /** 让每次 performance.now() 前进 5ms:按键里的计数只来得及扫一个分片(模拟 10 万行文档上扫不完)。 */
+  function withSlowClock(fn: () => void): void {
+    let now = 0;
+    const spy = vi.spyOn(performance, 'now').mockImplementation(() => (now += 5));
+    try {
+      fn();
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it('按键里只扫一个分片:期间显示已数到的「N+」(一个没数到为「…」,不标红),之后在后台数完显示准确计数', async () => {
+    switchLocale('zh');
+    const view = await mount(BIG);
+    openFind(view);
+    withSlowClock(() => typeQuery(view, 'needle'));
+    expect(countEl(view).textContent).toBe(t('editor.find.match_total_other', { count: '1+' }));
+    await vi.waitFor(() => expect(countEl(view).textContent).toBe(t('editor.find.match_total_other', { count: 2 })));
+
+    withSlowClock(() => typeQuery(view, 'needle at end'));
+    expect(countEl(view).textContent).toBe('…');
+    expect(countEl(view).hasAttribute('data-no-results')).toBe(false);
+    expect(field(view, 'search').getAttribute('aria-invalid')).not.toBe('true');
+    await vi.waitFor(() => expect(countEl(view).textContent).toBe(translateCount('editor.find.match_total', 1)));
+
+    withSlowClock(() => typeQuery(view, 'zzz-none'));
+    expect(countEl(view).textContent).toBe('…');
+    await vi.waitFor(() => expect(countEl(view).textContent).toBe(t('editor.find.no_results')));
+    expect(field(view, 'search').getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('计数完成后回车 / ⇧回车 / ⌘G 用已数到的匹配跳转,不再整篇搜索;到头绕回', async () => {
+    switchLocale('zh');
+    const view = await mount(BIG);
+    openFind(view);
+    typeQuery(view, 'needle');
+    await vi.waitFor(() => expect(countEl(view).textContent).toBe(t('editor.find.match_total_other', { count: 2 })));
+    const iterRange = vi.spyOn(Text.prototype, 'iterRange');
+    try {
+      pressInSearch(view, ENTER);
+      expect(view.state.selection.main.from).toBe(0);
+      pressInSearch(view, ENTER);
+      expect(view.state.selection.main.from).toBe(BIG.lastIndexOf('needle'));
+      expect(countEl(view).textContent).toBe(t('editor.find.match_count', { n: 2, total: '2' }));
+      pressInSearch(view, ENTER); // 绕回第一个
+      expect(view.state.selection.main.from).toBe(0);
+      pressInSearch(view, { ...ENTER, shiftKey: true }); // 往前绕到最后一个
+      expect(view.state.selection.main.from).toBe(BIG.lastIndexOf('needle'));
+      act(() => void findPreviousMatch(view));
+      expect(view.state.selection.main.from).toBe(0);
+      act(() => void findNextMatch(view));
+      expect(view.state.selection.main.from).toBe(BIG.lastIndexOf('needle'));
+      // 只有可见区的匹配高亮会读文档,没有跨越大半篇的搜索
+      const widest = Math.max(0, ...iterRange.mock.calls.map(([from, to]) => Math.abs((to ?? BIG.length) - from)));
+      expect(widest).toBeLessThan(BIG.length / 2);
+    } finally {
+      iterRange.mockRestore();
+    }
+  });
+
+  it('大文档编辑时沿用随编辑移动的旧计数(不在按键里重数),约 100ms 后重数为准确值', async () => {
+    switchLocale('zh');
+    const view = await mount(BIG);
+    openFind(view);
+    withSlowClock(() => typeQuery(view, 'needle'));
+    await vi.waitFor(() => expect(countEl(view).textContent).toBe(t('editor.find.match_total_other', { count: 2 })));
+    act(() => view.dispatch({ selection: { anchor: 0, head: 6 } }));
+    expect(countEl(view).textContent).toBe(t('editor.find.match_count', { n: 1, total: '2' }));
+    act(() => view.dispatch({ changes: { from: 0, insert: 'needle ' } }));
+    // 旧匹配随编辑后移,总数仍是 2(新输入的 needle 尚未计入)
+    expect([t('editor.find.match_total_other', { count: 2 }), t('editor.find.match_count', { n: 1, total: '2' })]).toContain(
+      countEl(view).textContent,
+    );
+    act(() => view.dispatch({ selection: { anchor: 7, head: 13 } }));
+    expect(countEl(view).textContent).toBe(t('editor.find.match_count', { n: 1, total: '2' }));
+    // 时钟停住:防抖到期后的重数在一个分片里扫完(扫完即更新计数,不依赖后续分片)
+    const frozen = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      await vi.waitFor(() => expect(countEl(view).textContent).toBe(t('editor.find.match_count', { n: 2, total: '3' })));
+    } finally {
+      frozen.mockRestore();
+    }
   });
 });
 

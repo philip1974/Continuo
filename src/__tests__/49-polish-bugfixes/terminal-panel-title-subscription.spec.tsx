@@ -62,6 +62,7 @@ function makeProps(sessionId: string): Parameters<typeof TerminalPanelView>[0] {
       onDidActiveChange: () => ({ dispose: vi.fn() }),
       onDidDimensionsChange: () => ({ dispose: vi.fn() }),
       onDidVisibilityChange: () => ({ dispose: vi.fn() }),
+      onDidLocationChange: () => ({ dispose: vi.fn() }),
     },
     params: { sessionId },
   } as unknown as Parameters<typeof TerminalPanelView>[0];

@@ -11,7 +11,6 @@ import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { coApi } from '@/lib/co-api';
 import { basename, isWindowsRuntime } from '@/lib/path-cross';
@@ -35,7 +34,6 @@ import {
 import { useTheme } from '@/theme';
 import {
   disposeQueue,
-  installAtlasGuards,
   registerOsc7Cwd,
   safeWrite,
 } from '@continuo-terminal/react-terminal';
@@ -55,6 +53,7 @@ import {
   terminalYieldedCommandId,
 } from './terminal-hotkeys';
 import { createOutputCoalescer } from './output-coalescer';
+import { createTerminalWebgl, type TerminalWebgl } from './terminal-webgl';
 import { installTerminalPasteSanitizer, sanitizeTerminalPaste } from './terminal-paste-sanitize';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { notify } from '@/notifications/notify';
@@ -412,6 +411,11 @@ export interface UseTerminalOptions {
    * 内置英文「Terminal input」;这里 open 后覆盖,值变化(改名 / 切语言)即时同步。
    */
   readonly inputAriaLabel?: string;
+  /**
+   * 延后安装 WebGL 渲染器那一刻询问面板是否可见(dockview api.isVisible);之后的显隐变化经返回的 setRendererVisible 告知。
+   * 隐藏终端在 WebGL 名额满时让出上下文,见 terminal-webgl。不传视为可见。
+   */
+  readonly isVisible?: () => boolean;
 }
 
 /**
@@ -426,6 +430,9 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
   onExitDismissRef.current = options?.onExitDismiss;
   const focusOnInitRef = useRef(options?.focusOnInit);
   focusOnInitRef.current = options?.focusOnInit;
+  const isVisibleRef = useRef(options?.isVisible);
+  isVisibleRef.current = options?.isVisible;
+  const webglRef = useRef<TerminalWebgl | null>(null);
   const inputAriaLabel = options?.inputAriaLabel;
   const inputAriaLabelRef = useRef(inputAriaLabel);
   inputAriaLabelRef.current = inputAriaLabel;
@@ -557,9 +564,8 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     // canvas + getContext('webgl2') + 读 GPU 参数 + glyph/rectangle/atlas 状态)~tens
     // of ms。挪到首屏接线(open + listener + readHistory + 首字节渲染 + 清 loading)之后,
     // 下一帧 fire-and-forget 安装 —— 让「能输入 / 看到 prompt」更快;steady-state 仍用
-    // WebGL。在 webglRaf 回调里安装(见下方 listener 注册之后)。
-    let webgl: WebglAddon | null = null;
-    let atlasGuards: ReturnType<typeof installAtlasGuards> | null = null;
+    // WebGL。装 / 卸(下一帧装、显隐、名额、上下文丢失)见 terminal-webgl;下方 listener 注册之后告知初始显隐。
+    const webgl = createTerminalWebgl(term, { onRendererChange: () => resizeDebouncerRef.current?.request() });
     const searchAddon = new SearchAddon({ highlightLimit: TERMINAL_SEARCH_HIGHLIGHT_LIMIT });
     term.loadAddon(searchAddon);
     searchAddonRef.current = searchAddon;
@@ -860,24 +866,14 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     // 性能(Phase-5):首屏接线已完成,下一帧再装 WebGL renderer(同步 GPU init 不阻塞
     // 上面的 open/listener/首渲染)。dom renderer 用 letter-spacing 模拟 CJK 双宽度,累加
     // 误差会裁 CJK 末尾几字;WebGL 按 cell grid 直接画,CJK 精确(VSCode 默认 webgl,issue
-    // #15)。首帧短暂走 dom(prompt 多 ASCII),下一帧切 WebGL。GPU 不可用/context lost 静默
-    // 回退 dom(终端能用)。installAtlasGuards 跟随 WebGL(只对启用的 WebGL 有意义:在三个
-    // wake-up 事件 clearTextureAtlas 修 glyph 索引错乱;DOM 时 no-op)。teardown 已发生则不装。
-    const webglRaf = requestAnimationFrame(() => {
-      if (teardownDone) return;
-      try {
-        webgl = new WebglAddon();
-        webgl.onContextLoss(() => webgl?.dispose());
-        term.loadAddon(webgl);
-        atlasGuards = installAtlasGuards(term);
-      } catch (err) {
-        console.warn('[terminal] webgl renderer init 失败,回退 dom:', err);
-      }
-    });
+    // #15)。首帧短暂走 dom(prompt 多 ASCII),下一帧切 WebGL。GPU 不可用回退 dom(终端能用);
+    // context lost 回退 dom 后可见时退避重试;隐藏终端在 WebGL 名额满时让出上下文(terminal-webgl)。
+    // installAtlasGuards 跟随 WebGL(在三个 wake-up 事件 clearTextureAtlas 修 glyph 索引错乱)。
+    webgl.setVisible(isVisibleRef.current?.() ?? true);
+    webglRef.current = webgl;
 
       return () => {
         teardownDone = true;
-        cancelAnimationFrame(webglRaf); // 取消未触发的 WebGL 延后安装
         cancelAnimationFrame(fitRetryRaf); // 首屏 fit 重试未触发时,别用已拆除的 term 发 resize
         unsubData();
         unsubExit();
@@ -889,7 +885,8 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
         searchResultsDisposable.dispose();
         ro.disconnect();
         resizeDebouncer.dispose();
-        atlasGuards?.dispose(); // 已装才有 guards(rAF 未触发时为 null)
+        webgl.dispose(); // 含取消未触发的 WebGL 延后安装
+        webglRef.current = null;
         // 合并缓冲里未写出的输出随 safeWrite 队列一并丢弃(term 即将 dispose),且撤销窗口定时器,
         // 否则迟到的 flush 会经 safeWrite 新建队列写已死 xterm(同 P1-AR)。
         outputCoalescer.dispose();
@@ -1214,5 +1211,18 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     ],
   );
 
-  return { containerRef, isReady, fit, requestFit, focus, clear, readText, contextMenuActions, searchApi };
+  const setRendererVisible = useCallback((visible: boolean) => webglRef.current?.setVisible(visible), []);
+
+  return {
+    containerRef,
+    isReady,
+    fit,
+    requestFit,
+    focus,
+    clear,
+    readText,
+    contextMenuActions,
+    searchApi,
+    setRendererVisible,
+  };
 }

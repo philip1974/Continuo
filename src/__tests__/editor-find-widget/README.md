@@ -9,6 +9,15 @@
 - **计数**:查找框右侧 `role=status` 计数区。查找词非空时:主选区正落在某个匹配上 →「3 / 154」;否则只显示总数
   「154 个匹配」(单复数,同终端查找)。只数到 1000 个即停(大文档不整篇遍历),显示「1000+」。查询 / 选项 / 文档 / 选区变化
   随之更新,文案不变不写 DOM(不重复播报)。
+- **大文档计数不阻塞按键**(VSCode findModel:装饰延迟更新、`MATCHES_LIMIT` 内用装饰跳转):计数按块分片扫描,按键里同步只扫
+  一个分片(时间上限 8ms);扫不完的在后续宏任务里每片同样上限继续。期间查询刚变 → 显示已数到的部分「12+ 个匹配」/「3 / 12+」,
+  一个都没数到显示「…」(不标红、不报「无结果」);数完换成准确计数。大文档(上次一个分片没扫完)编辑时不在按键里重数:已数到
+  的匹配随编辑移动(当前序号照常),约 100ms 无编辑后(VSCode `_updateDecorationsScheduler` 同为 100ms)重数,数完再换。小文档
+  一个分片就扫完,行为同前(当场更新)。分片结果与整篇一个 cursor 扫出的匹配序列一致(块边界:正则 / 全字匹配按行对齐,跨块
+  匹配靠块尾重叠区接住;例外:跨行正则 + 全字匹配时 CodeMirror 自身在第一个不满足全字的匹配处就停,分片会数得更全)。
+- **查找下一个 / 上一个用已数到的匹配**:计数已完整(未封顶、查询与文档未变)时,查找框回车 / ⇧回车、面板「下一个 / 上一个」
+  按钮、`editor.action.nextMatchFindAction` / `previousMatchFindAction`(⌘G / ⇧⌘G / F3)直接跳到已数到的匹配(从选区往后 / 往前,
+  到头绕回;读屏播报与滚动同 CodeMirror),不再整篇重新搜索;计数未完成 / 封顶 1000+ 时退回 CodeMirror 自己的 findNext / findPrevious。
 - **非法正则**:正则模式下查找词不是合法正则 → 计数区显示「正则表达式无效」(en / zh / ko,`editor.find.invalid_regex`,
   同无结果标红 + `aria-invalid`),`new RegExp` 的错误信息(按 CodeMirror 编译用的 `gmu`)作查找框与计数区的 `title`
   (悬停可见,也是查找框的可访问描述;VSCode 查找框弹出正则错误信息)。改回合法 / 清空即恢复。
@@ -35,7 +44,9 @@
 | File | Role |
 |---|---|
 | `src/panels/Editor/find-widget-model.ts` | 引擎无关的纯逻辑:`FindHistory` / 窗口共享 `editorFindHistory`、`formatFindCount`、`FIND_MATCH_LIMIT` |
-| `src/panels/Editor/codemirror-find.ts` | `codeEditorFind` / `codeMirrorFind` 扩展:默认面板上追加计数、aria-invalid、↑↓ 历史;选项切换键位(`codeMirrorFind` 另带替换键) |
+| `src/panels/Editor/codemirror-find.ts` | `codeEditorFind` / `codeMirrorFind` 扩展:默认面板上追加计数(分片 / 防抖)、aria-invalid、↑↓ 历史、用已数到的匹配跳转(`findNextMatch` / `findPreviousMatch`);选项切换键位(`codeMirrorFind` 另带替换键) |
+| `src/panels/Editor/find-match-scan.ts` | `MatchScan`:按时间预算分块扫描匹配,结果同整篇 cursor |
+| `src/panels/Editor/codemirror-text-commands.ts` | 查找下一个 / 上一个命令接 `findNextMatch` / `findPreviousMatch` |
 | `src/panels/Editor/CodeEditor.tsx` | 挂 `codeEditorFind` |
 | `src/panels/Editor/code-editor-theme.ts` | 计数 / 无结果样式、强制颜色规则;`markdownCodeBlockTheme` 带上 `codeMirrorFind`(Crepe 代码块) |
 
@@ -43,3 +54,5 @@
 
 - `editor-find-widget.spec.tsx`
 - `find-widget-model.spec.ts`
+- `find-match-scan.spec.ts`(分片 vs 整篇 cursor 的随机对照)
+- e2e:`tests/e2e/editor-find-large-file.spec.ts`(10 万行文件开查找条输入 / 编辑 / 回车的每键耗时)

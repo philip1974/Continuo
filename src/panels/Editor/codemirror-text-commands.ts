@@ -40,7 +40,7 @@ import {
   selectNextOccurrence,
   selectSelectionMatches,
 } from '@codemirror/search';
-import { openFindPanel, openReplacePanel } from './codemirror-find';
+import { findNextMatch, findPreviousMatch, openFindPanel, openReplacePanel } from './codemirror-find';
 import { TEXT_EDITOR_ATTR } from '@/lib/editor-text-focus';
 import { registerTextCommandRunner } from './editor-text-commands';
 
@@ -162,13 +162,14 @@ const RUNNERS: Readonly<Record<string, Command>> = {
   // 查找 / 替换 / 查找下一个·上一个(when: editorFocus,查找面板里同样生效;BDD: src/__tests__/editor-find-keybindings/)
   'actions.find': openFindPanel,
   'editor.action.startFindReplaceAction': openReplacePanel,
-  'editor.action.nextMatchFindAction': findNext,
-  'editor.action.previousMatchFindAction': findPrevious,
+  'editor.action.nextMatchFindAction': findNextMatch,
+  'editor.action.previousMatchFindAction': findPreviousMatch,
 };
 
 /**
  * basicSetup 键表里改由注册表分发的命令(其键从键表去掉):selectSelectionMatches / selectLine / foldCode 由 selectHighlights /
- * expandLineSelection / foldEnclosing 取代,openSearchPanel(⌘F)由 openFindPanel 取代。
+ * expandLineSelection / foldEnclosing 取代,openSearchPanel(⌘F)由 openFindPanel 取代,findNext / findPrevious(⌘G / F3)由
+ * findNextMatch / findPreviousMatch 取代。
  */
 export const ROUTED_KEYMAP_COMMANDS: ReadonlySet<Command> = new Set([
   ...Object.values(RUNNERS),
@@ -176,6 +177,8 @@ export const ROUTED_KEYMAP_COMMANDS: ReadonlySet<Command> = new Set([
   selectLine,
   foldCode,
   openSearchPanel,
+  findNext,
+  findPrevious,
 ]);
 
 function runTextCommand(id: string, view: EditorView): void {

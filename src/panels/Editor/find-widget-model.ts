@@ -78,14 +78,24 @@ export interface FindCountState {
   readonly capped: boolean;
   /** 正则模式下查找词不是合法正则(VSCode 查找框弹出正则错误信息)。 */
   readonly invalid?: boolean;
+  /** 大文档计数仍在进行(分片扫描):total 只是已扫到的部分。 */
+  readonly pending?: boolean;
 }
 
-/** 计数文案:「3 / 154」;无当前匹配只显示总数「154 个匹配」;封顶「1000+」;无匹配「无结果」;非法正则「正则表达式无效」;空查询空串。 */
-export function formatFindCount({ empty, total, current, capped, invalid }: FindCountState): string {
+/** 计数进行中且还没数到匹配时的文案(不显示「无结果」、不标红)。 */
+export const FIND_COUNT_PENDING = '…';
+
+/**
+ * 计数文案:「3 / 154」;无当前匹配只显示总数「154 个匹配」;封顶「1000+」;无匹配「无结果」;非法正则「正则表达式无效」;空查询空串。
+ * 计数进行中:已数到的部分加「+」(「3 / 12+」「12+ 个匹配」),一个都没数到显示「…」。
+ */
+export function formatFindCount({ empty, total, current, capped, invalid, pending }: FindCountState): string {
   if (empty) return '';
   if (invalid) return t('editor.find.invalid_regex');
-  if (total <= 0) return t('editor.find.no_results');
-  const totalText = capped ? `${FIND_MATCH_LIMIT}+` : String(total);
+  if (total <= 0) return pending ? FIND_COUNT_PENDING : t('editor.find.no_results');
+  const totalText = capped ? `${FIND_MATCH_LIMIT}+` : pending ? `${total}+` : String(total);
   if (current > 0) return t('editor.find.match_count', { n: current, total: totalText });
-  return capped ? t('editor.find.match_total_other', { count: totalText }) : translateCount('editor.find.match_total', total);
+  return capped || pending
+    ? t('editor.find.match_total_other', { count: totalText })
+    : translateCount('editor.find.match_total', total);
 }

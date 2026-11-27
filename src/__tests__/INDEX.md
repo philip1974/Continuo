@@ -594,6 +594,7 @@
 ## [编辑器查找控件:计数 / 无结果、快捷键、历史、强制颜色(对齐 VSCode findWidget)](./editor-find-widget/README.md)
 
 - [`editor-find-widget.spec.tsx`](./editor-find-widget/editor-find-widget.spec.tsx)
+- [`find-match-scan.spec.ts`](./editor-find-widget/find-match-scan.spec.ts)
 - [`find-widget-model.spec.ts`](./editor-find-widget/find-widget-model.spec.ts)
 
 ## [打开文件后焦点进编辑器(VSCode 对齐)](./editor-focus-on-open/README.md)
@@ -2087,6 +2088,11 @@
 - [`mac-line-editing-keys.spec.tsx`](./terminal-vscode-parity/mac-line-editing-keys.spec.tsx)
 - [`running-process-main.spec.ts`](./terminal-vscode-parity/running-process-main.spec.ts)
 - [`skip-shell-hotkeys.spec.ts`](./terminal-vscode-parity/skip-shell-hotkeys.spec.ts)
+
+## [终端 WebGL 渲染器:名额、显隐与上下文丢失(对齐 VSCode xtermTerminal)](./terminal-webgl/README.md)
+
+- [`panel-visibility-wiring.spec.tsx`](./terminal-webgl/panel-visibility-wiring.spec.tsx)
+- [`terminal-webgl.spec.ts`](./terminal-webgl/terminal-webgl.spec.ts)
 
 ## [terminal-webgl-atlas-page-version](./terminal-webgl-atlas-page-version/README.md)
 
