@@ -18,6 +18,8 @@ import {
   EDITOR_LINE_HEIGHT,
   EDITOR_LINE_NUMBERS,
   EDITOR_WORD_WRAP,
+  FILES_AUTO_SAVE,
+  FILES_AUTO_SAVE_DELAY,
 } from '@/plugins/settings/core-setting-specs';
 import { renderCategoryTab } from './lazy-category-tab';
 import { EditorIcon } from '@/plugins/settings/tab-icons';
@@ -46,7 +48,9 @@ export default class EditorTabPlugin extends Plugin {
     this.addSettingItem(EDITOR_INSERT_SPACES);
     this.addSettingItem(EDITOR_DETECT_INDENTATION);
 
-    // ── Auto-save ──
+    // ── Auto-save ──(files.autoSave / files.autoSaveDelay + Markdown 语言级覆盖;BDD: src/__tests__/files-auto-save/)
+    this.addSettingItem(FILES_AUTO_SAVE);
+    this.addSettingItem(FILES_AUTO_SAVE_DELAY);
     this.addSettingItem(AUTO_SAVE_MARKDOWN_ENABLED);
     this.addSettingItem(AUTO_SAVE_DELAY_MS);
 

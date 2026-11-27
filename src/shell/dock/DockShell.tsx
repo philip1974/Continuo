@@ -40,10 +40,7 @@ import {
   subscribeAutoSaveFailures,
 } from '@/panels/Editor/autosave-failures';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
-import { useSettingValue } from '@/plugins/settings/values-store';
-import {
-  AUTO_SAVE_MARKDOWN_ENABLED,
-} from '@/plugins/settings/core-setting-specs';
+import { useAutoSaveSettings } from '@/panels/Editor/auto-save-config';
 import {
   countDirtyForClose,
   remainingAfterDiscard,
@@ -498,7 +495,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // 回执始终携带 flush 后的最终脏态(含空集合),main 以其记账(复审:「保存」后 tab 变干净,但干净状态
       // 此前要等之后的 effect 上报,main 可能先用旧脏集合做退出前全局最终检查而误中止退出)。
       // autosave 已 flush 过,仍脏的 .md 也计入(同 remainingAfterFlush)。
-      const state = countDirtyForClose(tabs, false);
+      const state = countDirtyForClose(tabs, null);
       // main 已按回执记账:同步去重基准,之后脏态变化与之不同即重新上报。
       lastDirtyReportRef.current = JSON.stringify(state);
       const windowId = payload?.windowId ?? coApi.system.windowId;
@@ -525,15 +522,16 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     subscribeAutoSaveFailures,
     getAutoSaveFailureVersion,
   );
-  const mdAutoSaveEnabled = useSettingValue(AUTO_SAVE_MARKDOWN_ENABLED.id, AUTO_SAVE_MARKDOWN_ENABLED.default);
-  const lastDirtyReportRef = useRef(JSON.stringify(countDirtyForClose([], false)));
+  // 自动保存设置(files.autoSave + Markdown 覆盖):活动 tab 是否由关窗 flush 落盘按其生效模式判断。
+  const autoSaveSettings = useAutoSaveSettings();
+  const lastDirtyReportRef = useRef(JSON.stringify(countDirtyForClose([], null)));
   useEffect(() => {
-    const state = countDirtyForClose(useEditorStore.getState().tabs, mdAutoSaveEnabled);
+    const state = countDirtyForClose(useEditorStore.getState().tabs, autoSaveSettings);
     const key = JSON.stringify(state);
     if (key === lastDirtyReportRef.current) return;
     lastDirtyReportRef.current = key;
     coApi.layout.reportDirtyState?.(state);
-  }, [editorChromeVersion, mdAutoSaveEnabled, autoSaveFailureVersion]);
+  }, [editorChromeVersion, autoSaveSettings, autoSaveFailureVersion]);
 
   // Editor 自动激活:Explorer 单击文件 → editor.store activeTabId / editorFocusPulse 变
   // → 自动 setActive 'editor' panel(VSCode 行为)。

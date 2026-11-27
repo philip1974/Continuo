@@ -16,7 +16,14 @@ import { resolveDisplayHotkey } from '@/plugins/picker/use-picker-toggle-hotkey'
 import { isHotkeyShadowed } from '@/plugins/command-palette/useCommandHotkeys';
 import { canonicalHotkey, detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 import { getPopoutDocuments, runInCommandDocument } from '@/shell/dock/popout-documents';
-import { isMenuCommandPayload, MENU_COMMAND_IDS, type MenuCommandId } from '../../electron/shared/window-channels';
+import { useSettingValue } from '@/plugins/settings/values-store';
+import { FILES_AUTO_SAVE, type FilesAutoSaveMode } from '@/plugins/settings/core-setting-specs';
+import {
+  isMenuCommandPayload,
+  MENU_COMMAND_IDS,
+  type MenuCheckboxId,
+  type MenuCommandId,
+} from '../../electron/shared/window-channels';
 
 /** 菜单触发的命令作用于哪个窗口的文档:获焦的 popout 子窗(只有一个子窗时即它),否则主窗。 */
 function menuCommandDocument(fromPopout: boolean): Document {
@@ -63,6 +70,11 @@ export function menuKeybindings(
   return out;
 }
 
+/** 勾选类菜单项的勾选状态:文件 → 自动保存 = files.autoSave ≠ off(VSCode toggled: config.files.autoSave != off)。 */
+export function menuCheckedState(autoSave: FilesAutoSaveMode): Record<MenuCheckboxId, boolean> {
+  return { 'workbench.action.toggleAutoSave': autoSave !== 'off' };
+}
+
 export function useMenuCommands(commands: CommandRegistry): void {
   useEffect(() => coApi.window.onMenuCommand((payload) => runMenuCommand(commands, payload)), [commands]);
 
@@ -79,4 +91,13 @@ export function useMenuCommands(commands: CommandRegistry): void {
     // 推送失败只影响菜单上的键位显示,不打扰用户
     coApi.window.setMenuKeybindings(keybindings).catch(() => undefined);
   }, [serialized]);
+
+  // 勾选状态随设置变化推送(别的窗口改的设置经跨窗同步到达后同样推送,菜单是全应用共用的一份)。
+  const autoSave = useSettingValue(FILES_AUTO_SAVE.id, FILES_AUTO_SAVE.default);
+  useEffect(() => {
+    // 推送失败只影响菜单勾选显示,不打扰用户(测试替身可能没有该方法:同样吞掉)
+    void Promise.resolve()
+      .then(() => coApi.window.setMenuChecked(menuCheckedState(autoSave)))
+      .catch(() => undefined);
+  }, [autoSave]);
 }

@@ -9,6 +9,7 @@ import { app, BrowserWindow } from 'electron';
 import { safeHandle, safeHandleWithCtx } from '../safe-handle';
 import { statDirGated } from '../lib/dir-stat-gate';
 import {
+  MENU_CHECKBOX_IDS,
   MENU_COMMAND_IDS,
   MENU_HOTKEY_MAX,
   WINDOW_CHANNELS,
@@ -42,6 +43,7 @@ import { mapNodeErrnoCode } from './fs/path-utils';
 import { windowSeqCount } from '../services/window-seq.service';
 import { WINDOW_BACKGROUND_COLORS } from '../../shared/window-background';
 import { setMenuKeybindings } from '../menu-keybindings';
+import { setMenuChecked } from '../menu-checked';
 import { getWindowTheme, setWindowTheme } from '../services/window-theme.service';
 import { setWindowZoomLevel } from '../services/window-zoom.service';
 import { menuCommandTargetWindow } from '../lib/menu-command';
@@ -221,6 +223,8 @@ const ViewActionInput = z
 const SetMenuKeybindingsInput = z
   .object({ keybindings: z.partialRecord(z.enum(MENU_COMMAND_IDS), z.string().max(MENU_HOTKEY_MAX).nullable()) })
   .strict();
+// 勾选项的勾选状态:键只限勾选项 id。
+const SetMenuCheckedInput = z.object({ checked: z.partialRecord(z.enum(MENU_CHECKBOX_IDS), z.boolean()) }).strict();
 
 /**
  * owner(主窗)打开的、window.open 名为 name 的 dockview popout 子窗;没有 / 不归 owner → null。popout 子窗界面跑在主窗
@@ -328,6 +332,10 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
   // 菜单命令的生效键位(renderer 改键 / 解绑 / 命令注册变化后推送):有变化才重建菜单(accelerator 只作显示)。
   safeHandle(WINDOW_CHANNELS.SET_MENU_KEYBINDINGS, SetMenuKeybindingsInput, (input) => {
     if (setMenuKeybindings(input.keybindings)) deps.rebuildAppMenu();
+  });
+  // 勾选项的勾选状态(如 文件 → 自动保存;设置变化后 renderer 推送):有变化才重建菜单。
+  safeHandle(WINDOW_CHANNELS.SET_MENU_CHECKED, SetMenuCheckedInput, (input) => {
+    if (setMenuChecked(input.checked)) deps.rebuildAppMenu();
   });
   // 激活发起方所在窗口(主窗 renderer 把面板 / 选择器打开在主窗、而系统焦点在 popout 子窗时 → 焦点随之进主窗)。
   safeHandleWithCtx(WINDOW_CHANNELS.FOCUS, FocusInput, (_input, { event }) => {

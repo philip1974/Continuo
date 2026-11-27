@@ -8,6 +8,7 @@
 import type { EditorTab } from '@/stores/editor.store';
 import type { DirtyState } from '../../../electron/shared/persistence-channels';
 import { isAutoSaveEnabled } from '@/panels/Editor/useAutoSave';
+import type { AutoSaveSettings } from '@/panels/Editor/auto-save-config';
 import { willAutoSaveOnClose } from '@/panels/Editor/autosave-failures';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { EDITOR_DISK_CHANGED, EDITOR_UNTITLED } from '@/panels/Editor/editor-file-actions';
@@ -20,20 +21,21 @@ type TabLike = Pick<EditorTab, 'id' | 'filePath' | 'dirty' | 'dirtyGen'>;
 export type DirtyCloseState = DirtyState;
 
 /**
- * 关窗会丢的脏 tab。Markdown 自动保存开启时,只有**活动** tab(持有 autosave scheduler、最近一次未失败)的
- * 脏 .md 不计入:关窗 flush 经 flushPendingAutoSave 落盘(ADR-015:只有代码文件不 autosave)。非活动的脏 .md
- * 一律计入 —— 切走时已 flush,仍脏即失败或在途,关窗 flush 不会重试(见 autosave-failures.ts)。
+ * 关窗会丢的脏 tab。只有**活动** tab(持有 autosave scheduler、最近一次未失败)且按 autoSave 设置会自动保存的
+ *(生效模式 ≠ off,见 auto-save-config.resolveAutoSave;默认只有 Markdown)脏 tab 不计入:关窗 flush 经 flushPendingAutoSave 落盘。
+ * 非活动的脏 tab 一律计入 —— 切走时已 flush(或 onWindowChange 等窗口失焦),仍脏即失败或在途,关窗 flush 不会重试
+ *(见 autosave-failures.ts)。autoSave = null:不豁免任何 tab。
  */
 export function countDirtyForClose(
   tabs: readonly TabLike[],
-  mdAutoSaveEnabled: boolean,
+  autoSave: AutoSaveSettings | null,
 ): DirtyCloseState {
   const ids: string[] = [];
   const pendingAutoSave: string[] = [];
   for (const tab of tabs) {
     if (!tab.dirty) continue;
     const id = `${tab.id}#${tab.dirtyGen ?? 0}`;
-    if (mdAutoSaveEnabled && isAutoSaveEnabled(tab.filePath) && willAutoSaveOnClose(tab.id)) {
+    if (autoSave !== null && isAutoSaveEnabled(tab.filePath, autoSave) && willAutoSaveOnClose(tab.id)) {
       pendingAutoSave.push(id);
       continue;
     }
@@ -54,7 +56,7 @@ export function countDirtyForClose(
  * 无 → null;有 → 全部脏 tab(main 据此记账)。
  */
 export function remainingAfterFlush(tabs: readonly TabLike[]): DirtyCloseState | null {
-  const state = countDirtyForClose(tabs, false);
+  const state = countDirtyForClose(tabs, null);
   return state.dirty > 0 ? state : null;
 }
 
@@ -74,7 +76,7 @@ export function remainingAfterDiscard(
     }),
   );
   if (!tabs.some((tab) => tab.dirty && pendingTabIds.has(tab.id))) return null;
-  return countDirtyForClose(tabs, false);
+  return countDirtyForClose(tabs, null);
 }
 
 export interface SaveForCloseResult {

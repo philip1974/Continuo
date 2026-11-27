@@ -59,6 +59,11 @@ export const WINDOW_CHANNELS = {
    */
   SET_MENU_KEYBINDINGS: 'window:set-menu-keybindings',
   /**
+   * renderer → main:勾选类菜单项的勾选状态(`{ checked: { [id]: boolean } }`,仅限 MENU_CHECKBOX_IDS;如 文件 → 自动保存 =
+   * files.autoSave ≠ off)。有变化才重建菜单。BDD: src/__tests__/files-auto-save/
+   */
+  SET_MENU_CHECKED: 'window:set-menu-checked',
+  /**
    * 命令面板里的「重新加载窗口 / 切换全屏」(应用菜单 View 同款动作,payload `{ action, popoutName? }`,
    * 仅限 WINDOW_VIEW_ACTIONS):main 作用于发起方所在窗口;reload 走与菜单 ⌘R 相同的脏确认 + flush。带 popoutName
    *(在 dockview popout 子窗里触发:子窗的 window.open 名)→ 作用于发起方打开的那个子窗。
@@ -90,6 +95,7 @@ export const MENU_COMMAND_IDS = [
   'workbench.action.files.save',
   'workbench.action.files.saveAs',
   'workbench.action.files.saveAll',
+  'workbench.action.toggleAutoSave',
   // 首选项(macOS 应用菜单;其它平台 文件 → 首选项)
   'settings.toggle',
   'workbench.action.openGlobalKeybindings',
@@ -132,6 +138,16 @@ export const MENU_COMMAND_IDS = [
 ] as const;
 
 export type MenuCommandId = (typeof MENU_COMMAND_IDS)[number];
+
+/** 勾选类菜单项(type: 'checkbox';勾选状态由 renderer 经 SET_MENU_CHECKED 推送)。 */
+export const MENU_CHECKBOX_IDS = ['workbench.action.toggleAutoSave'] as const satisfies readonly MenuCommandId[];
+export type MenuCheckboxId = (typeof MENU_CHECKBOX_IDS)[number];
+
+const MENU_CHECKBOX_ID_SET: ReadonlySet<string> = new Set(MENU_CHECKBOX_IDS);
+
+export function isMenuCheckboxId(id: unknown): id is MenuCheckboxId {
+  return typeof id === 'string' && MENU_CHECKBOX_ID_SET.has(id);
+}
 
 const MENU_COMMAND_ID_SET: ReadonlySet<string> = new Set(MENU_COMMAND_IDS);
 

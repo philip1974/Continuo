@@ -121,3 +121,41 @@ describe('makeAutoSaveScheduler', () => {
     }
   });
 });
+
+// files.autoSave = onFocusChange / onWindowChange:delayMs = null 不计时,只在 flush 时保存(BDD: src/__tests__/files-auto-save/)。
+describe('makeAutoSaveScheduler(delayMs = null)', () => {
+  it('schedule 不计时;flush 才保存一次,再 flush 无待保存 → 不再保存', async () => {
+    const saveFile = vi.fn(async () => true);
+    const s = makeAutoSaveScheduler(saveFile, null);
+    s.schedule();
+    s.schedule();
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(saveFile).not.toHaveBeenCalled();
+    await s.flush();
+    expect(saveFile).toHaveBeenCalledTimes(1);
+    await s.flush();
+    expect(saveFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel 清掉待保存:随后 flush 不保存', async () => {
+    const saveFile = vi.fn(async () => true);
+    const s = makeAutoSaveScheduler(saveFile, null);
+    s.schedule();
+    s.cancel();
+    await s.flush();
+    expect(saveFile).not.toHaveBeenCalled();
+  });
+
+  it('flush 在途时再 flush → 等同一次保存(关窗握手)', async () => {
+    let resolve!: () => void;
+    const saveFile = vi.fn(() => new Promise<void>((r) => (resolve = r)));
+    const s = makeAutoSaveScheduler(saveFile, null);
+    s.schedule();
+    const first = s.flush();
+    const second = s.flush();
+    await vi.waitFor(() => expect(saveFile).toHaveBeenCalled());
+    resolve();
+    await Promise.all([first, second]);
+    expect(saveFile).toHaveBeenCalledTimes(1);
+  });
+});

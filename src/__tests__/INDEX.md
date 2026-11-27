@@ -1019,6 +1019,12 @@
 
 - [`filename-nfc-match.spec.ts`](./filename-unicode-normalization/filename-nfc-match.spec.ts)
 
+## [自动保存可配置(对照 VSCode `files.autoSave` / `files.autoSaveDelay`)](./files-auto-save/README.md)
+
+- [`auto-save-config.spec.ts`](./files-auto-save/auto-save-config.spec.ts)
+- [`auto-save-menu.spec.ts`](./files-auto-save/auto-save-menu.spec.ts)
+- [`auto-save-triggers.spec.tsx`](./files-auto-save/auto-save-triggers.spec.tsx)
+
 ## [三处查找的选项一致(名称 / tooltip 快捷键 / 切换键)](./find-options-parity/README.md)
 
 - [`find-options-parity.spec.tsx`](./find-options-parity/find-options-parity.spec.tsx)

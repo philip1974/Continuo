@@ -1,21 +1,27 @@
 // M-Editor Step E2:useAutoSave 薄壳 hook。
-// 监听全局 activeTab 内容变化,enabled=true 时按 delayMs 防抖触发 saveFile。
+// 监听全局 activeTab 内容变化,enabled=true 时按 delayMs 防抖触发 saveFile;delayMs = null(onFocusChange / onWindowChange)
+// 时不计时,在编辑器失焦 / 窗口失焦时保存。
 //
-// 决策(ADR-015):Markdown 自动保存,代码必须显式 Cmd+S。
-// enabled 由 EditorPanel 根据当前 tab 文件类型决定(.md/.markdown → true)。
+// enabled / delayMs / saveOn 由 EditorPanel 按活动 tab 的生效模式决定(auto-save-config.resolveAutoSave:files.autoSave +
+// Markdown 语言级覆盖;当初 ADR-015 只给 Markdown 自动保存,默认行为保持)。BDD: src/__tests__/files-auto-save/
 
-import { isUntitledPath } from '../../../electron/shared/untitled';
-import { useEffect, useMemo, useRef } from 'react';
+import { type RefObject, useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { groupActiveTabIdOf, useEditorStore } from '@/stores/editor.store';
+import { groupActiveTabIdOf, groupTabsOf, useEditorStore } from '@/stores/editor.store';
 import { makeAutoSaveScheduler, type AutoSaveScheduler } from './auto-save';
-import { isMarkdownPath } from './editor-path-utils';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import {
   trackInFlightAutoSave,
 } from './autosave-flush-registry';
 import { claimAutoSave, releaseAutoSave, setAutoSaveFailed } from './autosave-failures';
-import { useAutoSaveHeld } from './autosave-hold';
+import { isAutoSaveHeld, useAutoSaveHeld } from './autosave-hold';
+import { flushEditorWriteBacks } from './editor-writeback-registry';
+import {
+  DEFAULT_AUTO_SAVE_SETTINGS,
+  resolveAutoSave,
+  savesOnWindowBlur,
+  type AutoSaveSettings,
+} from './auto-save-config';
 import { observeOrphanedAutoSave } from './autosave-orphan-notice';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
@@ -27,18 +33,104 @@ import { saveHotkeyLabel } from './editor-commands';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 
 export interface UseAutoSaveOptions {
+  /** 活动 tab 是否自动保存(生效模式 ≠ off 且未暂停)。 */
   enabled: boolean;
-  /** 防抖毫秒(默认值在 autoSave.delayMs 设置项上). */
-  delayMs: number;
+  /** 防抖毫秒(files.autoSaveDelay / Markdown 的 autoSave.delayMs);null = 不计时,等失焦 / 切走 / 关窗时保存。 */
+  delayMs: number | null;
   /** 只看该编辑器组的活动 tab(编辑器组面板各自一个;缺省 = 活动组的活动 tab)。 */
   groupId?: string;
+  /**
+   * delayMs = null 时活动 tab 的保存时机:focusChange = 焦点移出 rootRef(编辑器组面板)、切到同组别的 tab、窗口失焦
+   *(VSCode onFocusChange);windowChange = 只在窗口失焦时(VSCode onWindowChange)。
+   */
+  saveOn?: 'focusChange' | 'windowChange' | null;
+  /** 暂停(关闭脏 tab 的确认框开着等):窗口失焦也不保存本组任何 tab。 */
+  paused?: boolean;
+  /** 自动保存设置:窗口失焦时据此挑出组内该保存的后台脏 tab。缺省 = 默认设置。 */
+  settings?: AutoSaveSettings;
+  /** 编辑器组面板根元素(判断焦点是否移出)。 */
+  rootRef?: RefObject<HTMLElement | null>;
+  /** 编辑器组面板所在窗口(popout 搬移后变化;缺省 = 不监听窗口失焦)。 */
+  hostWindow?: Window | null;
+}
+
+/**
+ * 自动保存失败提示(带文件名;写保护 / 磁盘冲突附保存键出路)。与 ⌘S 的保存失败提示同一个 key:同一文件只留最新一条。
+ * 去重(ok→失败跃迁才提示)由调用方负责。
+ */
+function notifyAutoSaveFailed(tabId: string, err: unknown): void {
+  const { code, message } = failureOf(err);
+  // 带文件名(同显式保存失败「保存失败 <name>:<原因>」):后台失败时用户需知道是哪个文件。
+  const filePath = findEditorFileTabById(useEditorStore.getState().tabs, tabId)?.filePath ?? tabId;
+  // 磁盘冲突的说明里写着保存键:填当前生效绑定(改绑后跟随)。
+  const reason = saveFailureReason(
+    { code, message },
+    code === EDITOR_DISK_CHANGED ? { hotkey: saveHotkeyLabel() } : undefined,
+  );
+  notify.warn(
+    t('common.label_detail', {
+      label: `${t('editor.autosave_failed')} ${basenameForChrome(filePath)}`,
+      // 写保护:自动保存不替用户去写保护,出路是按保存键走覆盖确认框(同磁盘冲突提示的写法)。
+      detail:
+        code === ERROR_CODES.FS_READONLY
+          ? t('editor.autosave_readonly_detail', { reason, hotkey: saveHotkeyLabel() })
+          : reason,
+    }),
+    { mirror: false, replaceKey: saveFailureNotifyKey(filePath) },
+  );
+}
+
+// 窗口失焦批量保存的后台 tab 最近一次失败(按 tab id;成功即清除):连续失败只提示一次,同 scheduler 的 ok→失败去重。
+const backgroundFailed = new Set<string>();
+
+/** 窗口失焦:保存组内(除活动 tab,它走自己的 scheduler)生效模式为 onFocusChange / onWindowChange 的脏 tab。 */
+function saveBackgroundOnWindowBlur(
+  saveTab: (tabId: string, opts?: SaveFileOptions) => Promise<unknown>,
+  groupId: string | undefined,
+  activeId: string | null,
+  settings: AutoSaveSettings,
+): void {
+  const s = useEditorStore.getState();
+  const tabs = groupId === undefined ? s.tabs : groupTabsOf(s, groupId);
+  const targets = tabs.filter(
+    (tab) =>
+      tab.id !== activeId &&
+      tab.dirty &&
+      !tab.orphaned &&
+      !isAutoSaveHeld(tab.filePath) &&
+      savesOnWindowBlur(resolveAutoSave(tab.filePath, settings)),
+  );
+  for (const tab of targets) {
+    void saveTab(tab.id, { recreateMissing: false }).then(
+      (r) => {
+        const failure = (r as { ok?: unknown; code?: unknown } | null | undefined)?.ok === false ? r : null;
+        // 已删除(读盘不存在 → saveFile 就地标记 orphaned):tab 显示「已删除」,不算自动保存失败(同 scheduler 路径)
+        if (failure === null || (failure as { code?: unknown }).code === ERROR_CODES.FS_NOT_FOUND) {
+          backgroundFailed.delete(tab.id);
+          return;
+        }
+        if (backgroundFailed.has(tab.id)) return;
+        backgroundFailed.add(tab.id);
+        notifyAutoSaveFailed(tab.id, failure);
+      },
+      (err: unknown) => {
+        console.warn('[auto-save] failed:', err);
+        if (backgroundFailed.has(tab.id)) return;
+        backgroundFailed.add(tab.id);
+        notifyAutoSaveFailed(tab.id, err);
+      },
+    );
+  }
 }
 
 export function useAutoSave(
   saveTab: (tabId: string, opts?: SaveFileOptions) => Promise<unknown>,
   opts: UseAutoSaveOptions,
 ): void {
-  const { delayMs, groupId } = opts;
+  const { delayMs, groupId, rootRef, hostWindow } = opts;
+  const saveOn = opts.saveOn ?? null;
+  const paused = opts.paused === true;
+  const settings = opts.settings ?? DEFAULT_AUTO_SAVE_SETTINGS;
   // 只订阅活跃 tab 的调度相关字段(打磨 R47):id/filePath/dirty/content 变化才重排
   // schedule。用 useShallow 返回扁平 primitive 对象,逐字段 Object.is 比较 ——
   // markSaved 推进 originalContent、reloadFromDisk 改 reloadEpoch 等不在此集合的字段
@@ -70,6 +162,8 @@ export function useAutoSave(
   // 看过的 → 先补排队。enabled 取 effect 看过的值而非本次渲染的:切 tab 的 cleanup 运行时渲染已属于新 tab。
   const seenContentRef = useRef<string | undefined>(undefined);
   const seenEnabledRef = useRef(false);
+  // 同上:effect 看过的保存时机(切走时按旧 tab 的模式决定是否 flush —— onWindowChange 切 tab 不保存)。
+  const seenSaveOnRef = useRef<'focusChange' | 'windowChange' | null>(null);
 
   // 每个 tab 一个 scheduler(身份含 tabId)。保存绑定到调度时捕获的 tabId,
   // 而非"当前 active tab" —— 切走后 active 已变,绑定 active 会保存错的 tab。
@@ -115,28 +209,7 @@ export function useAutoSave(
       // scheduler 已 console.warn,故 mirror:false 防双写。见第二十一轮 P1-AZ。
       // 打磨 P2-BK:err 可能是 resolve 的 {ok:false,code,message} 失败结果 → 与 Cmd+S 失败
       // 同走 saveFailureReason(按 code 本地化,未收录回退原 message)。
-      (err) => {
-        const { code, message } = failureOf(err);
-        // 带文件名(同显式保存失败「保存失败 <name>:<原因>」):后台失败时用户需知道是哪个文件。
-        const filePath = findEditorFileTabById(useEditorStore.getState().tabs, tabId)?.filePath ?? tabId;
-        // 磁盘冲突的说明里写着保存键:填当前生效绑定(改绑后跟随)。
-        const reason = saveFailureReason(
-          { code, message },
-          code === EDITOR_DISK_CHANGED ? { hotkey: saveHotkeyLabel() } : undefined,
-        );
-        notify.warn(
-          t('common.label_detail', {
-            label: `${t('editor.autosave_failed')} ${basenameForChrome(filePath)}`,
-            // 写保护:自动保存不替用户去写保护,出路是按保存键走覆盖确认框(同磁盘冲突提示的写法)。
-            detail:
-              code === ERROR_CODES.FS_READONLY
-                ? t('editor.autosave_readonly_detail', { reason, hotkey: saveHotkeyLabel() })
-                : reason,
-          }),
-          // 与 ⌘S 的保存失败提示同一个 key:同一文件只留最新一条(反复失败不叠加)
-          { mirror: false, replaceKey: saveFailureNotifyKey(filePath) },
-        );
-      },
+      (err) => notifyAutoSaveFailed(tabId, err),
     );
     return created;
   }, [saveTab, tabId, delayMs]);
@@ -147,6 +220,7 @@ export function useAutoSave(
   useEffect(() => {
     seenContentRef.current = active.content;
     seenEnabledRef.current = enabled;
+    seenSaveOnRef.current = saveOn;
     if (!scheduler) return;
     // 运行中关掉 autosave 设置 → 取消已排队的保存(禁用应阻止已排队写入)。
     // 这是针对当前 tab 的 scheduler;切 tab 的落盘仍由 flush effect 处理。
@@ -167,7 +241,7 @@ export function useAutoSave(
     scheduler.schedule();
     // 有 pending:关窗 flush 会落盘,清除失败态(失败后继续编辑 / 显式保存后再编辑)。
     setAutoSaveFailed(scheduler, false);
-  }, [enabled, active, scheduler]);
+  }, [enabled, active, scheduler, saveOn]);
 
   // 文件已删除(orphaned)且有未保存修改:自动保存不会写回 → 提示一次(不刷屏,见 autosave-orphan-notice.ts),
   // 否则继续输入时磁盘静默不更新。只看自动保存设置本身(opts.enabled),不受删除确认期间的暂停(held)影响。
@@ -191,18 +265,7 @@ export function useAutoSave(
   // (DockShell onFlushRequest)在 ack 前同步落盘 pending autosave(P1-AE)。
   useEffect(() => {
     if (!scheduler || tabId === null) return;
-    // 同步回写产生、schedule effect 尚未看到的编辑 → 先补排队(flush 时已不脏仍由 save 闭包跳过写盘)。
-    const scheduleUnseenWriteBack = (): void => {
-      const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
-      if (
-        seenEnabledRef.current &&
-        tab?.filePath &&
-        tab.dirty &&
-        tab.content !== seenContentRef.current
-      ) {
-        scheduler.schedule();
-      }
-    };
+    const scheduleUnseenWriteBack = (): void => scheduleUnseen(scheduler, tabId, seenEnabledRef, seenContentRef);
     // 本 scheduler 成为活动 tab 的 autosave 持有者(关窗计数据此豁免其脏 .md、关窗 flush 握手调它的落盘句柄,
     // 见 autosave-failures.ts)。
     claimAutoSave(tabId, scheduler, () => {
@@ -213,6 +276,11 @@ export function useAutoSave(
     if (!seenEnabledRef.current) setAutoSaveFailed(scheduler, true);
     return () => {
       releaseAutoSave(scheduler);
+      // onWindowChange:切 tab 不保存(VSCode 只在窗口失焦时保存),被切走的脏 tab 由窗口失焦的批量保存落盘。
+      if (seenSaveOnRef.current === 'windowChange') {
+        scheduler.cancel();
+        return;
+      }
       // 切走该 tab:fire-and-forget 触发落盘,但登记进在途集合 —— 紧接着关窗时
       // flush 握手会 await 它,否则旧 tab 这次写盘 IPC 仍在飞就被退出截断(P1-AE 的
       // 兄弟缺口,复审 F2)。编辑器卸载回写先于此 cleanup 把旧 tab 写脏 → 先补排队再 flush。
@@ -220,15 +288,71 @@ export function useAutoSave(
       trackInFlightAutoSave(scheduler.flush());
     };
   }, [scheduler, tabId]);
+
+  // 立即保存活动 tab 的待保存改动(失焦触发):先同步回写编辑视图尚未上抛的输入(Milkdown 上抛有 200ms 起的防抖),
+  // 回写产生的编辑补排队后 flush。
+  const flushActiveRef = useRef<(() => void) | null>(null);
+  flushActiveRef.current =
+    scheduler && tabId !== null && enabled && saveOn !== null
+      ? () => {
+          flushEditorWriteBacks([tabId]);
+          scheduleUnseen(scheduler, tabId, seenEnabledRef, seenContentRef);
+          trackInFlightAutoSave(scheduler.flush());
+        }
+      : null;
+
+  // onFocusChange:焦点移出编辑器组面板(到终端 / 资源管理器 / 别的组 / 命令面板,或窗口失焦时 relatedTarget 为空)→ 保存。
+  // 面板内移动(编辑区 ↔ tab 行 / 查找框)不算失焦。监听挂在面板根元素上,popout 搬移 DOM 后仍有效。
+  useEffect(() => {
+    const root = rootRef?.current;
+    if (!root || saveOn !== 'focusChange') return;
+    const onFocusOut = (e: FocusEvent): void => {
+      const next = e.relatedTarget;
+      if (next instanceof Node && root.contains(next)) return;
+      flushActiveRef.current?.();
+    };
+    root.addEventListener('focusout', onFocusOut);
+    return () => root.removeEventListener('focusout', onFocusOut);
+  }, [rootRef, saveOn]);
+
+  // 窗口失焦(onFocusChange / onWindowChange 都保存,VSCode WINDOW_CHANGE):活动 tab 经 scheduler flush,组内其余符合条件的
+  // 脏 tab 直接保存。按编辑器所在窗口判断(popout 子窗里的编辑器看子窗)。
+  const blurStateRef = useRef({ saveTab, groupId, tabId, settings, paused });
+  blurStateRef.current = { saveTab, groupId, tabId, settings, paused };
+  const watchWindow = hostWindow ?? null;
+  useEffect(() => {
+    if (!watchWindow) return;
+    const onBlur = (): void => {
+      const st = blurStateRef.current;
+      if (st.paused) return;
+      flushActiveRef.current?.();
+      saveBackgroundOnWindowBlur(st.saveTab, st.groupId, st.tabId, st.settings);
+    };
+    watchWindow.addEventListener('blur', onBlur);
+    return () => watchWindow.removeEventListener('blur', onBlur);
+  }, [watchWindow]);
+}
+
+/** 同步回写产生、schedule effect 尚未看到的编辑 → 先补排队(flush 时已不脏仍由 save 闭包跳过写盘)。 */
+function scheduleUnseen(
+  scheduler: AutoSaveScheduler,
+  tabId: string,
+  seenEnabledRef: { readonly current: boolean },
+  seenContentRef: { readonly current: string | undefined },
+): void {
+  const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+  if (seenEnabledRef.current && tab?.filePath && tab.dirty && tab.content !== seenContentRef.current) {
+    scheduler.schedule();
+  }
 }
 
 /**
- * 根据 filePath 判断是否启用自动保存.
- * 决策 #3:.md / .markdown 自动保存;其它(代码 / 任意)显式 Cmd+S。
+ * filePath 是否自动保存(生效模式 ≠ off,见 auto-save-config.resolveAutoSave)。缺省设置 = 默认:.md / .markdown 自动保存,
+ * 其它显式保存;无标题文件从不自动保存。
  */
-export function isAutoSaveEnabled(filePath: string | null): boolean {
-  // 可维护性 M13:markdown 扩展名判定共用 editor-path-utils.isMarkdownPath。
-  // 无标题文件不自动保存(VSCode editorAutoSave:never auto save untitled working copies;它也没有路径可写)
-  if (!filePath || isUntitledPath(filePath)) return false;
-  return isMarkdownPath(filePath);
+export function isAutoSaveEnabled(
+  filePath: string | null,
+  settings: AutoSaveSettings = DEFAULT_AUTO_SAVE_SETTINGS,
+): boolean {
+  return resolveAutoSave(filePath, settings).mode !== 'off';
 }

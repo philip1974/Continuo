@@ -587,6 +587,9 @@ const api = {
     /** 推送菜单命令当前生效的主键(归一后的 hotkey,未绑定为 null):main 换算成菜单 accelerator 显示并重建菜单。 */
     setMenuKeybindings: (keybindings: Readonly<Record<string, string | null>>): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(WINDOW_CHANNELS.SET_MENU_KEYBINDINGS, { keybindings }),
+    /** 推送勾选类菜单项的勾选状态(如 文件 → 自动保存):main 据此重建菜单。 */
+    setMenuChecked: (checked: Readonly<Record<string, boolean>>): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(WINDOW_CHANNELS.SET_MENU_CHECKED, { checked }),
   },
   agentAuth: {
     /** 订阅 main 推的授权请求(MCP tool 调时);返回 unsubscribe。payload 未经校验(renderer isAgentAuthRequestPayload 校验)。 */

@@ -10,6 +10,7 @@ export interface MenuSnapshotItem {
   readonly label?: string;
   readonly role?: string;
   readonly type?: string;
+  readonly checked?: boolean;
   readonly accelerator?: string;
   readonly registerAccelerator?: boolean;
   readonly submenu?: readonly MenuSnapshotItem[];
@@ -27,6 +28,7 @@ function snapshotOf(items: readonly MenuItemConstructorOptions[]): MenuSnapshotI
     ...(m.label === undefined ? {} : { label: m.label }),
     ...(m.role === undefined ? {} : { role: m.role }),
     ...(m.type === undefined ? {} : { type: m.type }),
+    ...(m.checked === undefined ? {} : { checked: m.checked }),
     ...(typeof m.accelerator === 'string' ? { accelerator: m.accelerator } : {}),
     ...(m.registerAccelerator === undefined ? {} : { registerAccelerator: m.registerAccelerator }),
     ...(Array.isArray(m.submenu) ? { submenu: snapshotOf(m.submenu) } : {}),

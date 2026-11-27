@@ -49,16 +49,12 @@ import { saveTabAs } from './save-as';
 import { editorTabTitle } from './untitled';
 import { openConflictCompare } from './conflict-compare';
 import { editorFileDeps, saveAsDeps } from './editor-file-deps';
-import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
+import { useAutoSave } from './useAutoSave';
+import { resolveAutoSave, useAutoSaveSettings } from './auto-save-config';
 import { NO_ACTIVE_TAB, useEditorFile } from './useEditorFile';
 import { resolveLink } from './link-resolve';
 import { followMarkdownLink } from './markdown-link-follow';
 import { startDebugDecorationSync } from './decorations/debug-decoration-sync';
-import { useSettingValue } from '@/plugins/settings/values-store';
-import {
-  AUTO_SAVE_DELAY_MS,
-  AUTO_SAVE_MARKDOWN_ENABLED,
-} from '@/plugins/settings/core-setting-specs';
 import { coApi } from '@/lib/co-api';
 import type { EditorTab } from '@/stores/editor.store';
 import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
@@ -219,6 +215,9 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   //   (VSCode 同点 ×),焦点仍在编辑区 / 其它标签上不动。
   // 焦点在面板外(如 Explorer)不动焦点。BDD: src/__tests__/focus-after-close/、src/__tests__/tab-context-menu/
   const rootRef = useRef<HTMLDivElement>(null);
+  // 面板所在窗口(popout 弹出 / 收回后变化,见下方 onDidLocationChange);挂载后取根元素所在文档的窗口。
+  const [hostWindow, setHostWindow] = useState<Window | null>(null);
+  useEffect(() => setHostWindow(rootRef.current?.ownerDocument.defaultView ?? null), []);
   const closeTabs = useCallback(
     (ids: readonly string[]) => {
       const root = rootRef.current;
@@ -302,11 +301,9 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     },
     [activeTab?.filePath, openFileByPath],
   );
-  // 自动保存(Markdown)开关 + 延迟 — 都受 SettingsPanel 控制
-  const mdAutoSaveEnabled = useSettingValue(AUTO_SAVE_MARKDOWN_ENABLED.id, AUTO_SAVE_MARKDOWN_ENABLED.default);
-  const autoSaveDelayMs = useSettingValue(AUTO_SAVE_DELAY_MS.id, AUTO_SAVE_DELAY_MS.default);
-  const autoSaveEnabled =
-    isAutoSaveEnabled(activeTab?.filePath ?? null) && mdAutoSaveEnabled;
+  // 自动保存:活动 tab 的生效模式(files.autoSave + Markdown 语言级覆盖,都受 SettingsPanel 控制;BDD: src/__tests__/files-auto-save/)
+  const autoSaveSettings = useAutoSaveSettings();
+  const autoSave = resolveAutoSave(activeTab?.filePath ?? null, autoSaveSettings);
 
   // 关闭脏 tab 二次确认。closeCandidate 用轻量 TabChrome(打磨 R23:不持完整
   // EditorTab/content,确认框只需 filePath,关闭只需 id)。
@@ -318,13 +315,19 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     readonly batch: BatchClose;
   } | null>(null);
 
-  // 自动保存:Markdown 启用,代码不启用(决策 #3)。按 tabId 保存,切走/卸载时
+  // 自动保存:按活动 tab 的生效模式(默认 Markdown 停手 2 秒、代码不自动保存)。按 tabId 保存,切走/卸载时
   // flush pending,避免连续输入后立即切 tab 丢失整段编辑。
   // 关闭脏 tab 的「放弃修改?」确认框开着时暂停:否则停留超过 delay 会把待放弃的内容写盘。
   // !enabled 取消已排队的保存;取消确认后 enabled 恢复,仍脏照常重新排队。
+  const autoSavePaused = closeCandidate !== null || multiCloseCandidate !== null;
   useAutoSave(saveTab, {
-    enabled: autoSaveEnabled && closeCandidate === null && multiCloseCandidate === null,
-    delayMs: autoSaveDelayMs,
+    enabled: autoSave.mode !== 'off' && !autoSavePaused,
+    delayMs: autoSave.mode === 'afterDelay' ? autoSave.delayMs : null,
+    saveOn: autoSave.mode === 'onFocusChange' ? 'focusChange' : autoSave.mode === 'onWindowChange' ? 'windowChange' : null,
+    paused: autoSavePaused,
+    settings: autoSaveSettings,
+    rootRef,
+    hostWindow,
     groupId,
   });
 
@@ -335,9 +338,15 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   // popout 弹出 / 收回只移动面板 DOM、不重挂编辑器:移动落定后(同终端拖放 topic-25 的 microtask)让已挂载的
   // CodeMirror / ProseMirror 按所在文档重绑 root,否则子窗里仍按主窗文档取选区。
   // BDD: src/__tests__/editor-popout-root/
+  // 同时记下面板所在窗口:onFocusChange / onWindowChange 的「窗口失焦」看编辑器所在的窗口(popout 子窗里的编辑器看子窗)。
   useEffect(() => {
     if (!api) return;
-    const sub = api.onDidLocationChange(() => queueMicrotask(rebindEditorRoots));
+    const sub = api.onDidLocationChange(() =>
+      queueMicrotask(() => {
+        rebindEditorRoots();
+        setHostWindow(rootRef.current?.ownerDocument.defaultView ?? null);
+      }),
+    );
     return () => sub.dispose();
   }, [api]);
 

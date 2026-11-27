@@ -17,6 +17,7 @@ import { installNavigationHistory } from '@/panels/Editor/navigation-history';
 import { installEditorPreviewSettingSync } from '@/panels/Editor/editor-preview';
 import { CONFLICT_DIFF_PANEL_TYPE } from '@/panels/Editor/conflict-diff-constants';
 import { conflictCompareCommandSpecs } from '@/panels/Editor/conflict-compare';
+import { autoSaveCommandSpecs } from '@/panels/Editor/auto-save-config';
 
 const Editor = lazy(() =>
   loadEditorPanelModule().then((m) => ({ default: m.EditorPanel })),
@@ -45,6 +46,8 @@ export default class EditorPlugin extends Plugin {
     for (const spec of conflictCompareCommandSpecs()) this.addCommand(spec);
     // ⌘W 关闭编辑器 / ⌘S 保存 / 下一个·上一个编辑器(VSCode 同名命令)。
     for (const spec of editorCommandSpecs(detectPlatform())) this.addCommand(spec);
+    // 文件:切换自动保存(VSCode workbench.action.toggleAutoSave;BDD: src/__tests__/files-auto-save/)
+    for (const spec of autoSaveCommandSpecs()) this.addCommand(spec);
     // 更改文件编码 / 更改行尾序列(VSCode workbench.action.editor.changeEncoding / changeEOL;BDD: src/__tests__/editor-text-encoding/)
     for (const spec of encodingCommandSpecs()) this.addCommand(spec);
     // 缩进:使用空格 / Tab 缩进、从内容中检测、转换缩进(VSCode editor.action.indentUsingSpaces 等;BDD: src/__tests__/editor-indentation/)

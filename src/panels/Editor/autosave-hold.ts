@@ -31,3 +31,8 @@ export function useAutoSaveHeld(filePath: string | null): boolean {
     (s) => filePath !== null && s.holds.some((paths) => paths.some((p) => isSameOrInsidePath(p, filePath))),
   );
 }
+
+/** 非 hook 版:filePath 此刻是否被暂停自动保存(窗口失焦批量保存后台 tab 时逐个判断)。 */
+export function isAutoSaveHeld(filePath: string): boolean {
+  return useAutoSaveHoldStore.getState().holds.some((paths) => paths.some((p) => isSameOrInsidePath(p, filePath)));
+}

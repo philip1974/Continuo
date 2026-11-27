@@ -198,6 +198,56 @@ export const EDITOR_DECORATIONS_BADGES: CoreSettingSpec<boolean> = {
   priority: 22,
 };
 
+/** files.autoSave 的取值(VSCode 同名同义)。 */
+export const FILES_AUTO_SAVE_MODES = ['off', 'afterDelay', 'onFocusChange', 'onWindowChange'] as const;
+export type FilesAutoSaveMode = (typeof FILES_AUTO_SAVE_MODES)[number];
+
+/**
+ * 自动保存(VSCode files.autoSave,桌面版默认 off):afterDelay = 停手 files.autoSaveDelay 后;onFocusChange = 编辑器失焦时;
+ * onWindowChange = 窗口失焦时。Markdown 另有语言级覆盖 AUTO_SAVE_MARKDOWN_ENABLED(默认开,不看本项)。
+ * BDD: src/__tests__/files-auto-save/
+ */
+export const FILES_AUTO_SAVE: CoreSettingSpec<FilesAutoSaveMode> = {
+  id: 'files.autoSave',
+  category: 'editor',
+  group: 'autosave',
+  groupKey: 'settings.group.autosave',
+  title: 'Auto save',
+  titleKey: 'settings.editor.files_auto_save',
+  descriptionKey: 'settings.editor.files_auto_save.desc',
+  type: 'select',
+  default: 'off',
+  enum: [
+    { value: 'off', label: 'Off', labelKey: 'settings.editor.files_auto_save.off' },
+    { value: 'afterDelay', label: 'After delay', labelKey: 'settings.editor.files_auto_save.after_delay' },
+    { value: 'onFocusChange', label: 'On focus change', labelKey: 'settings.editor.files_auto_save.on_focus_change' },
+    { value: 'onWindowChange', label: 'On window change', labelKey: 'settings.editor.files_auto_save.on_window_change' },
+  ],
+  priority: 8,
+};
+
+/** files.autoSave = afterDelay 的延迟(VSCode files.autoSaveDelay,默认 1000;这里夹取到 100–60000)。 */
+export const FILES_AUTO_SAVE_DELAY: CoreSettingSpec<number> = {
+  id: 'files.autoSaveDelay',
+  category: 'editor',
+  group: 'autosave',
+  groupKey: 'settings.group.autosave',
+  title: 'Auto save delay',
+  titleKey: 'settings.editor.files_auto_save_delay',
+  descriptionKey: 'settings.editor.files_auto_save_delay.desc',
+  type: 'number',
+  default: 1000,
+  min: 100,
+  max: 60_000,
+  step: 100,
+  unit: 'ms',
+  priority: 9,
+};
+
+/**
+ * Markdown 的语言级覆盖(相当于 VSCode `"[markdown]": { "files.autoSave": "afterDelay", "files.autoSaveDelay": 2000 }`):
+ * 开 → Markdown 总在停手 AUTO_SAVE_DELAY_MS 后自动保存;关 → 跟随 files.autoSave。沿用旧 id,已保存的值不丢。
+ */
 export const AUTO_SAVE_MARKDOWN_ENABLED: CoreSettingSpec<boolean> = {
   id: 'autoSave.markdown.enabled',
   category: 'editor',

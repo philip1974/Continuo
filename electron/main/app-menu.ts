@@ -6,7 +6,8 @@
 import { app, BrowserWindow, type KeyboardEvent, type MenuItemConstructorOptions } from 'electron';
 import { sendMenuCommand } from './lib/menu-command';
 import { menuAcceleratorOf } from './menu-keybindings';
-import type { MenuCommandId } from '../shared/window-channels';
+import { menuCheckedOf } from './menu-checked';
+import type { MenuCheckboxId, MenuCommandId } from '../shared/window-channels';
 import type { MainT } from './i18n';
 import type { TranslationKey } from '../shared/i18n-locales/en';
 
@@ -20,6 +21,9 @@ export interface AppMenuActions {
 /** 菜单命令 → 显示的 accelerator(缺省取 renderer 推送的生效键位)。 */
 export type MenuAcceleratorOf = (id: MenuCommandId) => string | undefined;
 
+/** 勾选项 → 是否勾选(缺省取 renderer 推送的状态,见 menu-checked)。 */
+export type MenuCheckedOf = (id: MenuCheckboxId) => boolean;
+
 type Item = MenuItemConstructorOptions;
 const SEPARATOR: Item = { type: 'separator' };
 
@@ -28,6 +32,7 @@ export function appMenuTemplate(
   actions: AppMenuActions,
   isMac: boolean = process.platform === 'darwin',
   acceleratorOf: MenuAcceleratorOf = (id) => menuAcceleratorOf(id, isMac),
+  checkedOf: MenuCheckedOf = menuCheckedOf,
 ): Item[] {
   const name = app.name;
   // 命令项:点击 = 在获焦窗口执行命令(popout 子窗 → 打开它的主窗执行,命令作用于该子窗);没有可用主窗 → fallback。
@@ -78,6 +83,14 @@ export function appMenuTemplate(
     command('workbench.action.files.save', 'menu.file.save'),
     command('workbench.action.files.saveAs', 'menu.file.save_as'),
     command('workbench.action.files.saveAll', 'menu.file.save_all'),
+    SEPARATOR,
+    // 自动保存(VSCode 文件菜单同款勾选项:勾选 = files.autoSave ≠ off,点击 = workbench.action.toggleAutoSave;
+    // BDD: src/__tests__/files-auto-save/)。Electron 点击时自行翻转勾选,随后 renderer 推送新状态重建菜单。
+    {
+      ...command('workbench.action.toggleAutoSave', 'menu.file.auto_save'),
+      type: 'checkbox',
+      checked: checkedOf('workbench.action.toggleAutoSave'),
+    },
     // 其它平台没有应用菜单:首选项放 File 菜单(VSCode:File → Preferences)。
     ...(isMac ? [] : [SEPARATOR, preferencesItem]),
     SEPARATOR,

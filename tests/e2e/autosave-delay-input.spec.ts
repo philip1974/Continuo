@@ -3,7 +3,9 @@ import { test, expect } from './fixtures/electron-app';
 import { SETTINGS_NAV, EDITOR_TAB } from './helpers/settings';
 import { waitForTestHooks } from './helpers/app-ready';
 
-test('编辑器 tab 的自动保存延迟输入框(autoSave.delayMs)显示 store 值(3000)+ 改后 store=4000', async ({
+const MARKDOWN_AUTO_SAVE_DELAY = /^(Markdown 自动保存延迟|Markdown auto-save delay|Markdown 자동 저장 지연)$/;
+
+test('编辑器 tab 的 Markdown 自动保存延迟输入框(autoSave.delayMs)显示 store 值(3000)+ 改后 store=4000', async ({
   window,
 }) => {
   await waitForTestHooks(window);
@@ -26,13 +28,13 @@ test('编辑器 tab 的自动保存延迟输入框(autoSave.delayMs)显示 store
     globalThis.__continuoTest!.setSettingValue('autoSave.delayMs', 3000),
   );
 
-  // 按名称取自动保存延迟(autoSave.delayMs)的输入框(外观 / 缩进组另有字号、行高、制表符大小等数字项,不按位置数)
-  const delayInput = window.getByRole('spinbutton', { name: /^(自动保存延迟|Auto-save delay|자동 저장 지연)$/ });
+  // 按名称取 Markdown 自动保存延迟(autoSave.delayMs)的输入框(自动保存组另有 files.autoSaveDelay,外观 / 缩进组另有数字项,不按位置数)
+  const input = window.getByRole('spinbutton', { name: MARKDOWN_AUTO_SAVE_DELAY });
   // 3000 非默认值(默认 2000):输入框显示它证明确实读自 store
-  await expect(delayInput).toHaveValue('3000');
+  await expect(input).toHaveValue('3000');
 
-  await delayInput.fill('4000');
-  await expect(delayInput).toHaveValue('4000');
+  await input.fill('4000');
+  await expect(input).toHaveValue('4000');
 
   const v = await window.evaluate(
     () =>

@@ -90,7 +90,7 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
     ]);
   });
 
-  it('文件:新建文本文件 / … / 打开最近的文件夹… / 保存 / 另存为… / 全部保存', () => {
+  it('文件:新建文本文件 / … / 打开最近的文件夹… / 保存 / 另存为… / 全部保存 / 自动保存', () => {
     const file = commandsOf(submenu(template(true), 'menu.file.label'));
     expect(file).toEqual([
       'workbench.action.files.newUntitledFile',
@@ -101,6 +101,7 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
       'workbench.action.files.save',
       'workbench.action.files.saveAs',
       'workbench.action.files.saveAll',
+      'workbench.action.toggleAutoSave',
       'menu.file.close_window',
     ]);
   });

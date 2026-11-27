@@ -16,6 +16,7 @@ import {
   releaseAutoSave,
   setAutoSaveFailed,
 } from '../../panels/Editor/autosave-failures';
+import { DEFAULT_AUTO_SAVE_SETTINGS } from '../../panels/Editor/auto-save-config';
 
 const tab = (filePath: string, dirty: boolean, id = filePath, dirtyGen?: number) => ({
   id,
@@ -31,31 +32,31 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
   afterEach(() => releaseAutoSave(owner));
 
   it('无脏 tab → 0', () => {
-    expect(countDirtyForClose([tab('/a.ts', false)], true)).toEqual({ dirty: 0, ids: [] });
+    expect(countDirtyForClose([tab('/a.ts', false)], DEFAULT_AUTO_SAVE_SETTINGS)).toEqual({ dirty: 0, ids: [] });
   });
 
   it('脏代码文件计入(附带 id 列表)', () => {
     expect(
-      countDirtyForClose([tab('/a.ts', true), tab('/b.json', true), tab('/c.ts', false)], true),
+      countDirtyForClose([tab('/a.ts', true), tab('/b.json', true), tab('/c.ts', false)], DEFAULT_AUTO_SAVE_SETTINGS),
     ).toEqual({ dirty: 2, ids: ['/a.ts#0', '/b.json#0'] });
   });
 
   it('Markdown 自动保存开启时,活动 tab(持有 autosave scheduler)的脏 .md 不计入(关窗 flush 会落盘)', () => {
     claimAutoSave('/a.md', owner, noopFlush);
-    expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(0);
+    expect(countDirtyForClose([tab('/a.md', true)], DEFAULT_AUTO_SAVE_SETTINGS).dirty).toBe(0);
   });
 
   // 终审 P1:被排除的脏 .md 单独上报为 pendingAutoSave(身份同 ids)。main 据此判断:flush 超时(网络卷读盘挂起等)
   // 时这些改动尚未落盘,不能放行关闭;没有此类 .md 时不带该字段(超时照常放行,renderer 卡死也能关窗)。
   it('被排除的活动 tab 脏 .md 进入 pendingAutoSave;无此类 tab 时不带该字段', () => {
     claimAutoSave('/a.md', owner, noopFlush);
-    expect(countDirtyForClose([tab('/a.md', true, '/a.md', 3), tab('/b.ts', true)], true)).toEqual({
+    expect(countDirtyForClose([tab('/a.md', true, '/a.md', 3), tab('/b.ts', true)], DEFAULT_AUTO_SAVE_SETTINGS)).toEqual({
       dirty: 1,
       ids: ['/b.ts#0'],
       pendingAutoSave: ['/a.md#3'],
     });
-    expect(countDirtyForClose([tab('/a.md', true)], false)).not.toHaveProperty('pendingAutoSave');
-    expect(countDirtyForClose([tab('/a.md', false)], true)).not.toHaveProperty('pendingAutoSave');
+    expect(countDirtyForClose([tab('/a.md', true)], null)).not.toHaveProperty('pendingAutoSave');
+    expect(countDirtyForClose([tab('/a.md', false)], DEFAULT_AUTO_SAVE_SETTINGS)).not.toHaveProperty('pendingAutoSave');
   });
 
   // 复审:非活动 tab 切走时 useAutoSave 已 flush,仍脏即失败或在途;关窗 flush 只持有活动 tab 的 scheduler,
@@ -63,26 +64,26 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
   it('非活动 tab 的脏 .md 一律计入(含被重命名的非活动 tab)', () => {
     claimAutoSave('/a.md', owner, noopFlush);
     expect(
-      countDirtyForClose([tab('/a.md', true), tab('/b.md', true), tab('/renamed.md', true)], true),
+      countDirtyForClose([tab('/a.md', true), tab('/b.md', true), tab('/renamed.md', true)], DEFAULT_AUTO_SAVE_SETTINGS),
     ).toMatchObject({ dirty: 2, ids: ['/b.md#0', '/renamed.md#0'] });
   });
 
   it('无活动 autosave scheduler(编辑器未挂载)→ 脏 .md 计入', () => {
-    expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(1);
+    expect(countDirtyForClose([tab('/a.md', true)], DEFAULT_AUTO_SAVE_SETTINGS).dirty).toBe(1);
   });
 
   it('Markdown 自动保存关闭时脏 .md 计入', () => {
     claimAutoSave('/a.md', owner, noopFlush);
-    expect(countDirtyForClose([tab('/a.md', true)], false).dirty).toBe(1);
+    expect(countDirtyForClose([tab('/a.md', true)], null).dirty).toBe(1);
   });
 
   // 活动 tab autosave 失败(ENOSPC/EACCES/EDITOR_DISK_CHANGED)后无 pending timer,关窗 flush 不会重试 → 计入。
   it('活动 tab 最近一次 autosave 失败 → 计入;再次 schedule / 成功 → 恢复排除', () => {
     claimAutoSave('/a.md', owner, noopFlush);
     setAutoSaveFailed(owner, true);
-    expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(1);
+    expect(countDirtyForClose([tab('/a.md', true)], DEFAULT_AUTO_SAVE_SETTINGS).dirty).toBe(1);
     setAutoSaveFailed(owner, false);
-    expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(0);
+    expect(countDirtyForClose([tab('/a.md', true)], DEFAULT_AUTO_SAVE_SETTINGS).dirty).toBe(0);
   });
 
   // 状态绑定 scheduler 实例:切 tab / 重命名 / 关闭重开都会换实例,旧实例的迟到结果不影响新实例。
@@ -92,7 +93,7 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
     releaseAutoSave(old);
     claimAutoSave('/a.md', owner, noopFlush);
     setAutoSaveFailed(old, true);
-    expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(0);
+    expect(countDirtyForClose([tab('/a.md', true)], DEFAULT_AUTO_SAVE_SETTINGS).dirty).toBe(0);
   });
 
   it('换实例从「未失败」开始;释放后不再排除', () => {
@@ -100,11 +101,11 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
     claimAutoSave('/a.md', old, noopFlush);
     setAutoSaveFailed(old, true);
     claimAutoSave('/a.md', owner, noopFlush);
-    expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(0);
+    expect(countDirtyForClose([tab('/a.md', true)], DEFAULT_AUTO_SAVE_SETTINGS).dirty).toBe(0);
     releaseAutoSave(old); // 非当前实例:无效
-    expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(0);
+    expect(countDirtyForClose([tab('/a.md', true)], DEFAULT_AUTO_SAVE_SETTINGS).dirty).toBe(0);
     releaseAutoSave(owner);
-    expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(1);
+    expect(countDirtyForClose([tab('/a.md', true)], DEFAULT_AUTO_SAVE_SETTINGS).dirty).toBe(1);
   });
 });
 
@@ -277,7 +278,7 @@ describe('remainingAfterFlush:flush 后仍未保存的改动', () => {
 describe('脏 tab 身份带变脏代际', () => {
   it('上报 id 形如 `${tabId}#${gen}`(无代际按 0)', () => {
     expect(
-      countDirtyForClose([tab('/a.ts', true, '/a.ts', 2), tab('/b.ts', true, '/b.ts', 1)], true),
+      countDirtyForClose([tab('/a.ts', true, '/a.ts', 2), tab('/b.ts', true, '/b.ts', 1)], DEFAULT_AUTO_SAVE_SETTINGS),
     ).toEqual({ dirty: 2, ids: ['/a.ts#2', '/b.ts#1'] });
   });
 
@@ -285,7 +286,7 @@ describe('脏 tab 身份带变脏代际', () => {
     useEditorStore.setState({ tabs: [], activeTabId: null });
     const s = useEditorStore.getState();
     s.openTab(createTab('/w/x.ts', 'old'));
-    const ids = () => countDirtyForClose(useEditorStore.getState().tabs, false).ids;
+    const ids = () => countDirtyForClose(useEditorStore.getState().tabs, null).ids;
     expect(ids()).toEqual([]);
     s.updateContent('/w/x.ts', 'new');
     const first = ids();
@@ -310,7 +311,7 @@ describe('脏 tab 身份带变脏代际', () => {
   it('editor store:关闭后重开同一路径再编辑 → 新身份(代际进程内唯一,不随 tab 实例重算)', () => {
     useEditorStore.setState({ tabs: [], activeTabId: null });
     const s = useEditorStore.getState();
-    const ids = () => countDirtyForClose(useEditorStore.getState().tabs, false).ids;
+    const ids = () => countDirtyForClose(useEditorStore.getState().tabs, null).ids;
     s.openTab(createTab('/w/y.ts', 'old'));
     s.updateContent('/w/y.ts', 'new');
     const before = ids();
