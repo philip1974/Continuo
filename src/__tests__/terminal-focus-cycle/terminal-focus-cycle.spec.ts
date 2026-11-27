@@ -22,6 +22,7 @@ import { TERMINAL_ATTR, whenCoveredBy, whenOverlaps } from '@/lib/editor-text-fo
 import { detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { editorCommandSpecs } from '@/panels/Editor/editor-commands';
+import { registerEditorFocus } from '@/panels/Editor/editor-focus-registry';
 import { terminalFocusCycleCommandSpecs } from '@/shell/dock/terminal-focus-cycle';
 import { useEditorStore } from '@/stores/editor.store';
 import { en } from '@shared/i18n-locales/en';
@@ -113,6 +114,7 @@ beforeEach(() => __resetTerminalPanelHandlesForTest());
 afterEach(() => {
   for (const d of disposers.splice(0)) d.dispose();
   setDockApi(null);
+  useEditorStore.setState({ tabs: [], activeTabId: null });
   vi.unstubAllGlobals();
   document.body.innerHTML = '';
 });
@@ -128,7 +130,8 @@ describe('命令注册', () => {
     for (const [id, [enTitle, zhTitle]] of Object.entries(titles)) {
       const spec = coApp.commands.get(id);
       expect(spec, id).toBeDefined();
-      expect(spec!.when).toBe('terminalFocus');
+      // 窗格命令另须有分屏(VSCode when: terminalFocus && terminalSplitActive)
+      expect(spec!.when).toBe(id === NEXT_PANE || id === PREV_PANE ? 'terminalSplitFocus' : 'terminalFocus');
       expect(spec!.categoryKey).toBe('commands.terminal.category');
       const k = spec!.titleKey as keyof typeof en;
       expect(en[k]).toBe(enTitle);
@@ -221,16 +224,57 @@ describe('按键:终端里切终端,编辑器里仍是切编辑器 tab', () => {
     expect(terminalYieldedCommandId(pressOn(term, { key: 'F9', code: 'F9', ctrlKey: true }), 'mac', overrides, reg)).toBe(NEXT);
   });
 
-  it('窗格键只在该窗口有不止一个终端窗格时让出;没有分屏时照常进 shell', () => {
-    const { api, t1 } = setup();
+  it('窗格键只在该窗口有不止一个终端窗格时归窗格命令并让出', () => {
+    const { t1 } = setup();
     const term = inputOf(t1);
     const altRight = { key: 'ArrowRight', code: 'ArrowRight', altKey: true };
     expect(terminalYieldedCommandId(pressOn(term, MAC_KEYS.nextPane), 'mac', {}, registryFor('mac'))).toBe(NEXT_PANE);
+    expect(terminalYieldedCommandId(pressOn(term, MAC_KEYS.prevPane), 'mac', {}, registryFor('mac'))).toBe(PREV_PANE);
     expect(terminalYieldedCommandId(pressOn(term, altRight), 'other', {}, registryFor('other'))).toBe(NEXT_PANE);
-    // 只剩一个终端窗格(其余终端都关掉)
+  });
+
+  it('没有分屏(只剩一个终端窗格):mac ⌥⌘→ / ⌥⌘← 落到下一个 / 上一个编辑器并让出;Windows / Linux Alt+→ / Alt+← 照常进 shell', () => {
+    const { api, t1 } = setup();
     for (const id of ['t0', 't2', 't3']) api.getPanel(id)!.api.close();
-    expect(terminalYieldedCommandId(pressOn(term, altRight), 'other', {}, registryFor('other'))).toBeNull();
-    expect(terminalYieldedCommandId(pressOn(term, MAC_KEYS.nextPane), 'mac', {}, registryFor('mac'))).toBeNull();
+    const term = inputOf(t1);
+    const mac = commandsFor('mac');
+    expect(winningCommandFor(pressOn(term, MAC_KEYS.nextPane), mac, 'mac', {})?.id).toBe(NEXT_EDITOR);
+    expect(winningCommandFor(pressOn(term, MAC_KEYS.prevPane), mac, 'mac', {})?.id).toBe(PREV_EDITOR);
+    expect(terminalYieldedCommandId(pressOn(term, MAC_KEYS.nextPane), 'mac', {}, registryFor('mac'))).toBe(NEXT_EDITOR);
+    expect(terminalYieldedCommandId(pressOn(term, MAC_KEYS.prevPane), 'mac', {}, registryFor('mac'))).toBe(PREV_EDITOR);
+    // 附加键 ⌥⌘↓ / ⌥⌘↑ 不再归窗格命令
+    const macDown = { key: 'ArrowDown', code: 'ArrowDown', metaKey: true, altKey: true };
+    expect(winningCommandFor(pressOn(term, macDown), mac, 'mac', {})?.id).not.toBe(NEXT_PANE);
+    // Windows / Linux:Alt+→ / Alt+← 不归窗格命令、不让出(照常进 shell)
+    const other = commandsFor('other');
+    for (const [key, pane] of [['ArrowRight', NEXT_PANE], ['ArrowLeft', PREV_PANE]] as const) {
+      const e = { key, code: key, altKey: true };
+      expect(winningCommandFor(pressOn(term, e), other, 'other', {})?.id).not.toBe(pane);
+      expect(terminalYieldedCommandId(pressOn(term, e), 'other', {}, registryFor('other'))).toBeNull();
+    }
+  });
+
+  it('没有分屏时按下 → 在编辑器组(不是终端所在组)里切到下一个 / 上一个文件 tab,焦点进入该编辑器(VSCode nextEditor 不保留焦点)', async () => {
+    const { api, t1, editor } = setup();
+    for (const id of ['t0', 't2', 't3']) api.getPanel(id)!.api.close();
+    const file = (p: string) => ({ id: p, filePath: p, content: '', originalContent: '', dirty: false });
+    useEditorStore.setState({ tabs: [file('/w/a.ts'), file('/w/b.ts'), file('/w/c.ts')], activeTabId: '/w/a.ts' });
+    // 编辑器视图就绪时按 tab 登记聚焦句柄(CodeEditor / MilkdownEditor 同此)
+    for (const p of ['/w/a.ts', '/w/c.ts']) disposers.push({ dispose: registerEditorFocus(p, () => inputOf(editor).focus(), 'editor') });
+    focusPanel(t1);
+    const term = inputOf(t1);
+    const press = async (k: KeyboardEventInit) => {
+      await run(winningCommandFor(pressOn(inputOf(t1), k), commandsFor('mac'), 'mac', {})!.id);
+      await new Promise((r) => setTimeout(r, 50)); // 聚焦在下一帧兑现
+    };
+    await press(MAC_KEYS.prevPane);
+    expect(useEditorStore.getState().activeTabId).toBe('/w/c.ts');
+    expect(focusedIn()).toBe('editor');
+    focusPanel(t1);
+    expect(document.activeElement).toBe(term);
+    await press(MAC_KEYS.nextPane);
+    expect(useEditorStore.getState().activeTabId).toBe('/w/a.ts');
+    expect(focusedIn()).toBe('editor');
   });
 
   it('快捷键页:终端命令与同键的下一个 / 上一个编辑器不算冲突', () => {
@@ -248,6 +292,10 @@ describe('按键:终端里切终端,编辑器里仍是切编辑器 tab', () => {
     expect(whenCoveredBy('terminalFocus', 'terminalNormalBufferFocus')).toBe(false);
     expect(whenOverlaps('terminalFocus', 'editorFocus')).toBe(false);
     expect(whenOverlaps('terminalFocus', 'editorTextFocus')).toBe(false);
+    // 有分屏的终端 ⊂ 终端;与主缓冲条件可同时成立;与编辑器互斥
+    expect(whenCoveredBy('terminalSplitFocus', 'terminalFocus')).toBe(true);
+    expect(whenOverlaps('terminalSplitFocus', 'terminalNormalBufferFocus')).toBe(true);
+    expect(whenOverlaps('terminalSplitFocus', 'editorFocus')).toBe(false);
     // 两条终端命令改到同一键仍是冲突
     expect(selectKeybindingConflicts(all, NEXT, coApp.commands.get(PREV)!.hotkey!).map((c) => c.id)).toContain(PREV);
   });

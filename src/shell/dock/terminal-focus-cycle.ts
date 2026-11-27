@@ -9,6 +9,7 @@
 import type { DockviewApi, IDockviewPanel } from 'dockview-react';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import type { Platform } from '@/plugins/command-palette/format-hotkey';
+import { provideTerminalSplitActive } from '@/lib/editor-text-focus';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { getDockApi } from './dock-api-ref';
 import { activePanelInDocument, mostRecentPanelInDocument, popoutGroupOfDocument } from './group-mru';
@@ -114,18 +115,20 @@ export function focusAdjacentTerminalPane(delta: 1 | -1): void {
 }
 
 /**
- * doc 所在窗口是否有不止一个终端窗格(VSCode terminalSplitActive):窗格键只在此时让出,没有分屏时照常进 shell。
+ * doc 所在窗口是否有不止一个终端窗格(VSCode terminalSplitActive):窗格命令的 when(terminalSplitFocus)只在此时成立;
+ * 没有分屏时同键让给后面的绑定(mac ⌥⌘→ / ⌥⌘← = 下一个 / 上一个编辑器;Windows / Linux Alt+→ / Alt+← 照常进 shell)。
  */
 export function hasTerminalSplit(doc: Document): boolean {
   const api = getDockApi();
   return api !== null && terminalPanes(api, doc).length > 1;
 }
+provideTerminalSplitActive(hasTerminalSplit);
 
 /**
  * 四条命令的 spec(TerminalPlugin 按 detectPlatform 注册)。默认键同 VSCode:
  * - 下一个 / 上一个终端:mac ⇧⌘] / ⇧⌘[,其它 Ctrl+PageDown / Ctrl+PageUp;
  * - 下一个 / 上一个窗格:mac ⌥⌘→ / ⌥⌘←(附加 ⌥⌘↓ / ⌥⌘↑),其它 Alt+→ / Alt+←(附加 Alt+↓ / Alt+↑)。
- * when: terminalFocus —— 同键的下一个 / 上一个编辑器在终端外照常生效。
+ * when: terminalFocus(窗格命令 terminalSplitFocus,另须有分屏)—— 同键的下一个 / 上一个编辑器在终端外、以及没有分屏的终端里照常生效。
  */
 export function terminalFocusCycleCommandSpecs(platform: Platform): CommandSpec[] {
   const mac = platform === 'mac';
@@ -152,6 +155,7 @@ export function terminalFocusCycleCommandSpecs(platform: Platform): CommandSpec[
       id: TERMINAL_FOCUS_NEXT_PANE_COMMAND_ID,
       title: 'Focus Next Terminal Pane',
       titleKey: 'commands.terminal.focus_next_pane.title',
+      when: 'terminalSplitFocus',
       hotkey: mac ? 'mod+alt+right' : 'alt+right',
       secondaryHotkeys: [mac ? 'mod+alt+down' : 'alt+down'],
       fn: () => focusAdjacentTerminalPane(1),
@@ -161,6 +165,7 @@ export function terminalFocusCycleCommandSpecs(platform: Platform): CommandSpec[
       id: TERMINAL_FOCUS_PREVIOUS_PANE_COMMAND_ID,
       title: 'Focus Previous Terminal Pane',
       titleKey: 'commands.terminal.focus_previous_pane.title',
+      when: 'terminalSplitFocus',
       hotkey: mac ? 'mod+alt+left' : 'alt+left',
       secondaryHotkeys: [mac ? 'mod+alt+up' : 'alt+up'],
       fn: () => focusAdjacentTerminalPane(-1),

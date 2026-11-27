@@ -136,10 +136,6 @@ async function mountedMilkdown(): Promise<{ crepe: CrepeType; view: PmLike }> {
 }
 
 describe('Markdown 编辑视图(真实 Crepe)', () => {
-  // drop 指示器在 drop 后 30 ms 收起:等它跑完再卸载编辑器(否则计时器在卸载后访问已销毁的 ctx,报未处理错误)
-  afterEach(() => act(async () => {
-    await new Promise((r) => setTimeout(r, 50));
-  }));
   it('放下不改文档;⇧ 放下插入相对文档的链接 / 图片', async () => {
     useWorkspaceStore.setState({ root: '/w' });
     const { container } = render(<MilkdownEditor tabId="/w/docs/a.md" fileName="/w/docs/a.md" defaultValue={'hello\n'} />);
@@ -158,6 +154,32 @@ describe('Markdown 编辑视图(真实 Crepe)', () => {
     expect(md).toContain('[a.ts](../src/a.ts)');
     expect(md).toContain('![](img/logo.png)');
     expect(md).not.toContain('/w/src/a.ts');
+  });
+
+  it('放下后编辑器随即销毁(放下即打开别的文件 / 关 tab):拖放指示线的延迟隐藏不抛错', async () => {
+    useWorkspaceStore.setState({ root: '/w' });
+    const { unmount } = render(<MilkdownEditor tabId="/w/docs/a.md" fileName="/w/docs/a.md" defaultValue={'hello\n'} />);
+    const { crepe, view } = await mountedMilkdown();
+    // 截下放下时排定的计时器(拖放指示线 30ms 后隐藏),编辑器销毁后再手动触发
+    const pending: Array<() => void> = [];
+    const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void) => {
+      pending.push(fn);
+      return 0;
+    }) as never);
+    try {
+      await act(async () => {
+        view.dom.dispatchEvent(explorerDrop());
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(pending.length).toBeGreaterThan(0);
+    unmount();
+    for (let i = 0; i < 100 && crepe.editor.status !== 'Destroyed'; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(crepe.editor.status).toBe('Destroyed');
+    for (const fn of pending) expect(fn).not.toThrow();
   });
 });
 

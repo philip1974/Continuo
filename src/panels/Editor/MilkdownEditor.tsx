@@ -13,6 +13,7 @@ import { insertImageInputRule } from '@milkdown/kit/preset/commonmark';
 import { $prose } from '@milkdown/kit/utils';
 import { uploadConfig } from '@milkdown/kit/plugin/upload';
 import { markdownImageUploadConfig, markdownMediaDropPlugin } from './milkdown-media-drop';
+import { dropIndicatorDestroyGuard } from './milkdown-drop-indicator-guard';
 import { codeMirrorMediaDrop } from './codemirror-media-drop';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { TextSelection } from '@milkdown/kit/prose/state';
@@ -455,6 +456,8 @@ function CrepeEditor({
     const documentPath = (): string | null => fileName ?? null;
     crepe.editor.config((ctx) => ctx.update(uploadConfig.key, markdownImageUploadConfig(documentPath)));
     crepe.editor.use($prose(() => markdownMediaDropPlugin(documentPath)));
+    // 放下即销毁编辑器(打开别的文件 / 关 tab)时拖放指示线的延迟隐藏不抛错(见 milkdown-drop-indicator-guard)
+    crepe.editor.use(dropIndicatorDestroyGuard);
     // 标题 id = GitHub slug(重复加 -1 / -2),与 `#片段` 链接解析同一规则。BDD: src/__tests__/markdown-anchor-links/
     installGithubHeadingIds(crepe.editor);
     if (readonly) crepe.setReadonly(true);

@@ -37,6 +37,7 @@ import {
 } from '@/stores/editor.store';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 import { commandEditorGroupId, focusEditorGroup, splitEditor } from './editor-groups-actions';
+import { requestEditorFocus } from './editor-focus-registry';
 import type { IDockviewPanel } from 'dockview-react';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { activePanelInDocument, popoutGroupOfDocument } from '@/shell/dock/group-mru';
@@ -304,7 +305,10 @@ function revealActiveFile(): void {
   if (tab && tab.orphaned !== true && !isUntitledPath(tab.filePath)) void revealPathOrNotify(tab.filePath);
 }
 
-/** 在编辑器组(缺省触发窗口的编辑器组)内切到相邻文件 tab(首尾相接);组内 tab 数 < 2 → no-op。 */
+/**
+ * 在编辑器组(缺省触发窗口的编辑器组)内切到相邻文件 tab(首尾相接)并聚焦它的编辑器(VSCode nextEditor 打开时不带 preserveFocus,
+ * 焦点随之进编辑器;从终端按 / 命令面板执行同样如此);组内 tab 数 < 2 → no-op。
+ */
 export function openAdjacentEditor(delta: 1 | -1, groupId?: string): void {
   const gid = groupId ?? commandEditorGroupId();
   if (gid === undefined) return;
@@ -314,7 +318,9 @@ export function openAdjacentEditor(delta: 1 | -1, groupId?: string): void {
   const activeTabId = groupActiveTabIdOf(s, gid);
   const index = activeTabId === null ? -1 : findEditorTabIndexById(tabs, activeTabId);
   const from = index < 0 ? (delta > 0 ? -1 : 0) : index;
-  s.switchTab(tabs[(from + delta + tabs.length) % tabs.length]!.id, { groupId: gid });
+  const next = tabs[(from + delta + tabs.length) % tabs.length]!.id;
+  s.switchTab(next, { groupId: gid });
+  requestEditorFocus(next, gid);
 }
 
 /** 组内关闭类命令(VSCode 同名;tab 右键「关闭其他 / 关闭右侧 / 关闭已保存 / 全部关闭」)。 */

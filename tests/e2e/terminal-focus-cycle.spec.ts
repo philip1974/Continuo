@@ -166,7 +166,7 @@ test('主窗:⇧⌘] / ⇧⌘[ 在三个终端间按空间顺序循环(含同组
   }
 });
 
-test('只有一个终端窗格时 ⌥⌘→ 不动、不进 shell 乱码;编辑器里 ⇧⌘] / ⇧⌘[ / ⌥⌘→ 仍切编辑器 tab', async () => {
+test('只有一个终端窗格时 ⌥⌘→ / ⌥⌘← 落到下一个 / 上一个编辑器(切编辑器组的文件 tab,焦点进编辑器),⇧⌘] 不动,不进 shell 乱码;编辑器里 ⇧⌘] / ⇧⌘[ / ⌥⌘→ 仍切编辑器 tab', async () => {
   test.setTimeout(120_000);
   const { win } = await launch();
   await openTreeItem(win, /^a\.ts$/);
@@ -180,12 +180,31 @@ test('只有一个终端窗格时 ⌥⌘→ 不动、不进 shell 乱码;编辑�
   await focusTerminalTab(win, id);
   await expect.poll(() => activeText(win), { timeout: 15_000 }).not.toBe('');
   const before = await activeEditor();
-  await win.keyboard.press(NEXT_PANE);
+  expect(before).toMatch(/b\.ts$/);
+  // 只有一个终端:下一个终端不动,编辑器 tab 也不切
   await win.keyboard.press(NEXT);
   await win.waitForTimeout(300);
   expect(await focusedTerminal(win)).toBe(id);
-  // 编辑器 tab 没在后台被切换
   expect(await activeEditor()).toBe(before);
+  await win.keyboard.press(NEXT_PANE);
+  const editorFocused = () => win.evaluate(() => document.activeElement?.closest('.cm-editor') !== null);
+  if (isMac) {
+    // 没有分屏:⌥⌘→ / ⌥⌘← = 下一个 / 上一个编辑器(VSCode 窗格命令 when 含 terminalSplitActive,不成立时落到 nextEditor),
+    // 在编辑器组里切文件 tab,焦点随之进编辑器(VSCode nextEditor 不保留焦点)
+    await expect.poll(() => activeEditor(), { timeout: 10_000 }).toMatch(/a\.ts$/);
+    await expect.poll(editorFocused, { timeout: 10_000 }).toBe(true);
+    await expect(win.locator('.cm-content')).toHaveText('export const a = 1;');
+    await focusTerminalTab(win, id);
+    await win.keyboard.press(PREV_PANE);
+    await expect.poll(() => activeEditor(), { timeout: 10_000 }).toMatch(/b\.ts$/);
+    await expect.poll(editorFocused, { timeout: 10_000 }).toBe(true);
+    await focusTerminalTab(win, id);
+  } else {
+    // Windows / Linux:Alt+→ 没有工作台同键命令,照常进 shell
+    await win.waitForTimeout(300);
+    expect(await activeEditor()).toBe(before);
+  }
+  expect(await focusedTerminal(win)).toBe(id);
   await win.keyboard.type('echo ui134-one');
   await win.keyboard.press('Enter');
   await expect.poll(() => activeText(win), { timeout: 10_000 }).toMatch(/^ui134-one$/m);

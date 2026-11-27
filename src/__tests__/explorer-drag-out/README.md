@@ -42,7 +42,8 @@
    - **按住 ⇧ 放到文本上** → 插入,不打开、不拆分(dockview 不显示放置高亮):Markdown 插入相对文档目录的链接,图片为图片引用
      (源码:`[text](../src/a.ts) ![alt text](img/logo.png)`,同 VSCode `createUriListSnippet`;编辑视图:链接文字为文件名、图片 alt 为空);
      其它文件插入相对工作区根的路径(工作区外 → 绝对路径),多个以空格分隔(VSCode `RelativePathProvider` / `PathProvider`);文件夹不插入;
-   - Finder 拖入编辑器的既有行为不变(Markdown 里的图片见 `markdown-image-paste`)。
+   - Finder 拖入编辑器的既有行为不变(Markdown 里的图片见 `markdown-image-paste`);
+   - 放下后编辑器随即销毁(放下即打开别的文件导致重挂、拖动中关 tab / 切模式):Markdown 编辑视图拖放指示线的延迟隐藏不抛未处理异常。
 
 ## 与 VSCode 的差异
 
@@ -58,6 +59,6 @@
 - `editor-drop.spec.ts`:编辑器组的接收判定、落点 → 拆分方向、放下后的打开(常驻、多选、第一个激活、文件夹跳过、拆分)。
 - `tab-bar-drop.spec.tsx`:拖到组内 tab 栏的高亮与打开。
 - `terminal-drop.spec.tsx`:拖到终端插入转义路径。
-- `editor-content-drop.spec.tsx`:拖到编辑器内容区不插入(代码 / Markdown 源码 / 编辑视图)、⇧ 放下插入、dockview 遇 ⇧ 不接收。
+- `editor-content-drop.spec.tsx`:拖到编辑器内容区不插入(代码 / Markdown 源码 / 编辑视图)、⇧ 放下插入、dockview 遇 ⇧ 不接收、放下后随即销毁编辑器不抛错。
 - e2e:`tests/e2e/explorer-drag-out.spec.ts`(真实应用里树 → 编辑器打开、→ 编辑器边缘拆分、→ 终端插入;拖到 md / ts 内容区中央与边缘
   不改当前文档;⇧ 放下插入链接)。
