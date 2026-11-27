@@ -5,6 +5,7 @@ import { editorGroupIdsOf, useEditorStore } from '@/stores/editor.store';
 import { mainEditorGroupOrder } from './editor-group-order';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { focusPanelContent, focusPanelContentWhenReady } from './panel-focus';
+import { isSidePanelId, SIDE_PANEL_INITIAL_WIDTH } from './side-panel';
 
 // Explorer 固定在左侧 sidebar(App.tsx 内的 ExplorerSidebar),不参与 Dockview。
 // 默认布局极简(VSCode 风):只 Editor 占主区。
@@ -82,6 +83,11 @@ export function resetDockLayout(api: DockviewApi): void {
   }
   // 编辑器面板已关 → 建在落点组(各面板移动时不换活动组,活动组可能已随清空被移除)
   applyDefaultLayout(api, main, activeGroupId);
+  // 侧栏面板(搜索)单独成组放回最左侧(VSCode 重置把视图放回侧栏;BDD: workspace-search 1a)。此时 main 是网格最左的组。
+  for (const panel of api.panels.filter((p) => isSidePanelId(p.id))) {
+    panel.api.moveTo({ group: main, position: 'left', skipSetActive: true });
+    panel.group.api.setSize({ width: SIDE_PANEL_INITIAL_WIDTH });
+  }
   // 微任务里看焦点:等触发处收尾(如命令面板关闭后把焦点还给打开前的元素)。
   queueMicrotask(() => restoreActiveEditorGroupFocus(api, activeGroupId));
 }

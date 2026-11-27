@@ -17,6 +17,7 @@ import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { focusDockPanelSoon } from './panel-focus';
 import { onPopoutRestoreSettled } from './popout-restore-settle';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
+import { isSidePanelGroup } from './side-panel';
 
 type Group = DockviewApi['groups'][number];
 
@@ -116,16 +117,21 @@ export function editorGroupInDocument(api: DockviewApi, doc: Document, preferred
  * popout 时改投主窗最近使用的组;主窗没有带面板的组 → 取可见的 grid 组;都没有 → 在主窗 grid 新建一组。
  * 活动组是主窗里隐藏的 popout 引用组(整组弹出后 dockview 留在 grid 里的 0 宽空组;关掉主窗最后一个面板后 dockview 把它
  * 设为活动组)时同 popout 处理:加进去的面板主窗看不见。
+ * 活动组是只含侧栏面板(搜索)的组时同样改投(VSCode:编辑器 / 面板不进侧栏;BDD: workspace-search 1a):候选跳过侧栏组;
+ * 主窗没有别的组 → 在该侧栏组右侧新建一组。
  */
 export function mainWindowAddPosition(
   api: DockviewApi,
-): { referenceGroup: Group; direction: 'within' } | { direction: 'right' } | undefined {
+): { referenceGroup: Group; direction: 'within' | 'right' } | { direction: 'right' } | undefined {
   const active = api.activeGroup;
-  if (!active || (windowKeyOf(active) === 'main' && active.api.isVisible)) return undefined;
+  const activeInMain = !!active && windowKeyOf(active) === 'main' && active.api.isVisible;
+  if (!active || (activeInMain && !isSidePanelGroup(active))) return undefined;
+  const recent = (mruByApi.get(api) ?? []).map((id) => api.groups.find((g) => g.id === id));
   const group =
-    mostRecentMainWindowPanel(api)?.group ??
-    api.groups.find((g) => g.api.location.type === 'grid' && g.api.isVisible);
-  return group ? { referenceGroup: group, direction: 'within' } : { direction: 'right' };
+    [...recent, ...api.groups].find((g) => g && windowKeyOf(g) === 'main' && g.activePanel && !isSidePanelGroup(g)) ??
+    api.groups.find((g) => g.api.location.type === 'grid' && g.api.isVisible && !isSidePanelGroup(g));
+  if (group) return { referenceGroup: group, direction: 'within' };
+  return activeInMain ? { referenceGroup: active, direction: 'right' } : { direction: 'right' };
 }
 
 /**

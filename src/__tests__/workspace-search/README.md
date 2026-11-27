@@ -7,9 +7,20 @@
 
 1. **入口**(`search-command.spec.ts`):命令 `workbench.action.findInFiles`「在文件中查找」(三语),默认键 `mod+shift+f`
    (mac ⇧⌘F,Windows / Linux Ctrl+Shift+F,同 VSCode),不与其它命令默认键冲突;出现在命令面板。执行 = 打开(或激活已有的)
-   单例 dock 面板 `search`(未给 position → 主窗落点,活动组在 popout 子窗时也落在主窗,见 popout-open-target),并把焦点交给
-   查询框、全选已有内容。焦点在编辑器且有**单行**非空选区 → 选区文本带入查询框(VSCode `search.seedWithNearestWord` 关闭时
+   单例 dock 面板 `search`(落点见 1a),并把焦点交给查询框、全选已有内容。焦点在编辑器且有**单行**非空选区 → 选区文本带入查询框(VSCode `search.seedWithNearestWord` 关闭时
    的默认:只带选区);多行选区 / 无选区 → 保留上次查询。面板也出现在 dock「⋯」菜单里(注册的面板类型)。
+1a. **面板落点**(`search-panel-placement.spec.ts`;VSCode:搜索是侧栏视图,`openView` 打开在它所在的视图容器 —— 默认侧栏,
+   用户拖到别处后在那里;编辑器永远不进侧栏):
+   - **新建**(没有 search 面板)→ 主窗 dock 网格**最左侧的独立组**(全高,相当于 VSCode 侧栏位置;多个编辑器组 / 其它组时
+     也在它们全部的左侧),初始宽 `SIDEBAR_DEFAULT_WIDTH`(280,同资源管理器侧栏默认宽);不再落进活动组与编辑器叠在一起
+     (此前单组时点结果后组切回编辑器 tab,结果列表被盖住)。入口一致:命令 / ⇧⌘F、「查看 > 搜索」、组右上「⋯」→ 搜索
+     (含 popout 子窗里的「⋯」)、调用该命令的其它入口;从 popout 子窗触发也建在主窗并激活主窗。
+   - **已存在**(在任何组、浮动组或 popout 子窗)→ 只在其所在窗口激活并聚焦,不挪动;用户拖到别处的位置随 dock 布局持久化,
+     重启后照旧,不被挪回。关闭后再打开(没有面板)→ 重新放回最左侧。
+   - **侧栏组只放侧栏面板**:活动组是只含 search 面板的组时,从主窗入口新建的其它面板(补建编辑器面板 / 主窗没有编辑器组时
+     新建的编辑器组、设置、输出、插件面板、没有终端可参照的新终端)不落进它 —— 改落主窗最近使用的其它组;主窗没有其它组 →
+     在它右侧新建一组。点结果打开的文件落在编辑器组,搜索结果保持可见。用户经该组「⋯」菜单显式加入的面板照旧落在该组。
+   - 「重置布局」:search 面板回到最左侧独立组(见 dock-reset-layout)。
 2. **查询**(`search-query.spec.ts`):查询框 + 三个开关「使用正则表达式 / 区分大小写 / 全词匹配」(`aria-pressed`,成组)。
    字面量按字面匹配(元字符转义);全词按 VSCode `createRegExp` 规则在首 / 尾是单词字符时加 `\b`;不区分大小写加 `i`。
    正则模式下非法正则 → 不发起搜索,查询框 `aria-invalid`、提示「正则表达式无效」(`regexSyntaxError`,错误信息作 title)。
@@ -83,6 +94,7 @@
 - `search-ipc.spec.ts` — 4 的 IPC / 服务(窗口根、取消、事件转发、schema、preload 守卫)
 - `search-view.spec.tsx` — 5
 - `search-command.spec.ts` — 1
+- `search-panel-placement.spec.ts` — 1a
 - `search-open-editors.spec.tsx` — 6(及 5 的跳过大文件 / 无结果时的范围提示)
 - `search-path-gone.spec.ts` — 7
 - `search-input-restart.spec.ts` — 8

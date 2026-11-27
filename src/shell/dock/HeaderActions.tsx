@@ -9,6 +9,7 @@ import { useRegistry } from '@/plugins/registries/useRegistry';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { addPanelAndFocus, openOrFocusPanelNow } from '@/shell/dock/dock-api-ref';
 import { nextPanelId, popoutPanel } from '@/shell/dock/dock-panel-actions';
+import { SEARCH_PANEL_ID, SIDE_PANEL_INITIAL_WIDTH, SIDE_PANEL_POSITION, isSidePanelId } from '@/shell/dock/side-panel';
 import { notify } from '@/notifications/notify';
 import { useTWithFallback, useT, t } from '@/i18n';
 import { labelDockTablist } from '@/shell/dock/dock-tablist';
@@ -20,7 +21,7 @@ import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
  */
 const PANEL_OPEN_COMMAND: ReadonlyMap<string, string> = new Map([
   [TERMINAL_PANEL_TYPE, 'terminal.new'],
-  ['search', 'workbench.action.findInFiles'],
+  [SEARCH_PANEL_ID, 'workbench.action.findInFiles'],
   ['settings', 'settings.toggle'],
 ]);
 
@@ -90,6 +91,9 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
             position,
             ...(titleKey ? { params: { titleKey } } : {}),
           });
+        } else if (isSidePanelId(key)) {
+          // 侧栏型面板(搜索):与 ⇧⌘F 同一落点 —— 新建在主窗网格最左侧的独立组,不落进本组(含 popout 子窗里的菜单)。
+          openOrFocusPanelNow(containerApi, key, key, label, titleKey, SIDE_PANEL_POSITION, SIDE_PANEL_INITIAL_WIDTH);
         } else {
           // 单例(PanelSpec 未声明 multiInstance):与 ⌘, / DockShell editor / app.dock.openPanel 同按固定
           // id = type 打开,已有则聚焦。

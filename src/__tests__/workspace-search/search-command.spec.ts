@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// BDD: workspace-search / 1 入口:命令「在文件中查找」⇧⌘F(无默认键冲突)、打开单例 search 面板(主窗落点)、编辑器单行选区带入
+// BDD: workspace-search / 1 入口:命令「在文件中查找」⇧⌘F(无默认键冲突)、打开单例 search 面板(侧栏落点,见 1a)、编辑器单行选区带入
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -13,6 +13,7 @@ vi.mock('@/shell/dock/dock-api-ref', async (orig) => ({
 import { bootCorePlugins, shutdownCorePlugins } from '@/core-plugins';
 import { coApp } from '@/plugins/co-app';
 import { __resetSearchForTest, useSearchStore } from '@/panels/Search/search-store';
+import { SIDEBAR_DEFAULT_WIDTH } from '@/stores/layout-ui.store';
 
 const FIND_IN_FILES = 'workbench.action.findInFiles';
 
@@ -46,10 +47,17 @@ describe('命令「在文件中查找」', () => {
     expect(menu).not.toMatch(/accelerator: '(Shift\+CmdOrCtrl|CmdOrCtrl\+Shift)\+F'/);
   });
 
-  it('执行:打开 / 激活单例 search 面板(不给 position → 主窗落点)并请求聚焦查询框', async () => {
+  it('执行:打开 / 激活单例 search 面板(新建落在主窗网格最左侧、侧栏默认宽,见 1a)并请求聚焦查询框', async () => {
     const before = useSearchStore.getState().focusRequest;
     await cmd(FIND_IN_FILES)!.fn();
-    expect(h.openOrFocusPanel).toHaveBeenCalledWith('search', 'search', 'Search', 'panels.search.title');
+    expect(h.openOrFocusPanel).toHaveBeenCalledWith(
+      'search',
+      'search',
+      'Search',
+      'panels.search.title',
+      { direction: 'left' },
+      SIDEBAR_DEFAULT_WIDTH,
+    );
     expect(useSearchStore.getState().focusRequest).toBe(before + 1);
   });
 

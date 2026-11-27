@@ -44,7 +44,17 @@ test('编辑器(活动)与搜索同组:重启后不点 tab,新建设置面板再
   await openWorkspaceFile(main, ['a.ts']);
   await main.keyboard.press('ControlOrMeta+Shift+KeyF');
   await expect(main.locator(SEARCH_PANEL)).toBeVisible({ timeout: 10_000 });
-  // 搜索落在编辑器所在的组(活动组),是组里最后一个 tab;切回编辑器作为活动面板
+  // 搜索新建在编辑器左侧的独立组(workspace-search 1a)→ 把它的 tab 拖进编辑器组中央,成为组里最后一个 tab;切回编辑器作为活动面板
+  const target = main
+    .locator('.dv-groupview')
+    .filter({ has: main.locator('[data-editor-panel-root]') })
+    .locator('.dv-content-container');
+  const box = (await target.boundingBox())!;
+  await main
+    .locator('.dv-tab')
+    .filter({ hasText: /^(搜索|Search|검색)$/ })
+    .dragTo(target, { targetPosition: { x: box.width / 2, y: box.height / 2 } });
+  await expect(main.locator('.dv-groupview')).toHaveCount(1, { timeout: 10_000 });
   await main.evaluate(() => globalThis.__continuoTest!.focusPanel('editor'));
   await expect(main.locator(SEARCH_PANEL)).toBeHidden();
   await expect(main.locator('main .cm-content')).toBeVisible();

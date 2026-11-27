@@ -91,15 +91,18 @@ export function focusPanel(panelId: string): void {
  * - 不存在 → addPanel({ id, component, title, params: { titleKey } }),落点见 openOrFocusPanelNow
  *
  * dock 未就绪 → 静默忽略(开机时序保护);api 已有但布局尚未恢复 → 排队到恢复完成后执行。
+ * position / initialWidth:新建时的落点与初始宽(侧栏型面板,见 side-panel),同 openOrFocusPanelNow。
  */
 export function openOrFocusPanel(
   id: string,
   component: string,
   title: string,
   titleKey?: string,
+  position?: AddPanelOptions['position'],
+  initialWidth?: number,
 ): void {
   runWhenDockLayoutReady((api) => {
-    openOrFocusPanelNow(api, id, component, title, titleKey);
+    openOrFocusPanelNow(api, id, component, title, titleKey, position, initialWidth);
   });
 }
 
@@ -149,6 +152,7 @@ export function addPanelAndFocus(
  *(Dock「⋯」菜单打开单例面板)复用;`position` 指定新建时落在哪(如菜单所在 group)。
  * 未指定 position = 主窗入口(齿轮 / 菜单 / 命令 / 快捷键 / 插件 app.dock.openPanel):活动组在 popout 子窗时改投主窗
  *(mainWindowAddPosition),不落进用户看不到的子窗。BDD: src/__tests__/popout-open-target/
+ * `initialWidth`:新建所在组的初始宽(dockview addPanel initialWidth;侧栏型面板用,见 side-panel)。
  */
 export function openOrFocusPanelNow(
   api: DockviewApi,
@@ -157,6 +161,7 @@ export function openOrFocusPanelNow(
   title: string,
   titleKey?: string,
   position?: AddPanelOptions['position'],
+  initialWidth?: number,
 ): void {
   const existing = api.getPanel(id);
   if (existing) {
@@ -169,6 +174,7 @@ export function openOrFocusPanelNow(
     component,
     title,
     ...(target ? { position: target } : {}),
+    ...(initialWidth !== undefined ? { initialWidth } : {}),
     ...(titleKey ? { params: { titleKey } } : {}),
   });
 }

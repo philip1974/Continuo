@@ -17,6 +17,8 @@
      拖动换位后重置保持左右次序;popout 子窗里的组按 editor store 组顺序排在其后;`editor-groups/editor-groups-order.spec.tsx`) —— 原本叠在同一 dock 组里的、浮动的、在 popout 子窗里的都拆回为主窗分栏(⌘\ 拆两组后重置不再
      变成「编辑器 | 搜索 | 编辑器」);
    - 再按默认布局补上并激活编辑器(编辑器面板已关 → 重新打开,同空状态按钮);
+   - 侧栏面板(search)不留在主编辑器组:单独成组放回主窗网格最左侧(初始宽同其首次打开,见 workspace-search 1a),
+     与 VSCode 重置把视图放回侧栏一致;
    - **活动编辑器组不变**(VSCode 同):按重置前 editor store 的活动组激活(中途的移动会让 dockview 换活动组 —— 新建的分栏组
      成为活动组,store 随之跟过去),dock 与 store 一致;焦点在 dock 里(或已丢失:被拆出的编辑区随移动摘下)而不在该组 →
      微任务里聚焦它的编辑区;焦点在 dock 外(Explorer)不抢。

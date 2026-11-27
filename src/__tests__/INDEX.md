@@ -2401,6 +2401,7 @@
 - [`search-input-restart.spec.ts`](./workspace-search/search-input-restart.spec.ts)
 - [`search-ipc.spec.ts`](./workspace-search/search-ipc.spec.ts)
 - [`search-open-editors.spec.tsx`](./workspace-search/search-open-editors.spec.tsx)
+- [`search-panel-placement.spec.tsx`](./workspace-search/search-panel-placement.spec.tsx)
 - [`search-path-gone.spec.ts`](./workspace-search/search-path-gone.spec.ts)
 - [`search-query.spec.ts`](./workspace-search/search-query.spec.ts)
 - [`search-view.spec.tsx`](./workspace-search/search-view.spec.tsx)
