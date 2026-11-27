@@ -586,6 +586,13 @@ function stripNewline(s: string): string {
 /** 保守写法:地址同文的链接写 `<url>`,文字里的 `$` 与反引号一律转义(continuoSafeEscapes 见 milkdown-math / milkdown-markdown-style)。 */
 const SAFE_STYLE: Readonly<Record<string, unknown>> = { continuoAutolink: 'angle', continuoSafeEscapes: true };
 
+/** 整段走 remark 的块解析回来不同时依次试的写法。 */
+const RUN_FALLBACKS: ReadonlyArray<Readonly<Record<string, unknown>>> = [
+  { continuoInlineCodeEol: 'keep' },
+  SAFE_STYLE,
+  { ...SAFE_STYLE, continuoInlineCodeEol: 'keep' },
+];
+
 function createSerializers(ctx: Ctx, bound: Bound, base: Serializer): Serializers {
   const remark = ctx.get(remarkCtx) as unknown as ProcessorLike;
   const docOf = (nodes: readonly PmNode[]): PmNode => nodes[0]!.type.schema.topNodeType.create(null, nodes);
@@ -605,18 +612,29 @@ function createSerializers(ctx: Ctx, bound: Bound, base: Serializer): Serializer
       Object.assign(settings, saved);
     }
   };
-  // 拼出的块按同一解析器解析回来须与当前块写法相同
-  const roundTrips = (markdown: string, node: PmNode): boolean => {
+  // 拼出的块按同一解析器解析回来须与当前块(们)写法相同
+  const roundTripsAll = (markdown: string, nodes: readonly PmNode[]): boolean => {
     try {
       const kids = blockChildren(ctx.get(parserCtx)(markdown) as PmNode);
-      return kids.length === 1 && sameBlock(kids[0]!, node);
+      return kids.length === nodes.length && kids.every((kid, i) => sameBlock(kid, nodes[i]!));
     } catch {
       return false;
     }
   };
+  const roundTrips = (markdown: string, node: PmNode): boolean => roundTripsAll(markdown, [node]);
   const { source } = bound;
   return {
-    run: write,
+    // 拆分 / 合并 / 新建的块整段走 remark:同样试解析,不同则依次退回保留行内代码换行、保守写法(与 one 的安全网同口径;
+    // 如拆段后新段里跨行的行内代码,remark 默认把其中的换行换成空格,行内代码的内容就变了)
+    run: (nodes) => {
+      const plain = write(nodes);
+      if (roundTripsAll(plain, nodes)) return plain;
+      for (const fallback of RUN_FALLBACKS) {
+        const out = withStyle(fallback, () => write(nodes));
+        if (roundTripsAll(out, nodes)) return out;
+      }
+      return plain;
+    },
     one: (node, cp) => {
       // 表格不就地改:对齐的表格改了列宽要整表重排(serializeTable)
       const spliced = node.type.name === 'table' ? null : spliceText(source, cp, node, roundTrips);

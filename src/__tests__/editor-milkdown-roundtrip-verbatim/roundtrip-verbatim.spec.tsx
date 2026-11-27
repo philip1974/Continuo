@@ -376,6 +376,25 @@ describe('被改动的段落里有跨行的行内代码', () => {
     const parsed = crepe.editor.ctx.get<(md: string) => PmNode, 'parser'>('parser')(out);
     expect(sameBlock(parsed.child(0), view.state.doc.child(0)), out).toBe(true);
   });
+
+  // 结构编辑模糊测试 seed 99 第 615 轮(最小化):拆段后两段整段走 remark,remark 把跨行行内代码里的换行写成空格,
+  // 行内代码的内容变了(`$PATH `$` 公式吞反引号错配出的跨行行内代码同理)
+  for (const doc of ['ab `x\n#y` z\n', 'ab $P `$H` t $x$ \\\n[x](u) `d`\n'] as const) {
+    it(`${JSON.stringify(doc)} 在「a|b」处拆段:新段里跨行的行内代码保留换行,解析回来与编辑后的文档相同`, async () => {
+      const { crepe, view } = await open(doc);
+      view.dispatch(view.state.tr.split(posAfter(view, 'a')));
+      const out = crepe.getMarkdown();
+      const parsed = topBlocks(crepe.editor.ctx.get<(md: string) => PmNode, 'parser'>('parser')(out));
+      const edited = topBlocks(view.state.doc);
+      expect(parsed.length, out).toBe(2);
+      parsed.forEach((node, i) => expect(sameBlock(node, edited[i]!), `块 ${i}:\n${JSON.stringify(out)}`).toBe(true));
+    });
+  }
+  it('拆段:跨行的行内代码按原样换行写出', async () => {
+    const { crepe, view } = await open('ab `x\n#y` z\n');
+    view.dispatch(view.state.tr.split(posAfter(view, 'a')));
+    expect(crepe.getMarkdown()).toBe('a\n\nb `x\n#y` z\n');
+  });
 });
 
 describe('硬换行前是空白(`a \\` 写法)、全文硬换行是行尾两空格', () => {
