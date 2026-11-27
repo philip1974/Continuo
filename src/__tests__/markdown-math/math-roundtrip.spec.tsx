@@ -200,6 +200,21 @@ describe('编辑模式下公式原样往返', () => {
     expect(crepe.getMarkdown()).toBe(md);
   });
 
+  it('同段有含 `$` 的行内代码:文中的 `$` 仍不转义(第四十八轮审计 A5)', async () => {
+    const md = '`$HOME` then $PATH and `x $` here.\n';
+    const { crepe, view } = await open(md);
+    typeAfter(view, 'then', '!');
+    expect(crepe.getMarkdown()).toBe(md.replace('then', 'then!'));
+  });
+
+  it('行内代码里的 `$` 会与文中 `$` 配成公式时:文中 `$` 照样转义', async () => {
+    const md = 'a \\$b `c$` d\n';
+    const { crepe, view } = await open(md);
+    expect(view.state.doc.textContent).toBe('a $b c$ d');
+    typeAfter(view, ' d', '!');
+    expect(crepe.getMarkdown()).toBe('a \\$b `c$` d!\n');
+  });
+
   it('含公式的文档不再判为不安全(不锁源码模式);同时含引用定义仍锁', () => {
     expect(isMilkdownUnsafe(MATH_DOC)).toBe(false);
     expect(isMilkdownUnsafe(`${MATH_DOC}\n[ref]: https://example.com\n`)).toBe(true);

@@ -316,10 +316,28 @@ function probeChar(ch: string): string {
   return ch === '$' || ch === ' ' || ch === '\n' || (ch >= '0' && ch <= '9') ? ch : ch === '\t' || ch === '\r' ? ' ' : 'a';
 }
 
+/** 行内代码 / HTML 原文进试解析串:字母换成 `a`,`$`、反引号等符号与空白、数字原样(保留它们在 `$` 配对里的作用)。 */
+function probeRawChar(ch: string): string {
+  if (ch === '\t' || ch === '\r') return ' ';
+  return /[\p{L}\p{M}]/u.test(ch) || (/\p{N}/u.test(ch) && !(ch >= '0' && ch <= '9')) ? 'a' : ch;
+}
+
+/** 行内代码的写法(mdast-util-to-markdown 的 inlineCode 处理器:反引号串比内容里的都长,必要时两端补空格),按 probeRawChar 映射。 */
+function inlineCodeProbe(value: string): string {
+  let seq = '`';
+  while (new RegExp(`(^|[^\`])${seq}([^\`]|$)`).test(value)) seq += '`';
+  const padded =
+    /[^ \r\n]/.test(value) && ((/^[ \r\n]/.test(value) && /[ \r\n]$/.test(value)) || /^`|`$/.test(value))
+      ? ` ${value} `
+      : value;
+  return seq + Array.from(padded, probeRawChar).join('') + seq;
+}
+
 /**
  * 段落(标题 / 表格单元格)里的文字含 `$` 时,按「去掉这些 `$` 的转义」构造只保留 `$` / 空白 / 数字的试解析串,用同一解析器
  * 解析:得到的公式与段落里现有的公式逐一相同 → 文字里的 `$` 不转义(text.data.continuoDollar = 'raw')。
- * 无法确定的情形(文字含反斜杠或 `$$`、代码 / 链接地址 / HTML 里有 `$`、出现空行)一律转义。
+ * 行内代码 / HTML 按其写法进试解析串(其中的 `$` 可能与文字里的 `$` 配成公式,照实试解析)。
+ * 无法确定的情形(文字含反斜杠或 `$$`、链接地址 / 标题里有 `$`、出现空行)一律转义。
  */
 function decideDollarText(root: MdNode, parse: (doc: string) => MdNode): void {
   const texts: MdNode[] = [];
@@ -344,6 +362,12 @@ function decideDollarText(root: MdNode, parse: (doc: string) => MdNode): void {
         return;
       case 'break':
         probe += '\n';
+        return;
+      case 'inlineCode':
+        probe += inlineCodeProbe(node.value ?? '');
+        return;
+      case 'html':
+        probe += Array.from(node.value ?? '', probeRawChar).join('');
         return;
       default:
         break;

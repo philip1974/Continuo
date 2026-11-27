@@ -683,6 +683,10 @@
 
 - [`roundtrip-style.spec.tsx`](./editor-milkdown-roundtrip-style/roundtrip-style.spec.tsx)
 
+## [editor-milkdown-roundtrip-verbatim](./editor-milkdown-roundtrip-verbatim/README.md)
+
+- [`roundtrip-verbatim.spec.tsx`](./editor-milkdown-roundtrip-verbatim/roundtrip-verbatim.spec.tsx)
+
 ## [editor-milkdown-writeback](./editor-milkdown-writeback/README.md)
 
 - [`milkdown-ctx-contract.spec.tsx`](./editor-milkdown-writeback/milkdown-ctx-contract.spec.tsx)

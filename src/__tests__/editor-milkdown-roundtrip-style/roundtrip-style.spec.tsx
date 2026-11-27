@@ -10,6 +10,7 @@ import type { EditorView } from '@milkdown/kit/prose/view';
 import {
   configureMarkdownStyle,
   dropNeedlessEscapes,
+  inferMarkdownStyleParts,
   inferTablePipeAlign,
 } from '../../panels/Editor/milkdown-markdown-style';
 import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
@@ -207,6 +208,61 @@ describe('空行与转义', () => {
     expect(inferTablePipeAlign('| a | b |\n| - | - |\n| longer cell | x |\n')).toBe(false);
     expect(inferTablePipeAlign('a|b\n-|-\nlonger|x\n')).toBe(false);
     expect(inferTablePipeAlign('no table\n')).toBe(true);
+  });
+});
+
+describe('被改动的块里的写法跟随原文件(第四十八轮审计 A4)', () => {
+  it('文中 `[x]` 不转义;段首、后面是 `(` / `[` / `:`、脚注样式照样转义', () => {
+    expect(dropNeedlessEscapes('see \\[x] here')).toBe('see [x] here');
+    expect(dropNeedlessEscapes('see \\[x]')).toBe('see [x]');
+    expect(dropNeedlessEscapes('\\[x] at start')).toBe('\\[x] at start');
+    expect(dropNeedlessEscapes('a \\[x](y)')).toBe('a \\[x](y)');
+    expect(dropNeedlessEscapes('a \\[x]', '(')).toBe('a \\[x]');
+    expect(dropNeedlessEscapes('a \\[x]', '[')).toBe('a \\[x]');
+    expect(dropNeedlessEscapes('a \\[x]: y')).toBe('a \\[x]: y');
+    expect(dropNeedlessEscapes('a \\[^1] b')).toBe('a \\[^1] b');
+    expect(dropNeedlessEscapes('a !\\[x] b')).toBe('a !\\[x] b');
+  });
+
+  it('推断:`1. 1.` 不递增、硬换行写法、裸链接 / 尖括号链接', async () => {
+    const parse = async (md: string) => {
+      const { crepe } = await open(md);
+      const remark = crepe.editor.ctx.get<{ parse(s: string): unknown; runSync(t: unknown, f?: string): unknown }, 'remark'>('remark');
+      return inferMarkdownStyleParts(remark.runSync(remark.parse(md), md) as never, md);
+    };
+    expect(await parse('1. a\n1. b\n')).toMatchObject({ incrementListMarker: false, bulletOrdered: '.' });
+    expect(await parse('3) a\n4) b\n')).toMatchObject({ incrementListMarker: true, bulletOrdered: ')' });
+    expect(await parse('a  \nb\n')).toMatchObject({ continuoHardBreak: 'spaces' });
+    expect(await parse('a\\\nb\n')).toMatchObject({ continuoHardBreak: 'backslash' });
+    expect(await parse('see https://a.com now\n')).toMatchObject({ continuoAutolink: 'literal' });
+    expect(await parse('see <https://a.com> now\n')).toMatchObject({ continuoAutolink: 'angle' });
+    expect(await parse('see [https://a.com](https://a.com) now\n')).not.toHaveProperty('continuoAutolink');
+  });
+
+  it('编辑整段后:`1. 1. 1.`、行尾两空格硬换行、裸链接(句末标点、换行后、段首)都保持', async () => {
+    const md = '1. one\n1. two\n\nHard  \nbreak https://b.com. and\nhttps://c.com/x?y=1\n\nhttps://d.com\n';
+    const { crepe, view } = await open(md);
+    typeAfter(view, 'two', '!');
+    typeAfter(view, 'and', '!');
+    typeAfter(view, 'Hard', '!');
+    expect(crepe.getMarkdown()).toBe(
+      '1. one\n1. two!\n\nHard!  \nbreak https://b.com. and!\nhttps://c.com/x?y=1\n\nhttps://d.com\n',
+    );
+  });
+
+  it('裸写会改变解析结果的链接仍写成 <url>(后面紧跟字母 / 地址以标点结尾)', async () => {
+    const { crepe, view } = await open('see https://a.com now\n');
+    const { schema } = view.state;
+    const link = (href: string) => schema.marks.link!.create({ href });
+    view.dispatch(
+      view.state.tr.insert(view.state.doc.content.size - 1, [
+        schema.text(' x '),
+        schema.text('https://e.com', [link('https://e.com')]),
+        schema.text('abc '),
+        schema.text('https://f.com/.', [link('https://f.com/.')]),
+      ]),
+    );
+    expect(crepe.getMarkdown()).toBe('see https://a.com now x <https://e.com>abc <https://f.com/.>\n');
   });
 });
 

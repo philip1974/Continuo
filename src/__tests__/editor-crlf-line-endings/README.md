@@ -28,7 +28,7 @@
 不用 `EditorState.lineSeparator` facet:它不改变 `doc.toString()`,且配置后 `state.toText` 只按该分隔符切行,
 粘贴 / 拖放的 LF 多行文本会整段挤进一行(本目录粘贴用例对此做了变异验证)。
 
-## 范围外
+## Markdown 编辑模式
 
-Milkdown(Markdown Edit 模式)的序列化器固定输出 LF,CRLF 的 `.md` 在 Edit 模式编辑后仍会变 LF;
-Markdown 默认走 Source 模式(CodeEditor),不受影响。
+Milkdown(Markdown 编辑模式)同样保留:CRLF 的 `.md` 在编辑模式编辑保存后仍是 CRLF(同一 `detectLineEnding` 口径),
+见 `editor-milkdown-roundtrip-verbatim/`。

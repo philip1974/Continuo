@@ -1,8 +1,9 @@
-// Markdown 编辑模式(Milkdown)的写作行为(第四十七轮审计 B4 / B7 / B9):
-//  - 改一处保存,文件只变那一行(序列化风格跟随原文件);
-//  - 选中文字粘贴 URL 成链接;⌘K / Ctrl+K 打开链接框给选区加链接;
+// Markdown 编辑模式(Milkdown)的写作行为(第四十七轮审计 B4 / B7 / B9、第四十八轮审计 A2–A6):
+//  - 改一处保存,文件只变那一行(未改动的块原样写回,序列化风格跟随原文件);CRLF / UTF-16 LE CRLF 的行尾与编码保持;
+//  - 选中文字粘贴 URL 成链接;⌘K / Ctrl+K 打开链接框给选区加链接;之后接着打字不替换链接文字;
 //  - 表格最后一格 Tab 新起一行(不在格内插空格)。
-// 见 src/__tests__/editor-milkdown-roundtrip-style/、src/__tests__/editor-markdown-writing-keys/。
+// 见 src/__tests__/editor-milkdown-roundtrip-style/、src/__tests__/editor-milkdown-roundtrip-verbatim/、
+// src/__tests__/editor-markdown-writing-keys/。
 import { readFile } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -12,7 +13,7 @@ import { EDITOR_MODE_EDIT, editorModeButton, openWorkspaceFile } from './helpers
 
 const PM = 'main .milkdown .ProseMirror';
 
-async function openInEdit(window: Page, workspaceRoot: string, name: string, content: string): Promise<string> {
+async function openInEdit(window: Page, workspaceRoot: string, name: string, content: string | Buffer): Promise<string> {
   const file = path.join(workspaceRoot, name);
   writeFileSync(file, content);
   await openWorkspaceFile(window, [name]);
@@ -90,14 +91,127 @@ test('编辑模式改一处保存:文件只变那一行', async ({ window, works
   }).toPass({ timeout: 5_000 });
 });
 
+// 审计列出的常见写法(均不是 remark-stringify 的写法)+ 文末多余空行
+const STYLES_DOC = [
+  '# Styles',
+  '',
+  'Bare link https://b.com. and [x] in text, `$HOME` then $PATH.',
+  '',
+  'Hard break  ',
+  'next line',
+  '',
+  '| a | b |',
+  '|---|---|',
+  '| 1 | 2 |',
+  '',
+  '| a | b |',
+  '| --- | --- |',
+  '| 1 | 2 |',
+  '',
+  '|left|right|',
+  '|:----:|------:|',
+  '|1|2|',
+  '',
+  'x | y',
+  '--|--',
+  'p | q',
+  '',
+  '1. one',
+  '1. two',
+  '1. three',
+  '',
+  'Final paragraph.',
+  '',
+  '',
+  '',
+].join('\n');
+
+/** 逐行比较(按 \n 切,CR 留在行里),返回改动的行。 */
+function changedLines(before: string, after: string): string[] {
+  const a = before.split('\n');
+  const b = after.split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) if (a[i] !== b[i]) out.push(`${i + 1}: ${JSON.stringify(b[i])}`);
+  return out;
+}
+
+async function typeAtEndOf(window: Page, text: string, typed: string): Promise<void> {
+  await window.locator(PM).getByText(text).first().click();
+  await window.keyboard.press('End');
+  await window.keyboard.type(typed);
+}
+
+test('常见写法(表格 / 裸链接 / 硬换行 / `1. 1. 1.` / `[x]` / 文末空行)的文档改一字:文件只变那一行', async ({
+  window,
+  workspaceRoot,
+}) => {
+  const file = await openInEdit(window, workspaceRoot, 'styles.md', STYLES_DOC);
+  await typeAtEndOf(window, 'Final paragraph.', '!');
+  await save(window);
+  await expect(async () => {
+    expect(changedLines(STYLES_DOC, await readFile(file, 'utf8'))).toEqual(['28: "Final paragraph.!"']);
+  }).toPass({ timeout: 5_000 });
+  // 再改裸链接所在的段:该段其余写法也保持
+  await typeAtEndOf(window, 'then', '!');
+  await save(window);
+  await expect(async () => {
+    expect(changedLines(STYLES_DOC, await readFile(file, 'utf8'))).toEqual([
+      '3: "Bare link https://b.com. and [x] in text, `$HOME` then $PATH.!"',
+      '28: "Final paragraph.!"',
+    ]);
+  }).toPass({ timeout: 5_000 });
+});
+
+const footer = (window: Page) => window.locator('footer');
+const eolItem = (window: Page) => footer(window).locator('[data-statusbar-eol]');
+const LE_BOM = Buffer.from([0xff, 0xfe]);
+
+test('CRLF 与 UTF-16 LE CRLF 的 .md 编辑模式保存:行尾 / 编码不变,只变那一行', async ({ window, workspaceRoot }) => {
+  const crlf = STYLES_DOC.replace(/\n/g, '\r\n');
+  const a = await openInEdit(window, workspaceRoot, 'crlf.md', crlf);
+  await expect(eolItem(window)).toHaveText('CRLF');
+  await typeAtEndOf(window, 'Final paragraph.', '!');
+  await save(window);
+  await expect(async () => {
+    const after = await readFile(a, 'utf8');
+    expect(after.replace(/\r\n/g, '')).not.toContain('\n');
+    expect(changedLines(crlf, after)).toEqual(['28: "Final paragraph.!\\r"']);
+  }).toPass({ timeout: 5_000 });
+  await expect(eolItem(window)).toHaveText('CRLF');
+
+  const utf16 = '# T\r\n\r\n|a|b|\r\n|-|-|\r\n|1|2|\r\n\r\nbody\r\n';
+  const b = await openInEdit(window, workspaceRoot, 'utf16.md', Buffer.concat([LE_BOM, Buffer.from(utf16, 'utf16le')]));
+  await typeAtEndOf(window, 'body', '!');
+  await save(window);
+  await expect
+    .poll(async () => [...(await readFile(b))], { timeout: 5_000 })
+    .toEqual([...LE_BOM, ...Buffer.from(utf16.replace('body', 'body!'), 'utf16le')]);
+  await expect(eolItem(window)).toHaveText('CRLF');
+});
+
+test('编辑模式下用状态栏把行尾改成 CRLF:之后的编辑保存按 CRLF 写', async ({ window, workspaceRoot }) => {
+  const file = await openInEdit(window, workspaceRoot, 'eol.md', '# T\n\n|a|b|\n|-|-|\n|1|2|\n\nbody\n');
+  await eolItem(window).click();
+  await window.locator('.wm-modal-content [data-encoding-pick="CRLF"]').click();
+  await expect(eolItem(window)).toHaveText('CRLF');
+  await typeAtEndOf(window, 'body', '!');
+  await save(window);
+  await expect(async () => {
+    expect(await readFile(file, 'utf8')).toBe('# T\r\n\r\n|a|b|\r\n|-|-|\r\n|1|2|\r\n\r\nbody!\r\n');
+  }).toPass({ timeout: 5_000 });
+  await expect(eolItem(window)).toHaveText('CRLF');
+});
+
 test('选中文字后粘贴 URL → 选区成链接', async ({ electronApp, window, workspaceRoot }) => {
   const file = await openInEdit(window, workspaceRoot, 'paste.md', 'See the documentation please\n');
   await electronApp.evaluate(({ clipboard }) => clipboard.writeText('https://example.com/docs'));
   await selectWord(window, 'documentation');
   await window.keyboard.press('ControlOrMeta+KeyV');
+  // 光标收到链接末尾:接着打字不替换链接文字、也不并进链接
+  await window.keyboard.type('X');
   await save(window);
   await expect(async () => {
-    expect(await readFile(file, 'utf8')).toBe('See the [documentation](https://example.com/docs) please\n');
+    expect(await readFile(file, 'utf8')).toBe('See the [documentation](https://example.com/docs)X please\n');
   }).toPass({ timeout: 5_000 });
 });
 
@@ -109,9 +223,13 @@ test('⌘K / Ctrl+K 打开链接框,确认后选区成链接', async ({ window, 
   await expect(input).toBeVisible({ timeout: 5_000 });
   await input.fill('https://example.com/guide');
   await input.press('Enter');
+  // 链接框收起、焦点回到正文后接着打字:不替换链接文字、不并进链接
+  await expect(input).toBeHidden({ timeout: 5_000 });
+  await expect.poll(() => window.evaluate((sel) => document.querySelector(sel)?.contains(document.activeElement), PM)).toBe(true);
+  await window.keyboard.type('X');
   await save(window);
   await expect(async () => {
-    expect(await readFile(file, 'utf8')).toBe('Read the [guide](https://example.com/guide) now\n');
+    expect(await readFile(file, 'utf8')).toBe('Read the [guide](https://example.com/guide)X now\n');
   }).toPass({ timeout: 5_000 });
 });
 

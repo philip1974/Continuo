@@ -110,6 +110,15 @@ describe('选中文字后粘贴 URL', () => {
     expect(crepe.getMarkdown()).toBe('See the [documentation](https://example.com/docs) please\n');
   });
 
+  it('粘贴后光标在链接末尾,接着输入的文字不替换链接文字、也不并进链接(第四十八轮审计 A6)', async () => {
+    const { crepe, view } = await open('See the documentation please\n');
+    selectText(view, 'documentation');
+    paste(view, 'https://example.com/docs');
+    expect(view.state.selection.empty).toBe(true);
+    view.dispatch(view.state.tr.insertText('X'));
+    expect(crepe.getMarkdown()).toBe('See the [documentation](https://example.com/docs)X please\n');
+  });
+
   it('没有选区、粘贴的不是单个 URL、或在行内代码里 → 照常粘贴(替换选区 / 插入文字)', async () => {
     const { crepe, view } = await open('See the documentation please and `code here`\n');
     selectText(view, 'documentation');
@@ -155,6 +164,27 @@ describe('⌘K / Ctrl+K 打开链接框', () => {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
     expect(crepe.getMarkdown()).toBe('See the [documentation](https://example.com/docs) please\n');
+    // 确认后光标收到链接末尾:接着输入不替换链接文字、不并进链接(第四十八轮审计 A6)
+    expect(view.state.selection.empty).toBe(true);
+    view.dispatch(view.state.tr.insertText('X'));
+    expect(crepe.getMarkdown()).toBe('See the [documentation](https://example.com/docs)X please\n');
+  });
+
+  it('没有选区 → 确认后插入地址作链接文字,接着输入的文字不并进链接', async () => {
+    const { crepe, view } = await open('Go now\n');
+    select(view, posOf(view, 'now'));
+    press(view, { key: 'k', ctrlKey: true });
+    await flush();
+    const input = document.querySelector<HTMLInputElement>('.milkdown-link-edit input')!;
+    await act(async () => {
+      input.value = 'https://a.com';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    view.dispatch(view.state.tr.insertText(' '));
+    expect(crepe.getMarkdown()).toBe('Go <https://a.com> now\n');
   });
 
   it('光标在已有链接里 → 编辑该链接(框里是原地址,范围是整个链接)', async () => {

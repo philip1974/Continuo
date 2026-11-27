@@ -4,16 +4,19 @@
 //  - ⌘K / Ctrl+K → 打开 Crepe 的链接编辑框(Typora / Obsidian):光标 / 选区在链接里 → 编辑该链接地址;否则给选区加链接
 //   (没有选区 → 插入地址本身作链接文字)。按键落在 ProseMirror 里由这里处理并 preventDefault,全局「清除终端」(mac ⌘K,
 //    只作用于终端)不再收到(useCommandHotkeys 对编辑器里已处理的键让行)。
+//  - 加链接(⌘K 链接框确认 / 粘贴 URL)后光标收到链接末尾,接着输入的文字不带链接(VSCode 粘贴成格式化链接后光标在插入内容
+//    末尾;链接 mark 是 inclusive 的,不收起会替换掉链接文字、收起后不清 storedMarks 会把输入并进链接)。
 //  - 表格里 Tab:下一格;最后一格 → 在表格末尾加一行并进入其首格(不再由缩进插件在格内插 4 个空格)。⇧Tab:上一格;首格 → 不动。
 
-import { linkTooltipAPI } from '@milkdown/kit/component/link-tooltip';
+import { linkTooltipAPI, linkTooltipState } from '@milkdown/kit/component/link-tooltip';
 import { linkSchema } from '@milkdown/kit/preset/commonmark';
 import { addRowWithAlignment } from '@milkdown/kit/preset/gfm';
 import { prosePluginsCtx, SchemaReady } from '@milkdown/kit/core';
 import type { Ctx, MilkdownPlugin } from '@milkdown/kit/ctx';
 import { keydownHandler } from '@milkdown/kit/prose/keymap';
 import type { Mark, MarkType } from '@milkdown/kit/prose/model';
-import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state';
+import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@milkdown/kit/prose/state';
+import { AddMarkStep } from '@milkdown/kit/prose/transform';
 import { goToNextCell, isInTable, selectedRect } from '@milkdown/kit/prose/tables';
 import type { EditorView } from '@milkdown/kit/prose/view';
 
@@ -76,6 +79,28 @@ function tableTab(ctx: Ctx, dir: 1 | -1, state: EditorState, dispatch?: EditorVi
   return true;
 }
 
+/** 光标收到 `pos`(链接末尾),之后输入不带链接 mark。 */
+function collapseAfterLink(tr: Transaction, pos: number, type: MarkType): Transaction {
+  const $pos = tr.doc.resolve(pos);
+  return tr.setSelection(TextSelection.create(tr.doc, pos)).setStoredMarks(type.removeFromSet($pos.marks()));
+}
+
+/**
+ * ⌘K / 工具条的链接框确认:Crepe 在链接框(edit 模式)里对选区 addMark 后不动选区 → 收到链接末尾(没有选区时 Crepe 插入地址
+ * 作链接文字,光标已在其后,只清掉接着输入会带上的链接)。只认链接框打开期间、恰好覆盖当前选区 / 止于光标的那一步加链接。
+ */
+function collapseConfirmedLink(ctx: Ctx, trs: readonly Transaction[], state: EditorState): Transaction | null {
+  if (ctx.get(linkTooltipState.key).mode !== 'edit') return null;
+  const type = linkSchema.type(ctx);
+  const { from, to, empty } = state.selection;
+  const added = trs.some((tr) =>
+    tr.steps.some(
+      (step) => step instanceof AddMarkStep && step.mark.type === type && step.to === to && (empty || step.from === from),
+    ),
+  );
+  return added ? collapseAfterLink(state.tr, to, type) : null;
+}
+
 const writingKeysKey = new PluginKey('continuoMarkdownWritingKeys');
 
 function createWritingKeysPlugin(ctx: Ctx): Plugin {
@@ -84,9 +109,26 @@ function createWritingKeysPlugin(ctx: Ctx): Plugin {
     Tab: (state, dispatch, view) => tableTab(ctx, 1, state, dispatch, view),
     'Shift-Tab': (state, dispatch, view) => tableTab(ctx, -1, state, dispatch, view),
   });
+  // 链接框确认后 Crepe 在下一帧直接 DOM focus 编辑区(不经 view.focus,链接框聚焦期间 DOM 选区没跟着收起):这次聚焦时
+  // 按 state 里已收起的选区写回 DOM 选区,否则随后的 selectionchange 把光标读成文首
+  let resyncOnFocusUntil = 0;
   return new Plugin({
     key: writingKeysKey,
+    appendTransaction: (trs, _old, state) => {
+      const tr = collapseConfirmedLink(ctx, trs, state);
+      if (tr) resyncOnFocusUntil = performance.now() + 1000;
+      return tr;
+    },
     props: {
+      handleDOMEvents: {
+        focus: (view) => {
+          if (performance.now() < resyncOnFocusUntil) {
+            resyncOnFocusUntil = 0;
+            view.focus();
+          }
+          return false;
+        },
+      },
       handleKeyDown: (view, event) => view.editable && keydown(view, event),
       handlePaste: (view, event) => {
         if (!view.editable) return false;
@@ -97,7 +139,8 @@ function createWritingKeysPlugin(ctx: Ctx): Plugin {
         const url = pastedUrl(data.getData('text/plain'));
         if (!url || inCode(view.state)) return false;
         const type = linkSchema.type(ctx);
-        view.dispatch(view.state.tr.addMark(selection.from, selection.to, type.create({ href: url })).scrollIntoView());
+        const tr = view.state.tr.addMark(selection.from, selection.to, type.create({ href: url }));
+        view.dispatch(collapseAfterLink(tr, selection.to, type).scrollIntoView());
         return true;
       },
     },

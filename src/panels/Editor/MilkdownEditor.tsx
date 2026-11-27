@@ -68,6 +68,7 @@ import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { MARKDOWN_EDITOR_ATTR } from '@/lib/editor-text-focus';
 import { markdownImageNodeView } from './markdown-image-view';
 import { configureMarkdownStyle } from './milkdown-markdown-style';
+import { configureSourceBlocks } from './milkdown-source-blocks';
 import { configureMarkdownMath } from './milkdown-math';
 import { markdownWritingKeys } from './milkdown-writing-keys';
 import {
@@ -426,10 +427,11 @@ function CrepeEditor({
         },
       },
     });
-    // 序列化风格跟随原文件(列表符号 / 分隔线 / 标题 / 代码块 / 表格对齐),不写 `<br />` 空行占位,少转义;
-    // 选中文字粘贴 URL 成链接、⌘K 链接框、表格 Tab。BDD: src/__tests__/editor-milkdown-roundtrip-style/、
-    // src/__tests__/editor-markdown-writing-keys/
+    // 序列化风格跟随原文件(列表符号 / 分隔线 / 标题 / 代码块 / 表格对齐),不写 `<br />` 空行占位,少转义;未改动的块原样写回、
+    // 行尾跟随原文件(CRLF);选中文字粘贴 URL 成链接、⌘K 链接框、表格 Tab。BDD: src/__tests__/editor-milkdown-roundtrip-style/、
+    // src/__tests__/editor-milkdown-roundtrip-verbatim/、src/__tests__/editor-markdown-writing-keys/
     configureMarkdownStyle(crepe, defaultValue);
+    const sourceBlocks = configureSourceBlocks(crepe, defaultValue);
     configureMarkdownMath(crepe);
     crepe.editor.use(markdownWritingKeys);
 
@@ -619,7 +621,9 @@ function CrepeEditor({
           const ctx = crepe.editor.ctx;
           const view = ctx.get<PmSyncView, 'editorView'>('editorView');
           if (!view.state) return; // 未就绪(slice 初值是空对象):挂载时按最新 value 补
-          replaceDocMinimal(view, ctx.get<(md: string) => PmSyncDoc, 'parser'>('parser')(markdown));
+          replaceDocMinimal(view, sourceBlocks.parse(markdown) as PmSyncDoc);
+          // 原文块与行尾按新内容重建(状态栏改行尾后,编辑模式的保存也按新行尾);只读预览不序列化,不必重建
+          if (!readonly) sourceBlocks.resync(markdown);
           if (emitTimer !== null) clearTimeout(emitTimer);
           emitTimer = null;
           pendingDoc = null;
