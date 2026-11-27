@@ -32,6 +32,11 @@
 - 窗口失焦时保存该编辑器组里**全部**符合条件的脏 tab(VSCode saveAllDirtyAutoSaveables),不只活动 tab
 - popout 子窗里的编辑器:按它所在的子窗失焦判断(子窗 → 主窗也算该子窗失焦)
 - 失焦保存前先把 Markdown 编辑视图尚未上抛的输入同步回写(否则最后 200ms 的输入不在保存内容里)
+- **打开自动保存时立即保存已有的脏文件**(VSCode `editorAutoSave.onDidChangeAutoSaveConfiguration` → `saveAllDirtyAutoSaveables`):
+  自动保存设置变化(命令 / 文件菜单切换、设置页修改,含别的窗口改的)后 `files.autoSave` 不是 `off` → 每个编辑器组立即保存组内全部
+  生效模式不是 off 的脏 tab(活动 tab 与后台 tab),不等延迟 / 失焦;跳过无标题、已删除、删除确认中的;磁盘冲突 / 写保护照常不覆盖、
+  只提示一次。切到 `off`、`files.autoSave` 仍为 `off` 时只改 Markdown 覆盖、窗口打开时已开启(挂载)都不触发;关闭确认框开着时不保存。
+  多窗口各自保存自己的脏文件
 
 ### 3. 沿用既有规则(各触发方式一致)
 
@@ -55,7 +60,6 @@
 
 - 语言级覆盖只做 Markdown 这一项(专用设置,不做通用 `[lang]` 语法)
 - 不做 `files.autoSaveWorkspaceFilesOnly`、`files.autoSaveWhenNoErrors`
-- 打开自动保存时不立即保存所有脏文件(VSCode 会);活动 tab 仍脏时按新模式重新排队
 - 切到同组别的 tab 时(afterDelay / onFocusChange)保存的是被切走的 tab 的待保存改动;后台 tab 的改动在窗口失焦时保存
 
 ## 模块
@@ -74,4 +78,4 @@
 ## E2E
 
 `tests/e2e/files-auto-save.spec.ts`:默认 md 自动 / ts 不自动;Markdown 覆盖关 + off → md 不写盘;afterDelay 下 ts 自动写盘;
-onFocusChange 切 tab / 终端时保存;onWindowChange 窗口失焦保存;菜单 / 命令切换。
+onFocusChange 切 tab / 终端时保存;onWindowChange 窗口失焦保存;菜单 / 命令切换;打开自动保存(命令 / 设置页)立即保存已有脏文件,多窗口各自保存。

@@ -21,6 +21,7 @@ import {
   resolveAutoSave,
   savesOnWindowBlur,
   type AutoSaveSettings,
+  type ResolvedAutoSave,
 } from './auto-save-config';
 import { observeOrphanedAutoSave } from './autosave-orphan-notice';
 import { notify } from '@/notifications/notify';
@@ -83,12 +84,16 @@ function notifyAutoSaveFailed(tabId: string, err: unknown): void {
 // 窗口失焦批量保存的后台 tab 最近一次失败(按 tab id;成功即清除):连续失败只提示一次,同 scheduler 的 ok→失败去重。
 const backgroundFailed = new Set<string>();
 
-/** 窗口失焦:保存组内(除活动 tab,它走自己的 scheduler)生效模式为 onFocusChange / onWindowChange 的脏 tab。 */
-function saveBackgroundOnWindowBlur(
+/**
+ * 保存组内(除活动 tab,它走自己的 scheduler)生效模式满足 eligible 的脏 tab(VSCode saveAllDirtyAutoSaveables):窗口失焦 =
+ * onFocusChange / onWindowChange 的;打开自动保存 = 生效模式不是 off 的。无标题(生效模式 off)/ 已删除 / 删除确认中的跳过。
+ */
+function saveBackgroundTabs(
   saveTab: (tabId: string, opts?: SaveFileOptions) => Promise<unknown>,
   groupId: string | undefined,
   activeId: string | null,
   settings: AutoSaveSettings,
+  eligible: (r: ResolvedAutoSave) => boolean,
 ): void {
   const s = useEditorStore.getState();
   const tabs = groupId === undefined ? s.tabs : groupTabsOf(s, groupId);
@@ -98,7 +103,7 @@ function saveBackgroundOnWindowBlur(
       tab.dirty &&
       !tab.orphaned &&
       !isAutoSaveHeld(tab.filePath) &&
-      savesOnWindowBlur(resolveAutoSave(tab.filePath, settings)),
+      eligible(resolveAutoSave(tab.filePath, settings)),
   );
   for (const tab of targets) {
     void saveTab(tab.id, { recreateMissing: false }).then(
@@ -289,11 +294,11 @@ export function useAutoSave(
     };
   }, [scheduler, tabId]);
 
-  // 立即保存活动 tab 的待保存改动(失焦触发):先同步回写编辑视图尚未上抛的输入(Milkdown 上抛有 200ms 起的防抖),
-  // 回写产生的编辑补排队后 flush。
+  // 立即保存活动 tab 的待保存改动(失焦 / 打开自动保存触发):先同步回写编辑视图尚未上抛的输入(Milkdown 上抛有 200ms 起的防抖),
+  // 回写产生的编辑补排队后 flush。失焦只对 onFocusChange / onWindowChange(saveOn ≠ null)由调用处判断。
   const flushActiveRef = useRef<(() => void) | null>(null);
   flushActiveRef.current =
-    scheduler && tabId !== null && enabled && saveOn !== null
+    scheduler && tabId !== null && enabled
       ? () => {
           flushEditorWriteBacks([tabId]);
           scheduleUnseen(scheduler, tabId, seenEnabledRef, seenContentRef);
@@ -317,20 +322,38 @@ export function useAutoSave(
 
   // 窗口失焦(onFocusChange / onWindowChange 都保存,VSCode WINDOW_CHANGE):活动 tab 经 scheduler flush,组内其余符合条件的
   // 脏 tab 直接保存。按编辑器所在窗口判断(popout 子窗里的编辑器看子窗)。
-  const blurStateRef = useRef({ saveTab, groupId, tabId, settings, paused });
-  blurStateRef.current = { saveTab, groupId, tabId, settings, paused };
+  const blurStateRef = useRef({ saveTab, groupId, tabId, settings, paused, saveOn });
+  blurStateRef.current = { saveTab, groupId, tabId, settings, paused, saveOn };
   const watchWindow = hostWindow ?? null;
   useEffect(() => {
     if (!watchWindow) return;
     const onBlur = (): void => {
       const st = blurStateRef.current;
       if (st.paused) return;
-      flushActiveRef.current?.();
-      saveBackgroundOnWindowBlur(st.saveTab, st.groupId, st.tabId, st.settings);
+      if (st.saveOn !== null) flushActiveRef.current?.();
+      saveBackgroundTabs(st.saveTab, st.groupId, st.tabId, st.settings, savesOnWindowBlur);
     };
     watchWindow.addEventListener('blur', onBlur);
     return () => watchWindow.removeEventListener('blur', onBlur);
   }, [watchWindow]);
+
+  // 打开自动保存(VSCode editorAutoSave.onDidChangeAutoSaveConfiguration):自动保存设置变化后 files.autoSave 不是 off → 立即保存本组
+  // 全部符合条件的脏 tab(活动 tab 经 scheduler flush;此 effect 在 schedule effect 之后,新模式下的排队已就绪),不等延迟 / 失焦。
+  // 挂载不算变化;设置跨窗同步,各窗口的编辑器组各自保存自己的 tab。暂停期间(关闭确认框开着)不保存。
+  const seenSettingsRef = useRef(settings);
+  useEffect(() => {
+    const prev = seenSettingsRef.current;
+    seenSettingsRef.current = settings;
+    if (sameAutoSaveSettings(prev, settings) || settings.mode === 'off') return;
+    const st = blurStateRef.current;
+    if (st.paused) return;
+    flushActiveRef.current?.();
+    saveBackgroundTabs(st.saveTab, st.groupId, st.tabId, st.settings, (r) => r.mode !== 'off');
+  }, [settings]);
+}
+
+function sameAutoSaveSettings(a: AutoSaveSettings, b: AutoSaveSettings): boolean {
+  return a.mode === b.mode && a.delayMs === b.delayMs && a.markdown === b.markdown && a.markdownDelayMs === b.markdownDelayMs;
 }
 
 /** 同步回写产生、schedule effect 尚未看到的编辑 → 先补排队(flush 时已不脏仍由 save 闭包跳过写盘)。 */

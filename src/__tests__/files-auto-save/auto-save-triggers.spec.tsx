@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // BDD: files-auto-save 第 2 / 3 条 —— afterDelay 对代码文件生效;onFocusChange 在编辑器失焦 / 切 tab / 窗口失焦时保存,onWindowChange
-// 只在窗口失焦时保存;窗口失焦保存组内全部符合条件的脏 tab;失焦保存前先回写 Markdown 编辑视图;失败只提示一次。见同目录 README。
+// 只在窗口失焦时保存;窗口失焦保存组内全部符合条件的脏 tab;失焦保存前先回写 Markdown 编辑视图;失败只提示一次;打开自动保存时立即
+// 保存已有的脏文件。见同目录 README。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRef } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
@@ -240,5 +241,118 @@ describe('onWindowChange', () => {
     blurWindow();
     await settle();
     expect(save).not.toHaveBeenCalled();
+  });
+});
+
+// BDD 第 2 条「打开自动保存」:VSCode editorAutoSave.onDidChangeAutoSaveConfiguration —— 自动保存设置变化后 files.autoSave 不是 off
+// → 立即保存全部符合条件的脏文件(saveAllDirtyAutoSaveables),不等延迟 / 失焦。
+describe('打开自动保存:立即保存已有的脏文件', () => {
+  const off = settings({ mode: 'off' });
+  const dirtyMix = (): EditorTab[] => [
+    tab('/w/a.ts', true),
+    tab('/w/b.ts', true),
+    tab('/w/clean.ts', false),
+    tab('untitled:Untitled-1', true),
+    tab('/w/gone.ts', true, { orphaned: true }),
+  ];
+
+  for (const mode of ['afterDelay', 'onFocusChange', 'onWindowChange'] as const) {
+    it(`off → ${mode}:活动 tab 与后台脏 tab 立即保存;跳过干净 / 无标题 / 已删除`, async () => {
+      useEditorStore.setState({ tabs: dirtyMix(), activeTabId: '/w/a.ts' });
+      const save = okSave();
+      const view = render(<Probe saveTab={save} opts={optsFor('/w/a.ts', off)} />);
+      await settle();
+      expect(save).not.toHaveBeenCalled();
+      // afterDelay 用很长的延迟:只有「打开时立即保存」能在这之前写盘
+      view.rerender(<Probe saveTab={save} opts={optsFor('/w/a.ts', settings({ mode, delayMs: 60_000 }))} />);
+      await settle();
+      expect(save.mock.calls.map((c) => c[0]).sort()).toEqual(['/w/a.ts', '/w/b.ts']);
+      for (const c of save.mock.calls) expect(c[1]).toEqual({ recreateMissing: false });
+      // 活动 tab 不因随后到点的延迟再保存一次(已不脏)
+      await settle(60_000);
+      expect(save).toHaveBeenCalledTimes(2);
+    });
+  }
+
+  it('挂载时已开启不算「打开」:不立即保存(afterDelay 仍按延迟)', async () => {
+    useEditorStore.setState({ tabs: [tab('/w/a.ts', true), tab('/w/b.ts', true)], activeTabId: '/w/a.ts' });
+    const save = okSave();
+    render(<Probe saveTab={save} opts={optsFor('/w/a.ts', settings({ mode: 'afterDelay', delayMs: 5_000 }))} />);
+    await settle(100);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('关闭自动保存(→ off)不保存', async () => {
+    useEditorStore.setState({ tabs: [tab('/w/a.ts', true), tab('/w/b.ts', true)], activeTabId: '/w/a.ts' });
+    const save = okSave();
+    const s = settings({ mode: 'onWindowChange' });
+    const view = render(<Probe saveTab={save} opts={optsFor('/w/a.ts', s)} />);
+    view.rerender(<Probe saveTab={save} opts={optsFor('/w/a.ts', off)} />);
+    await settle(60_000);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('files.autoSave 仍为 off 时只改 Markdown 覆盖 / 延迟:不触发(VSCode 看全局模式)', async () => {
+    useEditorStore.setState({ tabs: [tab('/w/a.ts', true), tab('/w/n.md', true)], activeTabId: '/w/a.ts' });
+    const save = okSave();
+    const view = render(<Probe saveTab={save} opts={optsFor('/w/a.ts', settings({ mode: 'off', markdown: false }))} />);
+    view.rerender(<Probe saveTab={save} opts={optsFor('/w/a.ts', settings({ mode: 'off', markdown: false, delayMs: 300 }))} />);
+    await settle(100);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('同一设置值重渲染(新对象、值相同)不触发', async () => {
+    useEditorStore.setState({ tabs: [tab('/w/a.ts', true), tab('/w/b.ts', true)], activeTabId: '/w/a.ts' });
+    const save = okSave();
+    const s = settings({ mode: 'onWindowChange' });
+    const view = render(<Probe saveTab={save} opts={optsFor('/w/a.ts', s)} />);
+    view.rerender(<Probe saveTab={save} opts={optsFor('/w/a.ts', { ...s })} />);
+    await settle();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('关闭确认框等暂停期间打开:不保存', async () => {
+    useEditorStore.setState({ tabs: [tab('/w/a.ts', true), tab('/w/b.ts', true)], activeTabId: '/w/a.ts' });
+    const save = okSave();
+    const paused = { enabled: false, paused: true };
+    const view = render(<Probe saveTab={save} opts={{ ...optsFor('/w/a.ts', off), ...paused }} />);
+    view.rerender(<Probe saveTab={save} opts={{ ...optsFor('/w/a.ts', settings({ mode: 'onWindowChange' })), ...paused }} />);
+    await settle();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('磁盘冲突 / 写保护等失败:不覆盖(交给保存逻辑判定),只提示一次', async () => {
+    useEditorStore.setState({ tabs: [tab('/w/a.ts', false), tab('/w/b.ts', true)], activeTabId: '/w/a.ts' });
+    const warn = vi.spyOn(notify, 'warn').mockImplementation(() => undefined as never);
+    const save = vi.fn<SaveTab>(async () => ({ ok: false, code: 'EDITOR_DISK_CHANGED', message: 'changed on disk' }));
+    const view = render(<Probe saveTab={save} opts={optsFor('/w/a.ts', off)} />);
+    view.rerender(<Probe saveTab={save} opts={optsFor('/w/a.ts', settings({ mode: 'onWindowChange' }))} />);
+    await settle();
+    view.rerender(<Probe saveTab={save} opts={optsFor('/w/a.ts', settings({ mode: 'onFocusChange' }))} />);
+    await settle();
+    expect(save.mock.calls.map((c) => c[0])).toEqual(['/w/b.ts', '/w/b.ts']);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('多个编辑器组(主窗 / popout 子窗)各自保存本组的脏 tab,不重复保存', async () => {
+    useEditorStore.setState({
+      tabs: [tab('/w/a.ts', true), tab('/w/b.ts', true), tab('/w/c.ts', true)],
+      activeTabId: '/w/a.ts',
+      groups: [
+        { id: 'g1', tabIds: ['/w/a.ts', '/w/b.ts'], activeTabId: '/w/a.ts' },
+        { id: 'g2', tabIds: ['/w/c.ts'], activeTabId: '/w/c.ts' },
+      ],
+    } as never);
+    const save = okSave();
+    const two = (s: AutoSaveSettings) => (
+      <>
+        <Probe saveTab={save} opts={{ ...optsFor('/w/a.ts', s), groupId: 'g1' }} />
+        <Probe saveTab={save} opts={{ ...optsFor('/w/c.ts', s), groupId: 'g2' }} />
+      </>
+    );
+    const view = render(two(off));
+    view.rerender(two(settings({ mode: 'onFocusChange' })));
+    await settle();
+    expect(save.mock.calls.map((c) => c[0]).sort()).toEqual(['/w/a.ts', '/w/b.ts', '/w/c.ts']);
   });
 });

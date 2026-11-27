@@ -47,6 +47,49 @@ async function launch(): Promise<{ app: ElectronApplication; win: Page }> {
   return { app, win };
 }
 
+/**
+ * 让 popout / 主窗成为系统焦点窗口(尽力而为)。应用不在前台时(别的应用 / 并发跑的另一套 Electron 测试正抢前台)系统可能不给焦点
+ * 或随即拿走 —— 窗口是否真有系统焦点不是本用例要验证的(按键经 CDP 直接派发到页面,命令按按键所在文档分发),所以不以它为断言。
+ */
+async function focusWindowBestEffort(app: ElectronApplication, page: Page, popout: boolean): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, popout) => {
+    BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('popout=1') === popout)?.focus();
+  }, popout);
+  await expect
+    .poll(() => page.evaluate(() => document.hasFocus()), { timeout: 3_000 })
+    .toBe(true)
+    .catch(() => undefined);
+}
+
+/**
+ * 记录应用自己发起的窗口激活(BrowserWindow#focus / show / moveTop、webContents#focus、app.focus;renderer 的 window:focus IPC 也走
+ * BrowserWindow#focus):返回读取「被激活的窗口是否是 popout」列表的函数。用来断言按键没有让应用把焦点抢到主窗 —— 与系统焦点
+ * (document.hasFocus,会被别的应用拿走)无关。
+ */
+async function recordWindowActivations(app: ElectronApplication): Promise<() => Promise<string[]>> {
+  await app.evaluate(({ BrowserWindow, app: eapp }) => {
+    const g = globalThis as unknown as { __e2eActivations?: string[]; __e2eActivationsHooked?: boolean };
+    g.__e2eActivations = [];
+    if (g.__e2eActivationsHooked) return;
+    g.__e2eActivationsHooked = true;
+    const tag = (w: Electron.BrowserWindow | null | undefined): string =>
+      w ? (w.webContents.getURL().includes('popout=1') ? 'popout' : 'main') : 'app';
+    const wrap = <T extends object>(obj: T, name: string, who: (self: unknown) => string): void => {
+      const rec = obj as unknown as Record<string, (...a: unknown[]) => unknown>;
+      const orig = rec[name]!;
+      rec[name] = function (this: unknown, ...a: unknown[]) {
+        g.__e2eActivations?.push(`${name}:${who(this)}`);
+        return orig.apply(this, a);
+      };
+    };
+    for (const m of ['focus', 'show', 'moveTop']) wrap(BrowserWindow.prototype, m, (w) => tag(w as Electron.BrowserWindow));
+    const wcProto = Object.getPrototypeOf(BrowserWindow.getAllWindows()[0]!.webContents) as object;
+    wrap(wcProto, 'focus', (wc) => tag(BrowserWindow.fromWebContents(wc as Electron.WebContents)));
+    wrap(eapp, 'focus', () => 'app');
+  });
+  return () => app.evaluate(() => (globalThis as unknown as { __e2eActivations?: string[] }).__e2eActivations ?? []);
+}
+
 const runCommand = (win: Page, id: string): Promise<boolean> =>
   win.evaluate((id) => globalThis.__continuoTest!.executeCommand(id), id);
 
@@ -245,10 +288,7 @@ test('popout 子窗:⇧⌘] / ⇧⌘[ 只在本窗口的终端间轮转 —— �
   await child.waitForLoadState('domcontentloaded');
   await expect(child.locator('[data-testid=popout-host]')).toBeVisible({ timeout: 10_000 });
   await disableFocusEmulation(child);
-  await app.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('popout=1'))?.focus();
-  });
-  await expect.poll(() => child.evaluate(() => document.hasFocus())).toBe(true);
+  await focusWindowBestEffort(app, child, true);
   expect((await layout(child)).groups.flatMap((g) => g.terminals)).toEqual([popped]);
   const mainTerms = (await layout(win)).groups.flatMap((g) => g.terminals);
   expect(mainTerms).toHaveLength(2);
@@ -257,13 +297,17 @@ test('popout 子窗:⇧⌘] / ⇧⌘[ 只在本窗口的终端间轮转 —— �
   // 子窗:只有这一个终端 → 不动,主窗的终端不被激活(各组正显示的 tab 不变),焦点留在子窗
   await focusTerminalTab(child, popped);
   const mainSelected = (await layout(win)).groups.map((g) => g.selected);
+  const mainFocused = await win.evaluate(() => document.activeElement?.outerHTML.slice(0, 120) ?? null);
+  const activations = await recordWindowActivations(app);
   for (const key of [NEXT, PREV, NEXT, NEXT_PANE]) {
     await child.keyboard.press(key);
     await child.waitForTimeout(200);
     expect(await focusedTerminal(child)).toBe(popped);
   }
   expect((await layout(win)).groups.map((g) => g.selected)).toEqual(mainSelected);
-  await expect.poll(() => child.evaluate(() => document.hasFocus())).toBe(true);
+  // 焦点留在子窗:应用没有激活任何窗口(没把焦点抢到主窗),主窗里的焦点元素也没变
+  expect(await activations()).toEqual([]);
+  expect(await win.evaluate(() => document.activeElement?.outerHTML.slice(0, 120) ?? null)).toBe(mainFocused);
   // 按键没漏进子窗终端的 shell
   await child.keyboard.type('echo ui134-pop');
   await child.keyboard.press('Enter');
@@ -271,15 +315,14 @@ test('popout 子窗:⇧⌘] / ⇧⌘[ 只在本窗口的终端间轮转 —— �
   await expect.poll(() => activeText(win), { timeout: 10_000 }).toMatch(/^ui134-pop$/m);
   expect(await activeText(win)).not.toMatch(GARBAGE);
 
-  // 主窗:只在主窗的两个终端间轮转,不跳进子窗
-  await app.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows().find((w) => !w.webContents.getURL().includes('popout=1'))?.focus();
-  });
-  await expect.poll(() => win.evaluate(() => document.hasFocus())).toBe(true);
+  // 主窗:只在主窗的两个终端间轮转,不跳进子窗(子窗的终端保持不变、应用不激活子窗)
+  await focusWindowBestEffort(app, win, false);
   await focusTerminalTab(win, mainTerms[0]!);
+  const mainActivations = await recordWindowActivations(app);
   for (let i = 1; i <= 3; i++) {
     await win.keyboard.press(NEXT);
     await expect.poll(() => focusedTerminal(win), { timeout: 10_000 }).toBe(mainTerms[i % 2]!);
   }
-  expect(await child.evaluate(() => document.hasFocus())).toBe(false);
+  expect((await layout(child)).groups.flatMap((g) => g.terminals)).toEqual([popped]);
+  expect((await mainActivations()).filter((a) => a.endsWith(':popout'))).toEqual([]);
 });

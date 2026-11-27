@@ -5,12 +5,15 @@
 // 4. onFocusChange → 切到另一 tab / 焦点进终端时保存
 // 5. onWindowChange → 切 tab / 进终端不保存,窗口失焦时保存;popout 子窗的编辑器在子窗失焦时保存
 // 6. 文件 → 自动保存(勾选项)/ 命令面板「切换自动保存」
+// 7. 打开自动保存时立即保存已有的脏文件(命令切换 / 设置页修改;多窗口各自保存),不等延迟 / 失焦
 // 判断保存完成:磁盘出现内容且未保存标记消失(只看磁盘可能早于 markSaved,见 cdb8df29)。
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { test, expect } from './fixtures/with-workspace';
-import { waitForTestHooks } from './helpers/app-ready';
+import { waitForAppReady, waitForTestHooks } from './helpers/app-ready';
 import {
   DOCK_POPOUT,
   EDITOR_UNSAVED_CHANGES_SELECTOR,
@@ -19,6 +22,7 @@ import {
   TERMINAL_PANEL_TAB,
 } from './helpers/editor';
 import { commandPaletteInput, openCommandPalette } from './helpers/palette';
+import { EDITOR_TAB, openSettingsTab } from './helpers/settings';
 import type { AppMenuE2eHook, MenuSnapshotItem } from '../../electron/main/app-menu-e2e';
 
 const TOGGLE_AUTO_SAVE = 'workbench.action.toggleAutoSave';
@@ -306,4 +310,76 @@ test('文件 → 自动保存 勾选项与命令面板「切换自动保存」:o
   await window.keyboard.press('Enter');
   await expect.poll(() => getSetting(window, 'files.autoSave')).toBe('off');
   await expect.poll(() => autoSaveMenuChecked(electronApp)).toBe(false);
+});
+
+// 打开自动保存(VSCode onDidChangeAutoSaveConfiguration → saveAllDirtyAutoSaveables):已有的脏文件立即保存。
+// files.autoSaveDelay 设成 60 秒:afterDelay 的延迟保存远在 expectSaved 的等待之外,只有「打开时立即保存」能写盘。
+async function dirtyBoth(window: Page, root: string): Promise<void> {
+  await setSetting(window, 'files.autoSaveDelay', 60_000);
+  await openSrcFile(window, 'a.ts');
+  await openSrcFile(window, 'b.ts');
+  await editorTab(window, 'a.ts').click();
+  await typeInEditor(window, ' // dirty a');
+  await editorTab(window, 'b.ts').click();
+  await typeInEditor(window, ' // dirty b');
+  await window.waitForTimeout(1_500);
+  expect(await disk(root, 'src/a.ts')).toBe('export const a = 1;\n');
+  expect(await disk(root, 'src/b.ts')).toBe('export const b = 2;\n');
+}
+
+test('打开自动保存(命令切换 off → afterDelay):活动与后台的脏文件立即写盘,不等延迟', async ({ window, workspaceRoot }) => {
+  await dirtyBoth(window, workspaceRoot);
+  await window.evaluate((id) => globalThis.__continuoTest!.executeCommand(id), TOGGLE_AUTO_SAVE);
+  await expect.poll(() => getSetting(window, 'files.autoSave')).toBe('afterDelay');
+  await expectSaved(window, workspaceRoot, 'src/b.ts', '// dirty b');
+  await expectSaved(window, workspaceRoot, 'src/a.ts', '// dirty a');
+});
+
+test('打开自动保存(设置页改为「窗口改变时」):脏文件立即写盘,不等窗口失焦', async ({ window, workspaceRoot }) => {
+  await dirtyBoth(window, workspaceRoot);
+  await openSettingsTab(window, EDITOR_TAB);
+  const onWindowChange = window
+    .getByRole('radio', { name: /^(窗口改变时|On window change|창 변경 시)$/ })
+    .first();
+  await onWindowChange.scrollIntoViewIfNeeded();
+  await onWindowChange.click();
+  await expect.poll(() => getSetting(window, 'files.autoSave')).toBe('onWindowChange');
+  await expect(async () => expect(await disk(workspaceRoot, 'src/a.ts')).toContain('// dirty a')).toPass({ timeout: 8_000 });
+  await expect(async () => expect(await disk(workspaceRoot, 'src/b.ts')).toContain('// dirty b')).toPass({ timeout: 8_000 });
+});
+
+test('打开自动保存:多窗口各自保存自己的脏文件', async ({ electronApp, window, workspaceRoot }) => {
+  test.setTimeout(90_000);
+  await setSetting(window, 'files.autoSaveDelay', 60_000);
+  const otherRoot = mkdtempSync(path.join(tmpdir(), 'autosave-multi-ws-'));
+  mkdirSync(path.join(otherRoot, 'src'));
+  writeFileSync(path.join(otherRoot, 'src', 'c.ts'), 'export const c = 3;\n');
+  try {
+    // 新窗口开另一个文件夹(e2e 下无应用菜单,走 macOS open-file 同款入口,见 fresh-window-reload-keeps-tabs)
+    const newWindow = electronApp.waitForEvent('window');
+    await electronApp.evaluate(({ app }, dir) => {
+      app.emit('open-file', { preventDefault: () => {} }, dir);
+    }, otherRoot);
+    const other = await newWindow;
+    await other.waitForLoadState('domcontentloaded');
+    await waitForAppReady(other);
+    await other.evaluate(() => globalThis.__continuoTest!.setSettingValue('workbench.editor.enablePreview', false));
+    await other.locator('text=src').first().click();
+    await openSrcFile(other, 'c.ts');
+    await typeInEditor(other, ' // dirty c');
+
+    await openSrcFile(window, 'a.ts');
+    await typeInEditor(window, ' // dirty a');
+    await window.waitForTimeout(1_500);
+    expect(await disk(workspaceRoot, 'src/a.ts')).toBe('export const a = 1;\n');
+    expect(await disk(otherRoot, 'src/c.ts')).toBe('export const c = 3;\n');
+
+    // 在主窗打开自动保存:设置跨窗同步,两个窗口各自立即保存
+    await window.evaluate((id) => globalThis.__continuoTest!.executeCommand(id), TOGGLE_AUTO_SAVE);
+    await expectSaved(window, workspaceRoot, 'src/a.ts', '// dirty a');
+    await expect(async () => expect(await disk(otherRoot, 'src/c.ts')).toContain('// dirty c')).toPass({ timeout: 8_000 });
+    await expect(editorTab(other, 'c.ts').locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toHaveCount(0, { timeout: 5_000 });
+  } finally {
+    rmSync(otherRoot, { recursive: true, force: true });
+  }
 });

@@ -104,34 +104,44 @@ describe('文字里的 `$`', () => {
     expect(serialize(parse('x \\$5 y $z$\n'))).toBe('x \\$5 y $z$\n');
   });
 
+  // 轮数 / 种子可用环境变量调大或换(FUZZ_N=20000 FUZZ_SEED=1 pnpm vitest run …)。默认 3000 轮;
+  // 重复的段落只测一次,对照组只在发现不一致时才算(绝大多数段落省掉一半解析),全量负载下也远低于超时。
+  const FUZZ_N = Number(process.env.FUZZ_N) > 0 ? Number(process.env.FUZZ_N) : 3000;
+  const FUZZ_SEED = Number.isFinite(Number(process.env.FUZZ_SEED ?? NaN)) ? Number(process.env.FUZZ_SEED) : 20261127;
   it('随机段落:解析 → 保存 → 再解析语义不变,保存幂等;不含 `$$` / 反斜杠 / 反引号 / 强调符的字节不变', () => {
     const alphabet = ['$', '$', '$', 'a', '1', ' ', '*', '\\', '`', '_', '.'];
-    let seed = 20261127;
+    let seed = FUZZ_SEED;
     const rnd = (n: number): number => {
       seed = (seed * 1103515245 + 12345) & 0x7fffffff;
       return seed % n;
     };
+    // 对照:`$` 换成字母后同样不稳的(Milkdown 既有的强调序列化问题,如 `*_*_*`)与公式无关,跳过
+    const controlStable = (md: string): boolean => {
+      const c1 = parse(md.replace(/\$/g, 'a'));
+      return c1.eq(parse(serialize(c1)));
+    };
+    const seen = new Set<string>();
     const failures: string[] = [];
-    for (let k = 0; k < 3000; k += 1) {
+    for (let k = 0; k < FUZZ_N; k += 1) {
       let md = 'x ';
       const len = 1 + rnd(12);
       for (let i = 0; i < len; i += 1) md += alphabet[rnd(alphabet.length)];
       md += ' y\n';
+      if (seen.has(md)) continue;
+      seen.add(md);
       const d1 = parse(md);
       const m1 = serialize(d1);
       const d2 = parse(m1);
-      // 对照:`$` 换成字母后同样不稳的(Milkdown 既有的强调序列化问题,如 `*_*_*`)与公式无关,跳过
-      const control = md.replace(/\$/g, 'a');
-      const c1 = parse(control);
-      const controlStable = c1.eq(parse(serialize(c1)));
-      if (controlStable && JSON.stringify(semantic(d1)) !== JSON.stringify(semantic(d2))) {
-        failures.push(`语义 ${JSON.stringify(md)} → ${JSON.stringify(m1)}`);
+      const semanticDiff = JSON.stringify(semantic(d1)) !== JSON.stringify(semantic(d2));
+      const notIdempotent = serialize(d2) !== m1;
+      if ((semanticDiff || notIdempotent) && controlStable(md)) {
+        if (semanticDiff) failures.push(`语义 ${JSON.stringify(md)} → ${JSON.stringify(m1)}`);
+        if (notIdempotent) failures.push(`幂等 ${JSON.stringify(md)}`);
       }
-      if (controlStable && serialize(d2) !== m1) failures.push(`幂等 ${JSON.stringify(md)}`);
       if (!/[\\`*_]|\$\$/.test(md) && m1 !== md) failures.push(`字节 ${JSON.stringify(md)} → ${JSON.stringify(m1)}`);
     }
     expect(failures.slice(0, 10)).toEqual([]);
-  });
+  }, 30_000);
 
   it('转义工具:只增删 `\\$`,其它转义原样', () => {
     expect(unescapeDollars('a \\$5 \\\\ \\* b')).toBe('a $5 \\\\ \\* b');
