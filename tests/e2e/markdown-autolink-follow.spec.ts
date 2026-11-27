@@ -83,3 +83,52 @@ test('输入法在链接末尾组字「中文」:组字结束后地址跟随,保
   await expect(window.locator(`${PM} a`).first()).toHaveAttribute('href', 'https://example.com中文', { timeout: 5_000 });
   await saveAndExpect(window, file, doc.replace('https://example.com', 'https://example.com中文'));
 });
+
+// 第五十二轮审计 A1:普通文字随输入成了网址 / www. / 邮箱 → 成为链接,保存原样(不再插反斜杠 `https\://` / `www\.` / `a\@`)
+test('新打的网址 / www. / 邮箱、`https//…` 补 `:`:成为链接,保存原样', async ({ window, workspaceRoot }) => {
+  for (const [name, typed, href] of [
+    ['url.md', ' see https://example.com done', 'https://example.com'],
+    ['www-new.md', ' www.example.com ok', 'http://www.example.com'],
+    ['mail.md', ' mail a@example.com ok', 'mailto:a@example.com'],
+  ] as const) {
+    const doc = 'Start here\n\nTail.\n';
+    const file = await openInEdit(window, workspaceRoot, name, doc);
+    await window.locator(PM).getByText('Start here').click();
+    await window.keyboard.press('End');
+    await window.keyboard.type(typed);
+    await expect(window.locator(`${PM} a`).first()).toHaveAttribute('href', href);
+    await saveAndExpect(window, file, `Start here${typed}\n\nTail.\n`);
+  }
+  const doc = 'Go https//example.com now\n\nTail.\n';
+  const file = await openInEdit(window, workspaceRoot, 'colon.md', doc);
+  await window.locator(PM).getByText('Go https//example.com now').click();
+  await window.keyboard.press('Home');
+  for (let i = 0; i < 'Go https'.length; i += 1) await window.keyboard.press('ArrowRight');
+  await window.keyboard.type(':');
+  await expect(window.locator(`${PM} a`).first()).toHaveAttribute('href', 'https://example.com');
+  await saveAndExpect(window, file, 'Go https://example.com now\n\nTail.\n');
+});
+
+// 第五十二轮审计 A2:在空格前回车拆段 → 新段段首空白去掉,保存不出现 `&#x20;`
+test('空格前回车拆段:新段不以空格开头,保存不出现 `&#x20;`', async ({ window, workspaceRoot }) => {
+  const file = await openInEdit(window, workspaceRoot, 'split.md', 'Para with *em* BETA tail\n\nTail.\n');
+  await window.locator(PM).getByText('Tail.').click();
+  // 光标放在 `BETA` 后、空格前(DOM 选区,ProseMirror 经 selectionchange 读回)
+  await window.evaluate((sel) => {
+    const walker = document.createTreeWalker(document.querySelector(sel)!, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = n.textContent!.indexOf(' tail');
+      if (i < 0) continue;
+      const range = document.createRange();
+      range.setStart(n, i);
+      const s = document.getSelection()!;
+      s.removeAllRanges();
+      s.addRange(range);
+      return;
+    }
+  }, PM);
+  await expect.poll(() => window.evaluate(() => document.getSelection()?.anchorNode?.textContent?.slice(document.getSelection()!.anchorOffset))).toBe(' tail');
+  await window.keyboard.press('Enter');
+  await expect(window.locator(`${PM} p`).nth(1)).toHaveText('tail');
+  await saveAndExpect(window, file, 'Para with *em* BETA\n\ntail\n\nTail.\n');
+});

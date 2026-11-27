@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { Crepe } from '@milkdown/crepe';
 import { undo } from '@milkdown/kit/prose/history';
+import { TextSelection } from '@milkdown/kit/prose/state';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { configureMarkdownStyle } from '../../panels/Editor/milkdown-markdown-style';
 import { configureSourceBlocks } from '../../panels/Editor/milkdown-source-blocks';
@@ -231,6 +232,71 @@ for (const verbatim of [true, false]) {
         expect(links(view)).toEqual(await savedLinks(out));
       }
     });
+
+    // 第五十二轮审计 A1:普通文字随编辑成了链接形状(新打的网址 / www. / 邮箱、补上 `:`)→ 补链接,保存原样(不转义成 `https\://…`)
+    it('新打的网址 / www. / 邮箱 → 成为链接,保存原样(不插反斜杠)', async () => {
+      for (const [typed, link] of [
+        [' see https://example.com done', ['https://example.com', 'https://example.com']],
+        [' www.example.com ok', ['www.example.com', 'http://www.example.com']],
+        [' mail a@example.com ok', ['a@example.com', 'mailto:a@example.com']],
+      ] as const) {
+        const { crepe, view } = await open('Start here\n\nTail.\n', verbatim);
+        typeKeys(view, 'Start here', typed);
+        expect(links(view), typed).toEqual([link]);
+        const out = crepe.getMarkdown();
+        expect(out, typed).toBe(`Start here${typed}\n\nTail.\n`);
+        expect(links(view)).toEqual(await savedLinks(out));
+      }
+      // 新段落里打(没有原文对应,整块重写):原文件没有自动链接时同样裸写
+      const { crepe, view } = await open('Start here\n', verbatim);
+      view.dispatch(view.state.tr.split(posAfter(view, 'Start here')));
+      let pos = posAfter(view, 'Start here') + 2;
+      for (const ch of 'go https://example.com now') view.dispatch(view.state.tr.insertText(ch, pos++));
+      expect(crepe.getMarkdown()).toBe('Start here\n\ngo https://example.com now\n');
+    });
+
+    it('普通文字中间补字成了网址(`https//…` 补 `:`)→ 成为链接,保存原样', async () => {
+      const { crepe, view } = await open('Go https//example.com now\n', verbatim);
+      typeAfter(view, 'Go https', ':');
+      expect(links(view)).toEqual([['https://example.com', 'https://example.com']]);
+      expect(crepe.getMarkdown()).toBe('Go https://example.com now\n');
+    });
+
+    it('只去掉链接(只改 mark)不补回;代码 / 代码块里不处理;`$` 不多转义', async () => {
+      // 去掉链接(只改 mark,不算编辑文字):不立即补回(Markdown 里裸写的网址本就是链接,重新打开仍是链接)
+      const b = await open(PARA, verbatim);
+      const type = b.view.state.schema.marks.link!;
+      const from = posAfter(b.view, 'Para with ');
+      b.view.dispatch(b.view.state.tr.removeMark(from, from + 'https://example.com'.length, type));
+      expect(links(b.view)).toEqual([]);
+      // 行内代码 / 代码块里打网址:不加链接
+      const c = await open('Run `cmd` now\n\n```\ncode\n```\n', verbatim);
+      typeAfter(c.view, 'cm', ' https://example.com ');
+      typeAfter(c.view, 'code', ' https://example.com');
+      expect(links(c.view)).toEqual([]);
+      expect(c.crepe.getMarkdown()).toBe('Run `cm https://example.com d` now\n\n```\ncode https://example.com\n```\n');
+      // 段落里有 `$`:网址照样成链接,`$` 不多转义
+      const d = await open('Pay $5 now\n', verbatim);
+      typeKeys(d.view, 'Pay $5 now', ' https://a.com');
+      expect(links(d.view)).toEqual([['https://a.com', 'https://a.com']]);
+      expect(d.crepe.getMarkdown()).toBe('Pay $5 now https://a.com\n');
+    });
+
+    it('新打的网址:一次撤销连同链接一起撤掉;粘贴纯文本网址同样是链接', async () => {
+      const { crepe, view } = await open('Start here\n', verbatim);
+      typeKeys(view, 'Start here', ' https://example.com');
+      expect(links(view)).toEqual([['https://example.com', 'https://example.com']]);
+      undo(view.state, view.dispatch);
+      expect(links(view)).toEqual([]);
+      expect(crepe.getMarkdown()).toBe('Start here\n');
+      const b = await open('See  now\n', verbatim);
+      b.view.dispatch(b.view.state.tr.setSelection(TextSelection.create(b.view.state.doc, posAfter(b.view, 'See '))));
+      const e = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+      e.clipboardData = { files: [], types: ['text/plain'], getData: (t: string) => (t === 'text/plain' ? 'https://example.com/x' : '') };
+      b.view.dom.dispatchEvent(e);
+      expect(links(b.view)).toEqual([['https://example.com/x', 'https://example.com/x']]);
+      expect(b.crepe.getMarkdown()).toBe('See https://example.com/x now\n');
+    });
   });
 }
 
@@ -248,6 +314,17 @@ async function savedLinks(markdown: string): Promise<[string, string][]> {
   const { view } = await open(markdown);
   return links(view);
 }
+
+// 模糊测试(第五十二轮 seed 51 第 913 轮)最小化:GFM 认的邮箱 `a@example.-om`(域名段以 `-` 开头)不是合法的 CommonMark `<…>`
+// 自动链接 —— 整块重写时不写成 `<a@example.-om>`(重新打开成了带尖括号的文字),写 `[文字](mailto:…)`
+it('整块重写:`<…>` 不成立的同文链接写成 `[文字](地址)`', async () => {
+  const { crepe, view } = await open('Mail ，a@example.-om now\n', false);
+  expect(links(view)).toEqual([['a@example.-om', 'mailto:a@example.-om']]);
+  typeAfter(view, 'now', '!');
+  const out = crepe.getMarkdown();
+  expect(out).toBe('Mail ，[a@example.-om](mailto:a@example.-om) now!\n');
+  expect(await savedLinks(out)).toEqual(links(view));
+});
 
 function rng(seed: number): () => number {
   let s = seed >>> 0;
@@ -282,12 +359,11 @@ describe('模糊测试:链接附近随机编辑', () => {
       const { crepe, view } = await open(md, verbatim);
       const start = posAfter(view, md.includes('Mail') ? 'Mail ' : md.split(/https|www/)[0]!);
       const ops: string[] = [];
-      // 每轮只插字或只删字;链接整个去掉后本轮停止 —— 之后再编辑使普通文字重新成为链接形状(先插字打断、再删掉它)不在本规范范围:
-      // 普通文字不随编辑自动加链接(只有编辑前就是自动链接的才跟随)
-      const inserting = r() < 0.7;
-      for (let k = 1 + Math.floor(r() * 6); k > 0 && links(view).length > 0; k -= 1) {
+      // 插字 / 删字混合;链接被打断、去掉后接着编辑使普通文字重新成为链接形状(先插字打断、再删掉它)同样要与保存结果一致
+      //(第五十二轮审计 A1:普通文字随编辑成了链接形状 → 补链接)
+      for (let k = 1 + Math.floor(r() * 8); k > 0; k -= 1) {
         const pos = Math.min(view.state.doc.content.size - 1, start - 1 + Math.floor(r() * 26));
-        if (inserting) {
+        if (r() < 0.65) {
           const ch = CHARS[Math.floor(r() * CHARS.length)]!;
           ops.push(`+${pos}${ch}`);
           view.dispatch(view.state.tr.insertText(ch, pos));
@@ -305,5 +381,5 @@ describe('模糊测试:链接附近随机编辑', () => {
       for (const c of editors.splice(0)) await c.destroy();
       document.body.innerHTML = '';
     }
-  });
+  }, 600_000);
 });

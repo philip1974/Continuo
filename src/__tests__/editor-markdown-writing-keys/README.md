@@ -21,18 +21,22 @@
   全局快捷键让行;焦点不在 Markdown 编辑区(如终端)时 ⌘K 仍是「清除终端」。
 - 表格里 Tab → 下一格(选中格内文字);最后一格 → 表格末尾加一行(对齐方式随表头列)并进入其首格。⇧Tab → 上一格;首格 → 不动。
   表格外的 Tab 照旧(列表缩进等)。
+- 回车拆段落在空白前(第五十二轮审计 A2:`… BETA tail` 在 `BETA` 后回车,新段保存成 `&#x20;tail`)→ 新段段首的空格 / 制表符去掉,
+  编辑器显示与保存一致;与回车同一步撤销。段落、列表项、引用块都一样;CommonMark 段首空白只含空格 / 制表符,全角空格(U+3000)保留;
+  代码块里不动;拆点在块首不算(新块是原来的整块)。空格后回车:前一段段尾空格照旧(Markdown 段尾空白本不显示)。
+  参照:CommonMark「段落的原始内容去掉首尾空格 / 制表符」;Typora / Obsidian 拆段后新段不以空白开头。
 - 只读预览里以上都不处理。
 
 ## Specs
 
 | File | 覆盖 |
 |---|---|
-| `writing-keys.spec.tsx` | 真实 Crepe(jsdom):粘贴 URL 成链接(之后输入不替换 / 不并进链接)/ 照常粘贴的情形 / URL 识别 / 只读;⌘K 新建与编辑链接(确认后输入同上,无选区插入地址)、preventDefault、只读;表格 Tab / ⇧Tab / 末格加行 / 表格外 Tab;MilkdownEditor 接线 |
+| `writing-keys.spec.tsx` | 真实 Crepe(jsdom):粘贴 URL 成链接(之后输入不替换 / 不并进链接)/ 照常粘贴的情形 / URL 识别 / 只读;⌘K 新建与编辑链接(确认后输入同上,无选区插入地址)、preventDefault、只读;表格 Tab / ⇧Tab / 末格加行 / 表格外 Tab;回车拆段去掉新段段首空白(段落 / 列表 / 引用 / 全角空格 / 代码块 / 撤销);MilkdownEditor 接线 |
 | `tests/e2e/markdown-writing.spec.ts` | 真实 Electron:选中粘贴 URL、⌘K 加链接(之后接着打字不替换链接文字)、表格末格 Tab |
 
 ## Modules
 
 | File | Role |
 |---|---|
-| `src/panels/Editor/milkdown-writing-keys.ts` | ProseMirror 插件(排在所有插件最前):handlePaste + Mod-k / Tab / Shift-Tab |
+| `src/panels/Editor/milkdown-writing-keys.ts` | ProseMirror 插件(排在所有插件最前):handlePaste + Mod-k / Tab / Shift-Tab;appendTransaction 里拆段后去掉新段段首空白(`splitLeadingSpace`) |
 | `src/panels/Editor/MilkdownEditor.tsx` | `crepe.editor.use(markdownWritingKeys)` |

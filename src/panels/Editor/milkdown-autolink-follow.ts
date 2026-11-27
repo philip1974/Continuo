@@ -9,6 +9,10 @@
 //    开头不再合法 / 前一个字符使它不再是链接(在链接前紧挨着打了字母、删掉了前面的空格)→ 去掉链接
 //  - 其它协议(`<ftp://…>` 之类)按 CommonMark 自动链接:取到空白为止,仍是「协议:…」形状 → 地址 = 文字,否则去掉链接
 //  - 文字 ≠ 地址的链接(`[文字](地址)`)不动
+//  - 编辑碰到的普通文字词(不含链接、不在代码 / 代码块里)按 GFM 认作链接 → 补链接(新打的网址 / www. / 邮箱、`https//…` 补上 `:`;
+//    粘贴的纯文本同理)。与保存后重新打开 / GitHub / VSCode 纯文本一致;否则序列化按 GFM 转义成 `https\://…` / `www\.…` / `a\@…`。
+//    补链接与触发它的那次输入同一步撤销;只去掉链接(只改 mark)不算编辑文字,不补回 —— 但 Markdown 里裸写的网址本就是链接,
+//    保存后重新打开仍是链接(Milkdown 的 GFM 解析连 `https\://…` 也认作链接),要纯文字的网址用行内代码
 //  - 输入法组字期间不改文档(组字中改 mark 会打断输入法):记下组字的事务,组字结束后(下一个非组字事务 / compositionend 之后)补判
 // 序列化(milkdown-markdown-style 的裸写判定 / milkdown-source-blocks 的就地改原文)据此得到文字与地址一致的链接。
 // BDD: src/__tests__/editor-markdown-autolink-edit/
@@ -47,12 +51,13 @@ function linkRuns(block: PmNode, start: number, type: MarkType): Run[] {
 }
 
 const EMAIL = /^[A-Za-z0-9._+-]+@[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+/;
-const WEB = /^(?:https?:\/\/|www\.)/i;
+// `www` 不带点:GFM 把刚打出的 `www.` 认作链接 `www`(地址 http://www,句点不计入),接着打字随之延长
+const WEB = /^(?:https?:\/\/|www)/i;
 
 /** 文字 = 地址(自动链接:`<url>` / 裸链接 / www.(地址补 http://)/ 邮箱(地址补 mailto:))。 */
 function isAutolink(text: string, href: string, title: unknown): boolean {
   if (title || !text) return false;
-  return href === text || href === `mailto:${text}` || (/^www\./i.test(text) && href === `http://${text}`);
+  return href === text || href === `mailto:${text}` || (/^www/i.test(text) && href === `http://${text}`);
 }
 
 /** GFM 裸链接形状(http(s):// / www. / 邮箱)。 */
@@ -208,6 +213,17 @@ function oldAutolinks(doc: PmNode, ranges: readonly [number, number][], type: Ma
   return out;
 }
 
+// 可能被 GFM 认作链接文字的词(省掉多数词的试解析)
+const LITERAL_HINT = /https?:\/\/|www\.|@|mailto:|xmpp:/i;
+
+/** 词里没有链接、不在行内代码里,且按 GFM 认出链接文字 → 这些链接;否则 null。 */
+function plainLiterals(block: PmNode, start: number, word: Word, type: MarkType, parse: ParseMarkdown): LiteralLink[] | null {
+  if (word.code || !LITERAL_HINT.test(word.text)) return null;
+  if (linkRuns(block, start, type).some((r) => r.from < word.to && r.to > word.from)) return null;
+  const found = gfmLiteralLinks(parse, word.before, word.text);
+  return found && found.length > 0 ? found : null;
+}
+
 /** 解析结果对不上文字时(转义 / 实体):地址 = 文字(www. 补 http://,邮箱补 mailto:)。 */
 function hrefOfText(text: string): string {
   if (/^www\./i.test(text)) return `http://${text}`;
@@ -238,7 +254,6 @@ export function followEditedAutolinks(
     map.forEach((from, to) => ranges.push([back.map(from, -1), back.map(to, 1)]));
   });
   const autos = oldAutolinks(oldState.doc, ranges, type, parse);
-  if (autos.length === 0) return null;
   const infoOf = (mark: Mark): OldAutolink | undefined => autos.find((o) => o.mark.eq(mark));
   const doc = newState.doc;
   let out: Transaction | null = null;
@@ -272,7 +287,13 @@ export function followEditedAutolinks(
       for (const word of wordsIn(block, start, type)) {
         if (!touched(word.from, word.to) || word.code) continue;
         const inWord = runs.filter((r) => r.from < word.to && r.to > word.from);
-        if (inWord.length === 0 || !inWord.every((r) => infoOf(r.mark)!.literal)) continue;
+        if (inWord.length === 0) {
+          // 普通文字词随这次编辑成了链接形状 → 补链接
+          const found = plainLiterals(block, start, word, type, parse) ?? [];
+          for (const l of found) tr().addMark(word.from + l.from, word.from + l.from + l.length, type.create({ href: l.href }));
+          continue;
+        }
+        if (!inWord.every((r) => infoOf(r.mark)!.literal)) continue;
         // 词里还有别的链接(`[文字](地址)`)→ 不动
         if (linkRuns(block, start, type).some((r) => r.from < word.to && r.to > word.from && !infoOf(r.mark))) continue;
         const current = inWord.map((r) => {

@@ -6,7 +6,7 @@
 //  - 风格跟随原文件:挂载时解析初始内容(Milkdown 自己的 remark 解析,随首次解析一起跑,不另解析)取第一个无序列表符号、
 //    有序列表分隔符与是否递增编号(`1. 1. 1.`)、分隔线写法、一二级标题是 setext 还是 ATX、代码块是围栏还是缩进、硬换行是
 //    `\` 还是行尾两空格、与地址同文的链接是 `<url>` 还是裸写;表格是否对齐按首个表格的表头行与分隔行是否等宽。原文件没有的
-//    结构按 Prettier 默认(`-`、`---`、ATX、``` 围栏)。强调 / 加粗的符号由 Milkdown 按节点保留。被改动的块若有原文对应块,
+//    结构按 Prettier 默认(`-`、`---`、ATX、``` 围栏);与地址同文的链接裸写(同在纯文本里打的网址,裸写会变义时写 `<url>`)。强调 / 加粗的符号由 Milkdown 按节点保留。被改动的块若有原文对应块,
 //    再按该块自己的写法覆盖(milkdown-source-blocks)。
 //  - 不写 `<br />` 空行占位:去掉 commonmark 预设的 remarkPreserveEmptyLine(连按两次回车留下的空段落序列化时丢弃);
 //    手写的 `<br />` 作为 HTML 原样保留。
@@ -53,7 +53,7 @@ export const DEFAULT_MARKDOWN_STYLE: Readonly<MarkdownStyle> = {
   fence: '`',
   incrementListMarker: true,
   continuoHardBreak: 'backslash',
-  continuoAutolink: 'angle',
+  continuoAutolink: 'literal',
 };
 
 interface MdNode {
@@ -313,6 +313,26 @@ function writeBareLinks(node: MdParent, hardBreak: string, parse: ParseMarkdown)
   }
 }
 
+// CommonMark 自动链接(`<…>`)的合法形状:邮箱(域名各段首尾不能是 `-`)/ 协议 2–32 字符的 URI
+const CM_EMAIL =
+  /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
+const CM_URI = /^[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>\p{Cc}]*$/u;
+
+/**
+ * 文字与地址同文、remark 会写成 `<…>` 的链接,`<…>` 却不是合法的 CommonMark 自动链接(GFM 认的邮箱 `a@example.-o`,域名段以 `-`
+ * 开头)→ 重新打开成了带尖括号的文字。这类链接改写成 `[文字](地址)`:链接文字前垫一个空文字节点,remark 就不按自动链接写
+ *(mdast-util-to-markdown formatLinkAsAutolink 要求恰好一个文字子节点),输出不变多余字符。就地改树。
+ */
+function guardAngleLinks(node: MdLink): void {
+  for (const child of node.children ?? []) guardAngleLinks(child as MdLink);
+  if (node.type !== 'link' || node.title || node.children?.length !== 1 || node.children[0]!.type !== 'text') return;
+  const text = (node.children[0] as MdLink).value ?? '';
+  const url = node.url ?? '';
+  if (url !== text && url !== `mailto:${text}`) return;
+  const valid = url === `mailto:${text}` ? CM_EMAIL.test(text) : CM_URI.test(url);
+  if (!valid) node.children = [{ type: 'text', value: '' } as MdLink, ...node.children];
+}
+
 // 行内代码里的换行:remark 把「换行 + 可能被当成块开头的字符」换成空格(渲染相同,但解析回来内容变了)。
 // continuoInlineCodeEol = 'keep'(试解析校验的候选写法,见 milkdown-source-blocks)时先换成私用区占位符、写完再换回。
 const EOL_MARKS: Readonly<Record<string, string>> = { '\r\n': '\uE000', '\n': '\uE001', '\r': '\uE002' };
@@ -365,6 +385,7 @@ const markdownStylePlugin = $remark('continuoMarkdownStyle', () => function cont
       if (settings!.continuoAutolink === 'literal') {
         writeBareLinks(clean, settings!.continuoHardBreak === 'spaces' ? '  \n' : '\\\n', (markdown) => self.parse(markdown));
       }
+      guardAngleLinks(clean as MdLink);
       // 占位符只出现在行内代码里(代码内容原样输出,不转义)
       if (settings!.continuoInlineCodeEol === 'keep' && !hasEolMark(clean)) {
         markInlineCodeEols(clean);

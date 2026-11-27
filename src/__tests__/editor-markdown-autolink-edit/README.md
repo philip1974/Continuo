@@ -35,15 +35,23 @@
 - 输入法组字期间不改文档(组字中改 mark 会打断输入法);组字结束后补判(组字后的第一个非组字事务,或 compositionend 后 ProseMirror
   收尾完仍没有事务时补派一个空事务)。链接末尾 / 中间用输入法打「中文」→ 结束后地址跟随,保存 `https://example.com中文`
   (第五十一轮审计 A3:此前跳过所有组字事务、结束后不补判,保存成 `[https://example.com中文](https://example.com)`)。
-- 不在范围:普通文字(不是编辑前就有的自动链接)随编辑变成链接形状时不自动加链接(如先在链接中间打字打断、再删掉那个字)。
+- 普通文字随编辑成了链接形状 → 补链接(第五十二轮审计 A1:新打的 ` see https://example.com done` / `www.example.com` / `a@example.com`、
+  `https//example.com` 中间补 `:`,此前没有链接 mark,保存时 GFM 序列化把它们转义成 `https\://…` / `www\.…` / `a\@…`)。
+  范围是这次编辑碰到的「词」(不含链接、不在行内代码 / 代码块里),同样直接用解析器(`gfmLiteralLinks`)认定,地址与 GFM 一致;
+  保存原样(裸写),重新打开 / GitHub 同为链接,与 VSCode 纯文本编辑一致。粘贴纯文本网址同样是链接;从源码模式切回编辑模式时内容
+  重新解析,裸网址本就是链接。补链接与触发它的那次输入同一步撤销(⌘Z 一并撤掉);只去掉链接(只改 mark,不改文字)不补回。
+  Markdown 里裸写的网址本就是链接(Milkdown 的 GFM 解析连原文转义的 `https\://…` 也认作链接),要纯文字网址用行内代码。
+  `www.` 刚打出时 GFM 认作链接 `www`(地址 `http://www`,句点不计入),接着打字随之延长。
+- 整块重写时与地址同文、remark 会写成 `<…>` 的链接,`<…>` 不是合法 CommonMark 自动链接(GFM 认的邮箱 `a@example.-om`,
+  域名段以 `-` 开头)→ 写成 `[文字](mailto:…)`(此前写 `<a@example.-om>`,重新打开成了带尖括号的文字;模糊测试找到)。
 - 就地改原文(只差打的那几个字,`milkdown-source-blocks`)与整块重写两条序列化路径结果都正确;整块重写时普通文字里的 `://` 按 remark
-  转义(`xhttps\://…`),解析回来同样是文字。
+  转义(`xhttps\://…`),解析回来同样是文字。原文件没有自动链接时,新的同文链接裸写(见 `editor-milkdown-roundtrip-style/`)。
 
 ## Specs
 
 | File | 覆盖 |
 |---|---|
-| `autolink-edit.spec.tsx` | 真实 Crepe(jsdom),就地改原文 / 整块重写各一遍:末尾 / 中间插字、删字、链接前打字(句中 / 段首)、末尾空格 / 句号、删协议、`<url>` / www. / 邮箱 / `<ftp://>`、`[文字](地址)` 不动、撤销;全角标点、逐键续写 `.cn` / `?q=1`、输入法组字;模糊测试(链接附近随机逐键插字 / 删字后,编辑器里的链接 = 保存结果重新打开的链接,`FUZZ_N` / `FUZZ_FROM` / `FUZZ_SEED`) |
+| `autolink-edit.spec.tsx` | 真实 Crepe(jsdom),就地改原文 / 整块重写各一遍:末尾 / 中间插字、删字、链接前打字(句中 / 段首)、末尾空格 / 句号、删协议、`<url>` / www. / 邮箱 / `<ftp://>`、`[文字](地址)` 不动、撤销;全角标点、逐键续写 `.cn` / `?q=1`、输入法组字;新打的网址 / www. / 邮箱、补 `:`、新段落、撤销、粘贴、只去掉链接、代码里不处理、`$`;`<…>` 不成立的同文链接;模糊测试(链接附近随机逐键插字 / 删字混合,含链接被打断后重新成形)后,编辑器里的链接 = 保存结果重新打开的链接,`FUZZ_N` / `FUZZ_FROM` / `FUZZ_SEED`) |
 | `src/__tests__/editor-milkdown-roundtrip-verbatim/roundtrip-verbatim.spec.tsx` | 模糊测试(含裸链接)装上同一插件,编辑后输出解析回来与文档相同 |
 | `tests/e2e/markdown-writing.spec.ts` | 真实 Electron:裸链接末尾打字保存后为裸链接、地址跟随 |
 | `tests/e2e/markdown-autolink-follow.spec.ts` | 真实 Electron(真实键盘 / CDP 输入法):全角标点、续写 `.cn` / `?q=1`、输入法组字「中文」后保存 |

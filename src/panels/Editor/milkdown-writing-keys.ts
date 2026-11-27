@@ -7,6 +7,8 @@
 //  - 加链接(⌘K 链接框确认 / 粘贴 URL)后光标收到链接末尾,接着输入的文字不带链接(VSCode 粘贴成格式化链接后光标在插入内容
 //    末尾;链接 mark 是 inclusive 的,不收起会替换掉链接文字、收起后不清 storedMarks 会把输入并进链接)。
 //  - 编辑自动链接(裸链接 / `<url>`,文字 = 地址)的文字 → 地址跟随文字(milkdown-autolink-follow;输入法组字结束后补判)。
+//  - 拆段(回车)落在空白前:新段段首的空格 / 制表符去掉(CommonMark 段首空白不属于内容;否则保存成 `&#x20;tail`,编辑器里
+//    却显示成空格开头)。与回车同一步撤销。全角空格(U+3000)等不是 Markdown 空白,保留。
 //  - 表格里 Tab:下一格;最后一格 → 在表格末尾加一行并进入其首格(不再由缩进插件在格内插 4 个空格)。⇧Tab:上一格;首格 → 不动。
 
 import { linkTooltipAPI, linkTooltipState } from '@milkdown/kit/component/link-tooltip';
@@ -17,7 +19,7 @@ import type { Ctx, MilkdownPlugin } from '@milkdown/kit/ctx';
 import { keydownHandler } from '@milkdown/kit/prose/keymap';
 import type { Mark, MarkType } from '@milkdown/kit/prose/model';
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@milkdown/kit/prose/state';
-import { AddMarkStep } from '@milkdown/kit/prose/transform';
+import { AddMarkStep, ReplaceStep } from '@milkdown/kit/prose/transform';
 import { createAutolinkFollower, type ParseMarkdown } from './milkdown-autolink-follow';
 import { goToNextCell, isInTable, selectedRect } from '@milkdown/kit/prose/tables';
 import type { EditorView } from '@milkdown/kit/prose/view';
@@ -103,6 +105,29 @@ function collapseConfirmedLink(ctx: Ctx, trs: readonly Transaction[], state: Edi
   return added ? collapseAfterLink(state.tr, to, type) : null;
 }
 
+/**
+ * 这批事务把文本块从中间拆开(回车:splitBlock / 列表项拆分,插入的只是块边界),拆点后紧跟空格 / 制表符,光标落在新块开头 →
+ * 新块段首这段空白的范围(state.doc 里);否则 null。拆点在块首(新块是原来的整块)不算。
+ */
+function splitLeadingSpace(trs: readonly Transaction[], state: EditorState): { from: number; to: number } | null {
+  const split = trs.some((tr) =>
+    tr.steps.some((step, i) => {
+      if (!(step instanceof ReplaceStep) || step.from !== step.to) return false;
+      const { slice } = step;
+      if (slice.openStart === 0 || slice.openEnd === 0 || slice.content.textBetween(0, slice.content.size) !== '') return false;
+      const $pos = tr.docs[i]!.resolve(step.from);
+      const after = $pos.nodeAfter;
+      return $pos.parent.isTextblock && $pos.parentOffset > 0 && !!after?.isText && /^[ \t]/.test(after.text!);
+    }),
+  );
+  if (!split) return null;
+  const { $from, empty } = state.selection;
+  if (!empty || $from.parentOffset !== 0 || !$from.parent.isTextblock || $from.parent.type.spec.code) return null;
+  const first = $from.parent.firstChild;
+  const lead = first?.isText ? /^[ \t]+/.exec(first.text!)?.[0] : undefined;
+  return lead ? { from: $from.pos, to: $from.pos + lead.length } : null;
+}
+
 const writingKeysKey = new PluginKey('continuoMarkdownWritingKeys');
 
 function createWritingKeysPlugin(ctx: Ctx): Plugin {
@@ -130,7 +155,13 @@ function createWritingKeysPlugin(ctx: Ctx): Plugin {
     },
     appendTransaction: (trs, old, state) => {
       const tr = collapseConfirmedLink(ctx, trs, state);
-      if (!tr) return follower.append(trs, old, state);
+      if (!tr) {
+        // 自动链接跟随只改 mark(位置不变),段首空白的删除并进同一事务
+        const follow = follower.append(trs, old, state);
+        const lead = splitLeadingSpace(trs, state);
+        if (!lead) return follow;
+        return (follow ?? state.tr).delete(lead.from, lead.to);
+      }
       resyncOnFocusUntil = performance.now() + 1000;
       follower.reset();
       return tr;

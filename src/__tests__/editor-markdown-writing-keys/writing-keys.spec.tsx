@@ -5,6 +5,7 @@ import React from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Crepe } from '@milkdown/crepe';
+import { undo } from '@milkdown/kit/prose/history';
 import { TextSelection } from '@milkdown/kit/prose/state';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { markdownWritingKeys, pastedUrl } from '../../panels/Editor/milkdown-writing-keys';
@@ -184,7 +185,8 @@ describe('⌘K / Ctrl+K 打开链接框', () => {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
     view.dispatch(view.state.tr.insertText(' '));
-    expect(crepe.getMarkdown()).toBe('Go <https://a.com> now\n');
+    // 原文件没有自动链接:与地址同文的链接裸写(GFM 自动链接文字,同纯文本里打的写法)
+    expect(crepe.getMarkdown()).toBe('Go https://a.com now\n');
   });
 
   it('光标在已有链接里 → 编辑该链接(框里是原地址,范围是整个链接)', async () => {
@@ -236,6 +238,55 @@ describe('表格里 Tab / ⇧Tab', () => {
     select(view, posOf(view, 'two'));
     press(view, { key: 'Tab' });
     expect(crepe.getMarkdown()).toBe('- one\n  - two\n');
+  });
+});
+
+// 第五十二轮审计 A2:在空格前回车拆段 → 新段段首空白去掉(不保存成 `&#x20;tail`)
+describe('回车拆段:新段段首空白', () => {
+  /** 光标放在 needle 之后按回车(真实按键,经 Milkdown 的段落 / 列表项 / 引用拆分)。 */
+  function enterAfter(view: EditorView, needle: string): void {
+    select(view, posOf(view, needle) + needle.length);
+    press(view, { key: 'Enter' });
+  }
+
+  it('段落:空格前回车 → 新段不以空格开头,保存不出现 `&#x20;`;一次撤销回到原样', async () => {
+    const md = 'Para with *em* BETA tail\n';
+    const { crepe, view } = await open(md);
+    enterAfter(view, 'BETA');
+    expect(view.state.doc.child(1).textContent).toBe('tail');
+    expect(view.state.selection.$from.parentOffset).toBe(0);
+    expect(crepe.getMarkdown()).toBe('Para with *em* BETA\n\ntail\n');
+    view.dispatch(view.state.tr.insertText('X'));
+    expect(crepe.getMarkdown()).toBe('Para with *em* BETA\n\nXtail\n');
+    undo(view.state, view.dispatch);
+    undo(view.state, view.dispatch);
+    expect(crepe.getMarkdown()).toBe(md);
+    // 多个空格 / 制表符一并去掉
+    const b = await open('a  \t  b\n');
+    enterAfter(b.view, 'a');
+    expect(b.crepe.getMarkdown()).toBe('a\n\nb\n');
+  });
+
+  it('列表项、引用块里拆段同样去掉', async () => {
+    const a = await open('- item one two\n');
+    enterAfter(a.view, 'one');
+    expect(a.crepe.getMarkdown()).toBe('- item one\n- two\n');
+    const b = await open('> quote x y\n');
+    enterAfter(b.view, 'x');
+    expect(b.crepe.getMarkdown()).toBe('> quote x\n>\n> y\n');
+  });
+
+  it('空格后回车:前一段段尾空格照旧(Markdown 段尾空白不显示);全角空格不是 Markdown 空白,保留;代码块里不动', async () => {
+    const a = await open('Para BETA tail\n');
+    enterAfter(a.view, 'BETA ');
+    expect(a.view.state.doc.child(1).textContent).toBe('tail');
+    const b = await open('中文\u3000后面\n');
+    enterAfter(b.view, '中文');
+    expect(b.view.state.doc.child(1).textContent).toBe('\u3000后面');
+    expect(b.crepe.getMarkdown()).toBe('中文\n\n\u3000后面\n');
+    const c = await open('```\nab  cd\n```\n');
+    enterAfter(c.view, 'ab');
+    expect(c.crepe.getMarkdown()).toBe('```\nab\n  cd\n```\n');
   });
 });
 
