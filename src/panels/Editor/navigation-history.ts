@@ -7,7 +7,9 @@
 //   且这次是用户动作(点击 / 方向键 / 打字)时先按移动前的光标补上 —— 那是用户在该视图里实际停留过的位置。程序化定位
 //  (搜索结果 / 终端链接 / 后退到未打开的文件等「打开到第 N 行」:视图刚挂载即 scrollToLine)不补,目标直接替换只记文件的
 //   当前这条(VSCode:打开到某行只记一条,后退一次即回到来处)。
-// 执行:打开 / 激活该条的文件(原组不在 → 触发窗口的编辑器组),有光标则 scrollToLine 居中并聚焦;执行期间的通知不记录。
+// - 跳转前位置:Markdown 锚点链接等程序化跳转先 recordNavigationOrigin(Markdown 编辑 / 预览按源码行记,BDD: src/__tests__/markdown-anchor-links/)。
+// 执行:打开 / 激活该条的文件(原组不在 → 触发窗口的编辑器组),有光标则 scrollToLine 居中并聚焦(Markdown 编辑 / 预览经
+// markdown-reveal-registry 按源码行定位);执行期间的通知不记录。
 // 文件删除 / 移动(onEditorPathChange)、切换工作区根 → 剔除 / 改写条目。
 // 本模块在启动路径上(editor-commands):不静态引入编辑引擎(scrollToLine 动态 import)。
 // BDD: src/__tests__/editor-navigation-history/
@@ -36,6 +38,7 @@ import { editorFileDeps } from './editor-file-deps';
 import { findEditorFileTabByPath } from './editor-tab-lookup';
 import { isImagePreviewPath } from './editor-image';
 import { EditorNavigationStack, type NavigationLocation, type NavigationSelection } from './navigation-stack';
+import { markdownViewLine, revealInMarkdown } from './markdown-reveal-registry';
 
 /** 命令 id(VSCode 同)。默认键按平台见 navigationCommandHotkeys。 */
 export const NAVIGATE_BACK_COMMAND_ID = 'workbench.action.navigateBack';
@@ -129,6 +132,32 @@ export function notifyEditorSelection(
   stack.notify({ groupId, path: tabId, selection }, navigating > 0);
 }
 
+/** 源码行 → 导航光标(Markdown 编辑 / 预览按源码行记,列取行首)。 */
+export function navigationSelectionAtLine(line: number): NavigationSelection {
+  return { line, column: 1, startLine: line };
+}
+
+/**
+ * 跳转前先记下活动编辑器当前所在的位置(⌘点击 Markdown 锚点链接等程序化跳转;转到行的 Enter 同理):CodeMirror 取光标,
+ * Markdown 编辑 / 预览取所在源码行(编辑:光标行;预览:顶部可见行)。随后的跳转目标相距 ≥ 10 行即新记一条,后退回到这里。
+ */
+export function recordNavigationOrigin(): void {
+  const s = useEditorStore.getState();
+  const groupId = s.activeGroupId;
+  const tabId = groupActiveTabIdOf(s, groupId);
+  if (tabId === null) return;
+  const tab = groupTabsOf(s, groupId).find((t) => t.id === tabId);
+  let selection: NavigationSelection | undefined;
+  if (tab && usesMilkdownEngine(tab.filePath, tab)) {
+    const line = markdownViewLine(tabId, groupId);
+    if (line !== null) selection = navigationSelectionAtLine(line);
+  } else {
+    const view = liveEditorViewOf(tabId, groupId);
+    if (view) selection = navigationSelectionOf(view.state.doc, view.state.selection);
+  }
+  if (selection) notifyEditorSelection(groupId, tabId, selection);
+}
+
 type StoreState = ReturnType<typeof useEditorStore.getState>;
 
 /** 活动编辑器变了且是用户动作(见文件头)→ 记一条(带该视图当前光标,未挂载 → 只记文件)。 */
@@ -219,7 +248,10 @@ async function openLocation(loc: NavigationLocation, fallbackGroup: string | und
   // 读盘期间用户已切到别处(openFileByPath 只在后台加入)→ 不抢焦点 / 光标
   if (!tab || groupActiveTabIdOf(after, groupId) !== tab.id) return;
   const sel = loc.selection;
-  if (sel && !isImagePreviewPath(tab.filePath) && !usesMilkdownEngine(tab.filePath, tab)) {
+  if (sel && usesMilkdownEngine(tab.filePath, tab)) {
+    // Markdown 编辑 / 预览:按源码行定位(锚点链接跳转记下的位置)
+    await revealInMarkdown(tab.id, { line: sel.line }, groupId);
+  } else if (sel && !isImagePreviewPath(tab.filePath)) {
     const view = await waitForGroupView(tab.id, groupId);
     if (view?.dom.isConnected) {
       const { scrollToLine } = await import('./scrollToLine');

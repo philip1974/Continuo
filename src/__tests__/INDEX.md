@@ -1225,6 +1225,12 @@
 
 - [`map-with-concurrency.spec.ts`](./map-with-concurrency/map-with-concurrency.spec.ts)
 
+## [Markdown 锚点链接(`#标题` / `other.md#section` / `#L10`)](./markdown-anchor-links/README.md)
+
+- [`follow-anchor-link.spec.ts`](./markdown-anchor-links/follow-anchor-link.spec.ts)
+- [`heading-ids.spec.ts`](./markdown-anchor-links/heading-ids.spec.ts)
+- [`slug-and-fragment.spec.ts`](./markdown-anchor-links/slug-and-fragment.spec.ts)
+
 ## [markdown-editor-style](./markdown-editor-style/README.md)
 
 - [`floating-viewport-clamp.spec.tsx`](./markdown-editor-style/floating-viewport-clamp.spec.tsx)

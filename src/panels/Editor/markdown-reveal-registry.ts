@@ -28,7 +28,11 @@ type Revealer = (target: MarkdownRevealTarget) => 'applied' | 'out-of-range' | n
 /** 等视图就绪的上限(同 editor-focus-registry 的待兑现期限)。 */
 export const MARKDOWN_REVEAL_TIMEOUT_MS = 5000;
 
+/** 视图当前所在的源码行(编辑:光标行;只读预览:顶部可见行);未就绪 / 已拆除 → null。 */
+type Locator = () => number | null;
+
 const revealers = new Map<string, Revealer>();
+const locators = new Map<string, Locator>();
 
 interface Request {
   readonly key: string;
@@ -58,18 +62,32 @@ function scheduleReveal(req: Request): void {
   });
 }
 
-/** 视图就绪时登记(同组同 tab 后登记者取代先登记者);返回注销函数。 */
+/**
+ * 视图就绪时登记(同组同 tab 后登记者取代先登记者);返回注销函数。locate = 视图当前所在的源码行(后退 / 前进记「跳转前位置」用,
+ * 见 navigation-history recordNavigationOrigin)。
+ */
 export function registerMarkdownReveal(
   tabId: string,
   reveal: Revealer,
   groupId: string = PRIMARY_EDITOR_GROUP_ID,
+  locate?: Locator,
 ): () => void {
   const key = keyOf(tabId, groupId);
   revealers.set(key, reveal);
+  if (locate) locators.set(key, locate);
+  else locators.delete(key);
   if (latest !== null && latest.key === key && !latest.scheduled) scheduleReveal(latest);
   return () => {
-    if (revealers.get(key) === reveal) revealers.delete(key);
+    if (revealers.get(key) === reveal) {
+      revealers.delete(key);
+      locators.delete(key);
+    }
   };
+}
+
+/** 该 tab 在组 groupId 里的 Markdown 视图当前所在的源码行;未登记 / 未就绪 → null。 */
+export function markdownViewLine(tabId: string, groupId: string): number | null {
+  return locators.get(keyOf(tabId, groupId))?.() ?? null;
 }
 
 /**
@@ -108,4 +126,5 @@ export function __resetMarkdownRevealForTest(): void {
   latest?.settle('not-mounted');
   latest = null;
   revealers.clear();
+  locators.clear();
 }

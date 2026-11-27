@@ -21,13 +21,13 @@ app 打开外链、还是不可解析(返回 null)。
 ### file — 相对 / 绝对路径
 
 绝对(`/abs/x.md`)直接用;相对(`./x.md` / `../sib/y.md` / `x.md`)以
-`currentFilePath` 所在目录为基底拼接。`#section` 后部切掉(IDE 不处理
-markdown 内锚点跳转,只到文件)。路径部分按 URL 规则做 percent-decode(`my%20notes.md` → `my notes.md`、
+`currentFilePath` 所在目录为基底拼接。`#section` 后部作为片段(fragment)带上,打开后定位到对应标题 / 行
+(见 `markdown-anchor-links`)。纯锚点 `#section` = 当前文档 + 片段。路径部分按 URL 规则做 percent-decode(`my%20notes.md` → `my notes.md`、
 `%E4%B8%AD%E6%96%87.md` → `中文.md`);非法的 percent 序列保留原样。`../` `./` 标准 normalize。
 
 ### null — 不可解析 / 不安全
 
-- 纯锚点 `#section`(本文档内导航,IDE 不接管)
+- 空片段 `#`,或纯锚点但 `currentFilePath = null`
 - 未知 / 不安全 scheme(如 `javascript:`、`tel:`、自定义 `myapp://`)
 - 相对路径但 `currentFilePath = null`(无 base,放弃)
 - 空 href

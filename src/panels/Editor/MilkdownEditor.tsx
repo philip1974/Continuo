@@ -33,6 +33,7 @@ import { registerEditorWriteBack } from './editor-writeback-registry';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { registerEditorFocus } from './editor-focus-registry';
 import { registerMarkdownReveal, type MarkdownRevealTarget } from './markdown-reveal-registry';
+import { installGithubHeadingIds } from './markdown-heading-id';
 import { useEditorGroupId } from './editor-group-context';
 import { useEditorGroupNumber } from './editor-group-number';
 import { setContentFocusHandler } from '@/lib/content-focus-target';
@@ -425,6 +426,8 @@ function CrepeEditor({
     crepe.editor.use(insertImageInputRule);
     // ⌘F 查找的高亮 / 当前匹配(装饰,不改文档)。BDD: src/__tests__/markdown-find/
     crepe.editor.use($prose(() => markdownFindPlugin));
+    // 标题 id = GitHub slug(重复加 -1 / -2),与 `#片段` 链接解析同一规则。BDD: src/__tests__/markdown-anchor-links/
+    installGithubHeadingIds(crepe.editor);
     if (readonly) crepe.setReadonly(true);
     crepeRef.current = crepe;
 
@@ -1017,6 +1020,10 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
         tabId,
         (target) => (wrapperRef.current ? position.reveal(wrapperRef.current, target) : null),
         groupId,
+        () => {
+          const anchor = wrapperRef.current ? position.anchor(wrapperRef.current) : null;
+          return anchor ? (anchor.cursorLine ?? anchor.topLine) : null;
+        },
       );
       onViewReadyRef.current?.();
     },

@@ -60,17 +60,25 @@ describe('resolveLink — 不安全 / 未知 scheme → null', () => {
 });
 
 describe('resolveLink — 锚点', () => {
-  it('纯锚点 #section → null(IDE 不接管文档内导航)', () => {
-    expect(resolveLink('#heading', '/x.md')).toBeNull();
+  it('纯锚点 #section → 当前文档 + 片段(文档内跳转,见 markdown-anchor-links);空片段 / 无当前文档 → null', () => {
+    expect(resolveLink('#heading', '/x.md')).toEqual({ kind: 'file', absPath: '/x.md', fragment: 'heading' });
+    expect(resolveLink('#', '/x.md')).toBeNull();
+    expect(resolveLink('#heading', null)).toBeNull();
   });
   // markdown 里带空格 / 非 ASCII 的文件名按 URL 规则写成 percent-encoding;不解码就会去打开字面名为
   // `my%20notes.md` 的文件。
   it.each([
     ['my%20notes.md', '/work/docs/my notes.md'],
     ['%E4%B8%AD%E6%96%87.md', '/work/docs/中文.md'],
-    ['sub/a%20b.md#sec', '/work/docs/sub/a b.md'],
   ])('percent-encoded 路径 %s → 解码后的文件路径', (href, absPath) => {
     expect(resolveLink(href, '/work/docs/index.md')).toEqual({ kind: 'file', absPath });
+  });
+  it('percent-encoded 路径带片段:路径解码,片段原样带上(打开后再解码比较)', () => {
+    expect(resolveLink('sub/a%20b.md#%E5%AE%89%E8%A3%85', '/work/docs/index.md')).toEqual({
+      kind: 'file',
+      absPath: '/work/docs/sub/a b.md',
+      fragment: '%E5%AE%89%E8%A3%85',
+    });
   });
 
   it('非法的 percent 序列(如 100%.md)→ 保留原样,不抛', () => {
@@ -80,11 +88,13 @@ describe('resolveLink — 锚点', () => {
     });
   });
 
-  it('file.md#section → file,锚点切掉', () => {
+  it('file.md#section → file + 片段(打开后定位,见 markdown-anchor-links);`file.md#` 空片段 → 只打开', () => {
     expect(resolveLink('./other.md#sec', '/work/x.md')).toEqual({
       kind: 'file',
       absPath: '/work/other.md',
+      fragment: 'sec',
     });
+    expect(resolveLink('./other.md#', '/work/x.md')).toEqual({ kind: 'file', absPath: '/work/other.md' });
   });
 });
 

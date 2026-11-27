@@ -2,8 +2,9 @@
 //
 // 给定 link 的 href + 当前文件绝对路径,判定:
 //   - external:已知安全 protocol(http/https/mailto),走系统默认 app
-//   - file:相对 / 绝对路径(**无 scheme**),在 IDE 内 editor 打开
-//   - null:纯锚点 / 未知或不安全 scheme(含 file:)/ 无 base 解相对
+//   - file:相对 / 绝对路径(**无 scheme**),在 IDE 内 editor 打开;带 `#片段` 时 fragment = 片段(未解码),
+//     打开后定位到对应标题 / 行(见 markdown-fragment);纯锚点 `#片段` = 当前文档 + 片段
+//   - null:空片段 `#` / 未知或不安全 scheme(含 file:)/ 无 base 解相对
 //
 // 见 issue #25。安全:javascript: / tel: / 自定义 scheme 一律 null,防恶意
 // markdown 通过 [text](javascript:...) 在主进程触发任意 protocol handler。
@@ -27,7 +28,7 @@ import {
 } from '@/lib/path-cross';
 
 export type LinkTarget =
-  | { kind: 'file'; absPath: string }
+  | { kind: 'file'; absPath: string; fragment?: string }
   | { kind: 'external'; url: string };
 
 // 边界(E179):href 长度上限。Markdown 链接 href 来自(可能恶意/损坏的)文件内容,非经 IPC schema。
@@ -164,8 +165,12 @@ export function resolveLink(
   // (两分支较大者)直接拒,不进任何后续 O(n)/IPC 处理。
   if (href.length > MAX_FILE_LINK_LEN) return null;
 
-  // 纯锚点(本文档内导航)— IDE 不接管
-  if (href.startsWith('#')) return null;
+  // 纯锚点:本文档内导航(BDD: src/__tests__/markdown-anchor-links/)
+  if (href.startsWith('#')) {
+    const fragment = href.slice(1);
+    if (!fragment || !currentFilePath) return null;
+    return { kind: 'file', absPath: currentFilePath, fragment };
+  }
 
   // protocol 链接(先排除 Windows 盘符/UNC 绝对路径,它们不是 URL scheme)
   if (!isAbsolutePath(href) && hasAnyScheme(href)) {
@@ -178,9 +183,10 @@ export function resolveLink(
     return null;
   }
 
-  // 切掉 #section,只留路径部分
+  // `#片段` 与路径分开:路径打开文件,片段打开后定位
   const hashIdx = href.indexOf('#');
   const rawPathPart = hashIdx >= 0 ? href.slice(0, hashIdx) : href;
+  const fragment = hashIdx >= 0 ? href.slice(hashIdx + 1) : '';
   if (!rawPathPart) return null;
   // markdown 链接是 URL:带空格 / 非 ASCII 的文件名写成 percent-encoding,打开文件前要解码。
   // 非法序列(字面的 `%`)会让 decodeURIComponent 抛 → 保留原样。
@@ -214,5 +220,5 @@ export function resolveLink(
       return null;
     }
   }
-  return { kind: 'file', absPath: resolved };
+  return fragment ? { kind: 'file', absPath: resolved, fragment } : { kind: 'file', absPath: resolved };
 }

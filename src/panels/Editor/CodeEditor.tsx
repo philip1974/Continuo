@@ -65,6 +65,7 @@ import { registerEditorFocus } from './editor-focus-registry';
 import { useEditorGroupId } from './editor-group-context';
 import { applySourceModeAnchor, sourceModeAnchor } from './codemirror-mode-anchor';
 import { navigationHistoryExtension } from './codemirror-navigation-history';
+import { markdownLinkClickExtension } from './codemirror-markdown-links';
 import { lastSeparatorIndex } from '@/lib/path-cross';
 import { detectLineEnding } from './editor-encoding';
 
@@ -75,6 +76,8 @@ interface CodeEditorProps {
   fileName?: string;
   /** 强制按 markdown 高亮(高于 fileName 推断;Markdown 的 Source mode 用). */
   forceLanguage?: 'markdown';
+  /** Markdown 源码模式 Cmd/Ctrl+click 链接 → 地址(见 codemirror-markdown-links;未给 → 不处理)。 */
+  onLinkClick?: (href: string) => void;
 }
 
 export function fileExtensionLower(fileName: string): string | undefined {
@@ -252,11 +255,14 @@ export function CodeEditor({
   onChange,
   fileName = '',
   forceLanguage,
+  onLinkClick,
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onLinkClickRef = useRef(onLinkClick);
+  onLinkClickRef.current = onLinkClick;
   const langCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
   // 内建文案(⌘F 查找面板等)随界面语言:语言切换时 reconfigure,不重建编辑器(BDD: src/__tests__/editor-find-i18n/)。
@@ -346,6 +352,8 @@ export function CodeEditor({
       debugDecorationsExtension(),
       // 选区变化 → 后退 / 前进的导航记录(BDD: src/__tests__/editor-navigation-history/)
       navigationHistoryExtension(tabId, groupId),
+      // Markdown 源码模式 Cmd/Ctrl+click 链接跳转(含 `#标题` 锚点;BDD: src/__tests__/markdown-anchor-links/)
+      markdownLinkClickExtension(() => onLinkClickRef.current),
       EditorView.updateListener.of((update: ViewUpdate) => {
         if (
           update.docChanged &&

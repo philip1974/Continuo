@@ -52,6 +52,7 @@ import { editorFileDeps, saveAsDeps } from './editor-file-deps';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { NO_ACTIVE_TAB, useEditorFile } from './useEditorFile';
 import { resolveLink } from './link-resolve';
+import { followMarkdownLink } from './markdown-link-follow';
 import { startDebugDecorationSync } from './decorations/debug-decoration-sync';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
@@ -272,20 +273,23 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
 
   const { saveActive, saveTab, openFileByPath } = useEditorFile();
 
-  // markdown link 点击路由(issue #25):Cmd/Ctrl+click on <a> → MilkdownEditor
-  // 上抛 href → 这里用 resolveLink 决定走 IDE 内打开还是系统外链。
-  // 相对路径以当前 activeTab.filePath 所在目录为基底。
+  // markdown link 点击路由(issue #25):Cmd/Ctrl+click on <a> → MilkdownEditor(源码模式:CodeEditor 里 Cmd/Ctrl+click
+  // 链接)上抛 href → 这里用 resolveLink 决定走 IDE 内打开还是系统外链。
+  // 相对路径以当前 activeTab.filePath 所在目录为基底;`#片段` 打开后定位到标题 / 行(BDD: src/__tests__/markdown-anchor-links/)。
   const handleLinkClick = useCallback(
     (href: string) => {
-      const target = resolveLink(href, activeTab?.filePath ?? null);
+      const currentPath = activeTab?.filePath ?? null;
+      const target = resolveLink(href, currentPath);
       if (!target) return;
       if (target.kind === 'file') {
         // a11y(A127,A117 同族):本地文件链接打开须检查 FileOpResult.ok + catch reject,否则
         // 目标文件不存在/读取失败时无 toast/live 反馈,用户只感知链接「没反应」(同外链分支)。
         // 失败提示与 Explorer / Quick Open 一致:「打开失败 <文件名>: <按 code 本地化的原因>」。
         const name = basenameForChrome(target.absPath);
-        void openFileOrNotify(() => openFileByPath(target.absPath), name, undefined, (encoding) =>
-          openFileByPath(target.absPath, { encoding }),
+        void followMarkdownLink(target.absPath, target.fragment, currentPath, () =>
+          openFileOrNotify(() => openFileByPath(target.absPath), name, undefined, (encoding) =>
+            openFileByPath(target.absPath, { encoding }),
+          ),
         );
       } else {
         // a11y(A117,A50/A116 同族):外链打开须检查 IpcResult.ok + catch reject,否则 URL 被
@@ -733,7 +737,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         tabId={activeTab.id}
         value={activeTab.content}
         fileName={activeTab.filePath}
-        {...(activeIsMarkdown ? { forceLanguage: 'markdown' as const } : {})}
+        {...(activeIsMarkdown ? { forceLanguage: 'markdown' as const, onLinkClick: handleLinkClick } : {})}
         onChange={(v) => updateContent(activeTab.id, v)}
       />
     );
