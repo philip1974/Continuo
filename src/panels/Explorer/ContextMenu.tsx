@@ -5,6 +5,7 @@ import { ExplorerVisibleContext } from './visibility';
 import { createMenuFocusRestore, type MenuFocusRestore } from './menu-close-focus';
 import type { FileEntry } from '@/lib/fs/types';
 import { useT } from '@/i18n';
+import { CONTEXT_MENU_CONTENT_CLASS_NAME } from '@/lib/menu-surface';
 import {
   filterVisible,
   isExplorerContextMenuItemVisible,
@@ -74,10 +75,6 @@ interface ContextMenuProps {
 }
 
 const sepCls = 'my-1 h-px bg-line';
-
-// 与 DropdownMenu(src/lib/dropdown-menu.tsx)同一浮层外观:panel 底 + line 描边 + shadow-popover(两主题各有取值)。
-const contentCls =
-  'min-w-[180px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-popover outline-none';
 
 interface CtxItemProps {
   readonly onSelect: () => void;
@@ -258,7 +255,7 @@ function ContextMenuContent({
   return (
     <Menu.Portal>
       <Menu.Content
-        className={contentCls}
+        className={CONTEXT_MENU_CONTENT_CLASS_NAME}
         collisionPadding={8}
         // a11y(A27):默认保留 Radix 关闭后焦点还原(Esc / 普通项关闭 → 焦点回触发行,键盘可用)。
         // 仅「新建/重命名」一次性跳过还原 —— 它们随后打开 CreateInput/RenameInput 并 rAF

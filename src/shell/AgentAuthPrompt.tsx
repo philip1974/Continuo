@@ -217,7 +217,7 @@ function AgentAuthPromptBody({
       </div>
       {/* 「尚未生效」提示的常驻 status 区域放在按钮上方(占说明与按钮之间的间距),底部不多出空白。 */}
       <PromptGrantHint guard={guard} />
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={deny}>
           {t('permissions.agent.deny')}
         </Button>

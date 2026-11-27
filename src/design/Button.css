@@ -5,6 +5,9 @@
   align-items: center;
   justify-content: center;
   gap: var(--wm-space-2);
+  /* 标签单行:容器窄时由调用方的布局换行 / 横向滚动 / 截断,按钮自身不被挤成逐字竖排(VSCode .monaco-text-button 只设
+   * overflow-wrap: normal,对英文够用,CJK 标签仍会逐字断行)。需要截断的长标签在内层放 truncate 的 span(如 EditorWelcome)。 */
+  white-space: nowrap;
   border-radius: 4px;
   font-family: var(--wm-font-sans);
   font-weight: var(--wm-font-normal);

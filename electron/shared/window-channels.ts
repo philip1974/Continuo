@@ -77,6 +77,13 @@ export const WINDOW_CHANNELS = {
   LIST_WINDOWS: 'window:list-windows',
   /** 切换窗口选中后聚焦该窗口(payload `{ id }`;只限 LIST_WINDOWS 会列出的窗口,最小化的先还原)。 */
   FOCUS_WINDOW: 'window:focus-window',
+  /**
+   * renderer → main(invoke,payload `{}`):发起方所在窗口当前是否全屏(返回 boolean)。macOS 标题栏非全屏时给红绿灯留位,
+   * 全屏时红绿灯隐藏、不留(VSCode `.monaco-workbench.fullscreen` 隐藏 window-controls-container)。BDD: src/__tests__/title-bar/
+   */
+  IS_FULL_SCREEN: 'window:is-full-screen',
+  /** main → renderer:主窗口进入 / 退出全屏(payload boolean = 现在是否全屏)。 */
+  FULL_SCREEN_CHANGED: 'window:full-screen-changed',
 } as const;
 
 /** 切换窗口列表的一项(window:list-windows)。 */

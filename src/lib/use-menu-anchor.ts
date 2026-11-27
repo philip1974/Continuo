@@ -7,10 +7,13 @@
 
 import { useLayoutEffect, useState } from 'react';
 import type React from 'react';
+import { menuMaxHeightBelow } from './menu-surface';
 
 export interface MenuAnchor {
   readonly top: number;
   readonly right: number;
+  /** 菜单最大高度:顶边到视口底边(留边距),矮窗口里菜单内滚动而不是伸出窗口。 */
+  readonly maxHeight: number;
 }
 
 export function useMenuAnchor(
@@ -24,7 +27,10 @@ export function useMenuAnchor(
     const win = triggerRef.current?.ownerDocument.defaultView ?? window;
     const update = (): void => {
       const r = triggerRef.current?.getBoundingClientRect();
-      if (r) setAnchor({ top: r.bottom + 4, right: win.innerWidth - r.right });
+      if (r) {
+        const top = r.bottom + 4;
+        setAnchor({ top, right: win.innerWidth - r.right, maxHeight: menuMaxHeightBelow(top, win.innerHeight) });
+      }
     };
     update();
     win.addEventListener('resize', update);

@@ -32,9 +32,16 @@
 
 ### 窄窗口让位(同 VSCode)
 
-- 显示宽度 = clamp(`SIDEBAR_MIN_WIDTH`, `sidebarWidth`, 侧栏可用宽 − `EDITOR_MIN_WIDTH`);可用宽 = 窗口宽 − 侧栏左边缘,
-  监听窗口 resize 重算。`EDITOR_MIN_WIDTH` = 220,取 VSCode 编辑区最小宽度(`DEFAULT_EDITOR_MIN_DIMENSIONS.width`)
+- 显示宽度 = clamp(`SIDEBAR_MIN_WIDTH`, `sidebarWidth`, 侧栏可用宽 − max(`EDITOR_MIN_WIDTH`, dock 网格最小宽));可用宽 =
+  窗口宽 − 侧栏左边缘,监听窗口 resize 与 dock 布局变化重算。`EDITOR_MIN_WIDTH` = 220,取 VSCode 编辑区最小宽度
+  (`DEFAULT_EDITOR_MIN_DIMENSIONS.width`);dock 网格最小宽读 dockview `DockviewApi.minimumWidth`(并排的组相加、叠放的取大,
+  组默认 100,另设约束的组按其约束)—— 读实际值,不写死组数 × 100
 - 窗口窄到放不下侧栏最小宽 + 编辑区最小宽时,侧栏停在最小宽(不再继续缩)
+- 侧栏缩到最小宽后 dock 网格仍放不下(可用宽 − `SIDEBAR_MIN_WIDTH` < dock 最小宽,如 400 宽窗口里两组并排)→ 侧栏收起
+  (`sidebarOpen=false`,同 ⌘B 隐藏:侧栏里的焦点交给活动 dock 面板),最右的组与其「⋯ / 弹出」按钮不被裁到窗口外。
+  对应 VSCode 侧栏 snap(`SidebarPart.snap = true`:放不下最小宽 170 时整个收起;VSCode 窗口缩放本身不收起侧栏,网格按最小宽
+  溢出 —— 这里把 snap 用到窗口缩放上)。只在「放得下 → 放不下」的变化时收起:用户在窄窗口里再打开侧栏不会被立刻收回;
+  单组时 dock 最小宽 100,400 宽窗口仍保留最小宽侧栏(e2e `explorer-sidebar-narrow-window`)
 - 保存的 `sidebarWidth` 不因窗口变窄改写,窗口放大后恢复
 - separator `aria-valuemax` / `aria-valuenow` 为有效上限 / 显示宽度;键盘与拖拽以显示宽度为起点、有效上限为上限
 - 规范:`explorer-sidebar-window-clamp.spec.tsx`

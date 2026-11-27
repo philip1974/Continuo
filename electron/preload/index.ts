@@ -561,6 +561,13 @@ const api = {
      * 收到 resize。macOS 标题栏据此反向缩放,保持与原生红绿灯等高(VSCode titlebarPart counter-zoom)。
      */
     getZoomFactor: (): number => webFrame.getZoomFactor(),
+    /** 本窗口当前是否全屏(macOS 标题栏非全屏时给红绿灯留位)。 */
+    isFullScreen: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke(WINDOW_CHANNELS.IS_FULL_SCREEN, {}),
+    /** 订阅本窗口进入 / 退出全屏(参数 = 现在是否全屏;非 boolean 的畸形推送丢弃);返回 unsubscribe。 */
+    onFullScreenChange: (cb: (fullScreen: boolean) => void): (() => void) =>
+      subscribeIpc(WINDOW_CHANNELS.FULL_SCREEN_CHANGED, (_event, payload: unknown) => {
+        if (typeof payload === 'boolean') cb(payload);
+      }),
     /** 关闭本窗口(经 main win.close(),走关窗脏确认)。⌘W 已无可关的编辑器 / 面板时调用(对齐 VSCode)。 */
     close: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.CLOSE, {}),
     /** 激活本窗口(主窗 renderer 把面板 / 选择器打开在主窗、而系统焦点在 popout 子窗时调用)。 */

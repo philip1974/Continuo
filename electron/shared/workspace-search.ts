@@ -21,8 +21,10 @@ export const SEARCH_MAX_FILE_BYTES = 1024 * 1024;
 export const SEARCH_MAX_FILES = 50_000;
 /** 预览行最长字符数。 */
 export const SEARCH_PREVIEW_MAX = 250;
-/** 命中前保留的上下文字符数(更前的截掉并加「…」)。 */
-export const SEARCH_PREVIEW_LEAD = 30;
+/** 命中前至少保留的上下文字符数(VSCode Match.preview 的 `lcut(before, 26, '…')`:更前的按词边界截掉并加「…」)。 */
+export const SEARCH_PREVIEW_LEAD = 26;
+/** 按词边界截后命中前文仍超过该长度(长串无词边界,如整行 CJK / base64)→ 按码点硬截到末 SEARCH_PREVIEW_LEAD 个字符。 */
+export const SEARCH_PREVIEW_BEFORE_MAX = 125;
 /** 结果分批推送的时间窗(ms)。 */
 export const SEARCH_BATCH_MS = 50;
 /** done 事件里报告的「因过大跳过」文件路径数上限(总数另报 skippedLargeCount)。 */
@@ -167,17 +169,42 @@ export function matchSearchText(text: string, regex: RegExp, budget: number): { 
   return { matches, more: false };
 }
 
-function makeMatch(line: string, lineNo: number, index: number, length: number): SearchMatch {
-  // 预览:去行首空白;命中前超过 SEARCH_PREVIEW_LEAD 个字符 → 从命中前 LEAD 处截起并加「…」;最长 SEARCH_PREVIEW_MAX。
-  let from = 0;
-  while (from < index && (line.charCodeAt(from) === 32 || line.charCodeAt(from) === 9)) from += 1;
-  let prefix = '';
-  if (index - from > SEARCH_PREVIEW_LEAD) {
-    from = index - SEARCH_PREVIEW_LEAD;
-    prefix = '…';
+/**
+ * VSCode strings.lcut(原样照抄语义):去前导空白;不足 n 个字符原样返回;否则在「保留至少 n 个字符」的最后一个词边界(`\b`)处
+ * 截掉前文、加 prefix 并再去前导空白;找不到可截的词边界 → 原样返回。`\b` 两侧必有 ASCII 单词字符,截点不会落在代理对中间。
+ */
+export function lcut(text: string, n: number, prefix = ''): string {
+  const trimmed = text.trimStart();
+  if (trimmed.length < n) return trimmed;
+  const re = /\b/g;
+  let i = 0;
+  while (re.test(trimmed)) {
+    if (trimmed.length - re.lastIndex < n) break;
+    i = re.lastIndex;
+    re.lastIndex += 1;
   }
-  const preview = prefix + line.slice(from, from + SEARCH_PREVIEW_MAX);
-  const previewStart = prefix.length + index - from;
+  if (i === 0) return trimmed;
+  return prefix + trimmed.substring(i).trimStart();
+}
+
+const isLowSurrogate = (c: number) => c >= 0xdc00 && c <= 0xdfff;
+const isHighSurrogate = (c: number) => c >= 0xd800 && c <= 0xdbff;
+
+/** 命中前文(VSCode Match.preview):lcut 按词边界截到约 SEARCH_PREVIEW_LEAD 字符;仍过长(无词边界)按码点硬截。 */
+function previewBefore(fullBefore: string): string {
+  const before = lcut(fullBefore, SEARCH_PREVIEW_LEAD, '…');
+  if (before.length <= SEARCH_PREVIEW_BEFORE_MAX) return before;
+  let from = before.length - SEARCH_PREVIEW_LEAD;
+  if (isLowSurrogate(before.charCodeAt(from))) from -= 1; // 不拆代理对(emoji / 扩展区汉字)
+  return '…' + before.slice(from);
+}
+
+function makeMatch(line: string, lineNo: number, index: number, length: number): SearchMatch {
+  // 预览 = 前文(去前导空白、按词边界截掉过长部分并加「…」)+ 命中 + 后文,总长封顶 SEARCH_PREVIEW_MAX(VSCode MAX_PREVIEW_CHARS)。
+  const before = previewBefore(line.slice(0, index));
+  let preview = before + line.slice(index, index + SEARCH_PREVIEW_MAX - before.length);
+  if (isHighSurrogate(preview.charCodeAt(preview.length - 1))) preview = preview.slice(0, -1); // 封顶处不留半个代理对
+  const previewStart = before.length;
   return {
     line: lineNo,
     column: index + 1,

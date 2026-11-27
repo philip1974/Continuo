@@ -55,3 +55,18 @@ export function dirChangeTouchesFile(
     pathEquals(dirname(p), changedDir) && (names === null || names.has(foldName(basename(p))));
   return hit(filePath) || (realPath !== undefined && hit(realPath));
 }
+
+/**
+ * 差异视图宽度 ≤ 该值时改单栏内联显示(VSCode diffEditor.useInlineViewWhenSpaceIsLimited 默认开 +
+ * renderSideBySideInlineBreakpoint 默认 900,判定 `width <= breakpoint`)。
+ */
+export const CONFLICT_DIFF_INLINE_BREAKPOINT = 900;
+
+/** 左右并排(MergeView)/ 单栏内联(unifiedMergeView)。 */
+export type ConflictDiffLayout = 'split' | 'unified';
+
+/** 按差异区宽度选布局;宽度未知(0:尚未布局 / 所在 dock tab 隐藏)→ 保持当前布局。 */
+export function conflictDiffLayoutFor(width: number, current: ConflictDiffLayout): ConflictDiffLayout {
+  if (!(width > 0)) return current;
+  return width <= CONFLICT_DIFF_INLINE_BREAKPOINT ? 'unified' : 'split';
+}

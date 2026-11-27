@@ -1,8 +1,10 @@
 // TDD:保存冲突差异视图的纯逻辑。见同目录 README。
 import { describe, expect, it } from 'vitest';
 import {
+  CONFLICT_DIFF_INLINE_BREAKPOINT,
   CONFLICT_DIFF_MAX_CHARS,
   chunkIndexAt,
+  conflictDiffLayoutFor,
   dirChangeTouchesFile,
   isConflictDiffTooLarge,
 } from '@/panels/Editor/conflict-diff-model';
@@ -44,5 +46,19 @@ describe('dirChangeTouchesFile', () => {
   it('别的目录不命中;符号链接按真实目标也能命中', () => {
     expect(dirChangeTouchesFile('/w/lib', undefined, '/w/src/a.ts')).toBe(false);
     expect(dirChangeTouchesFile('/real', ['t.ts'], '/w/link.ts', '/real/t.ts')).toBe(true);
+  });
+});
+
+describe('conflictDiffLayoutFor(VSCode useInlineViewWhenSpaceIsLimited,width <= 900 → 内联)', () => {
+  it('≤ 900 内联,> 900 并排', () => {
+    expect(CONFLICT_DIFF_INLINE_BREAKPOINT).toBe(900);
+    expect(conflictDiffLayoutFor(900, 'split')).toBe('unified');
+    expect(conflictDiffLayoutFor(196, 'split')).toBe('unified');
+    expect(conflictDiffLayoutFor(901, 'unified')).toBe('split');
+  });
+  it('宽度未知(0 / NaN:隐藏或尚未布局)→ 保持当前布局', () => {
+    expect(conflictDiffLayoutFor(0, 'split')).toBe('split');
+    expect(conflictDiffLayoutFor(0, 'unified')).toBe('unified');
+    expect(conflictDiffLayoutFor(Number.NaN, 'unified')).toBe('unified');
   });
 });

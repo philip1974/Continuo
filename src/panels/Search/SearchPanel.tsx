@@ -7,7 +7,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useShallow } from 'zustand/react/shallow';
-import { Badge, IconButton, Input } from '@/design';
+import { Badge, IconButton, Input, TruncateStart } from '@/design';
 import { isImeComposing } from '@/design/ime';
 import { translateCount, useT } from '@/i18n';
 import { matchFindOptionHotkey, type FindOption } from '@/lib/find-options';
@@ -45,6 +45,7 @@ const STORE_OPTION: Readonly<Record<FindOption, 'matchCase' | 'wholeWord' | 'isR
 };
 const CHEVRON_ICON = <ChevronDownIcon size={14} />;
 const DETAILS_ICON = <MoreActionsIcon size={14} />;
+const PRE_STYLE = { whiteSpace: 'pre' } as const;
 
 type Row =
   | { readonly kind: 'file'; readonly key: SearchRowKey; readonly file: SearchFileResult; readonly collapsed: boolean }
@@ -399,10 +400,15 @@ export function SearchPanel() {
                     activate(row, e.detail < 2);
                   }}
                 >
-                  <span className="min-w-0 truncate whitespace-pre font-mono">
-                    {m.preview.slice(0, m.previewStart)}
-                    <mark className={PICKER_MATCH_CLASS_NAME}>{m.preview.slice(m.previewStart, m.previewStart + m.previewLength)}</mark>
-                    {m.preview.slice(m.previewStart + m.previewLength)}
+                  {/* 预览用 UI 比例字体(VSCode .linematch 不设 font-family,继承工作台字体)。命中前文已按词边界截短
+                      (workspace-search previewBefore);行仍放不下时先截后文(收缩权重大)、再从左侧截前文(TruncateStart,
+                      省略号在左),命中词始终可见,过长的命中自身在末尾截断。white-space 用内联样式保留行内连续空白。 */}
+                  <span className="flex min-w-0 whitespace-pre" data-search-preview="">
+                    <TruncateStart text={m.preview.slice(0, m.previewStart)} title={m.preview} style={PRE_STYLE} data-preview-before="" />
+                    <mark className={`${PICKER_MATCH_CLASS_NAME} max-w-full shrink-0 truncate`}>
+                      {m.preview.slice(m.previewStart, m.previewStart + m.previewLength)}
+                    </mark>
+                    <span className="min-w-0 shrink-[1000] truncate">{m.preview.slice(m.previewStart + m.previewLength)}</span>
                   </span>
                 </div>
               );

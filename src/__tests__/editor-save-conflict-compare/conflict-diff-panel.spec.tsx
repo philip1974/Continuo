@@ -4,6 +4,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorView } from '@codemirror/view';
+import { getOriginalDoc } from '@codemirror/merge';
 import { useEditorStore } from '@/stores/editor.store';
 import { ConflictDiffPanel } from '@/panels/Editor/ConflictDiffPanel';
 import { CONFLICT_DIFF_TITLE_KEY } from '@/panels/Editor/conflict-diff-constants';
@@ -242,6 +243,142 @@ describe('工具栏动作', () => {
     const { container } = renderPanel('/work/none.txt');
     await flush();
     expect(container.textContent).toBe('');
+  });
+});
+
+describe('窄宽单栏内联(VSCode useInlineViewWhenSpaceIsLimited,宽 ≤ 900)', () => {
+  // jsdom 无布局:差异区宽度由测试给,ResizeObserver 回调手动触发
+  let width = 0;
+  const observers: Array<() => void> = [];
+  const realRect = Element.prototype.getBoundingClientRect;
+  const realRO = globalThis.ResizeObserver;
+  beforeEach(() => {
+    width = 0;
+    observers.length = 0;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this instanceof HTMLElement && this.hasAttribute('data-conflict-diff-body')) return new DOMRect(0, 0, width, 500);
+      return realRect.call(this);
+    };
+    globalThis.ResizeObserver = class {
+      private readonly cb: () => void;
+      constructor(cb: () => void) {
+        this.cb = cb;
+      }
+      observe() {
+        observers.push(this.cb);
+      }
+      unobserve() {}
+      disconnect() {
+        const i = observers.indexOf(this.cb);
+        if (i >= 0) observers.splice(i, 1);
+      }
+    } as unknown as typeof ResizeObserver;
+  });
+  afterEach(() => {
+    Element.prototype.getBoundingClientRect = realRect;
+    globalThis.ResizeObserver = realRO;
+  });
+  const resize = (w: number) =>
+    act(() => {
+      width = w;
+      for (const cb of [...observers]) cb();
+    });
+
+  it('宽 ≤ 900:单个可编辑编辑器 = 你的版本,磁盘版本被改掉的行以只读块显示;标题合成一行;导航照常', async () => {
+    width = 600;
+    renderPanel();
+    await flush();
+    expect(document.querySelector('.cm-mergeView')).toBeNull();
+    expect(document.querySelector('.cm-merge-a')).toBeNull();
+    expect(docOf('b')).toBe(MINE);
+    expect(viewOf('b').state.readOnly).toBe(false);
+    expect(getOriginalDoc(viewOf('b').state).toString()).toBe(DISK);
+    expect(side('b').querySelector('.cm-deletedChunk')!.textContent).toContain('beta');
+    // 无逐块接受 / 拒绝按钮(动作只在工具栏)
+    expect(side('b').querySelector('.cm-chunkButtons')).toBeNull();
+    expect(side('b').querySelector('.cm-content')!.getAttribute('aria-label')).toBe('conflict.txt（你的版本），编辑器');
+    expect(screen.getByText('2 处差异')).toBeTruthy();
+    expect(document.querySelector('[data-conflict-diff-sides]')!.textContent).toBe(
+      `${t('panels.editor.conflict_diff.disk_side', { name: 'conflict.txt' })} ↔ ${t('panels.editor.conflict_diff.mine_side', { name: 'conflict.txt' })}`,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: t('panels.editor.conflict_diff.next') }));
+    });
+    expect(mocks.announce).toHaveBeenLastCalledWith('第 1 处差异，共 2 处，第 2 行', expect.anything());
+  });
+
+  it('宽度跨过阈值随之切换:你的版本内容(含未保存输入)/ 光标 / 焦点不丢,磁盘版本不变', async () => {
+    width = 1200;
+    renderPanel();
+    await flush();
+    expect(document.querySelector('.cm-mergeView')).not.toBeNull();
+    act(() => {
+      viewOf('b').dispatch({ changes: { from: 0, insert: 'typed\n' }, selection: { anchor: 3 } });
+      viewOf('b').focus();
+    });
+    resize(700);
+    expect(document.querySelector('.cm-mergeView')).toBeNull();
+    expect(docOf('b')).toBe(`typed\n${MINE}`);
+    expect(viewOf('b').state.selection.main.head).toBe(3);
+    expect(viewOf('b').hasFocus).toBe(true);
+    expect(getOriginalDoc(viewOf('b').state).toString()).toBe(DISK);
+    // 内联时继续输入 → 原 tab
+    act(() => {
+      viewOf('b').dispatch({ changes: { from: 0, insert: 'more ' } });
+    });
+    expect(useEditorStore.getState().tabs[0]?.content).toBe(`more typed\n${MINE}`);
+    resize(1000);
+    expect(document.querySelector('.cm-mergeView')).not.toBeNull();
+    expect(docOf('a')).toBe(DISK);
+    expect(docOf('b')).toBe(`more typed\n${MINE}`);
+    expect(viewOf('b').hasFocus).toBe(true);
+    expect(useEditorStore.getState().tabs[0]?.content).toBe(`more typed\n${MINE}`);
+  });
+
+  it('宽度 0(dock tab 隐藏)不切换', async () => {
+    width = 600;
+    renderPanel();
+    await flush();
+    resize(0);
+    expect(document.querySelector('.cm-mergeView')).toBeNull();
+    expect(document.querySelector('.cm-deletedChunk')).not.toBeNull();
+  });
+
+  it('内联时磁盘再次变化 → 被删 / 改的只读块随之更新;CRLF 文档输入回写保持 CRLF', async () => {
+    setTab(PATH, 'a\r\nb\r\n');
+    mocks.readFile.mockResolvedValue({ ok: true, data: 'a\r\nOLD\r\n' });
+    width = 500;
+    renderPanel();
+    await flush();
+    expect(side('b').querySelector('.cm-deletedChunk')!.textContent).toContain('OLD');
+    mocks.readFile.mockResolvedValue({ ok: true, data: 'a\r\nNEWER\r\n' });
+    await act(async () => {
+      for (const l of [...mocks.dirListeners]) l('/work', ['conflict.txt']);
+    });
+    await flush();
+    expect(getOriginalDoc(viewOf('b').state).toString()).toBe('a\nNEWER\n');
+    expect(side('b').querySelector('.cm-deletedChunk')!.textContent).toContain('NEWER');
+    act(() => {
+      viewOf('b').dispatch({ changes: { from: 0, insert: 'x' } });
+    });
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('xa\r\nb\r\n');
+  });
+});
+
+describe('工具栏窄宽', () => {
+  it('工具栏可换行、按钮组靠右整体换到下一行;状态文字可截断;放不下时横向滚动而不是盖住代码', async () => {
+    renderPanel();
+    await flush();
+    const bar = screen.getByRole('toolbar', { name: t('panels.editor.conflict_diff.toolbar') });
+    expect(bar.className).toContain('flex-wrap');
+    expect(bar.className).toContain('overflow-x-auto');
+    expect(bar.className).not.toMatch(/(^|\s)h-9(\s|$)/);
+    const accept = screen.getByRole('button', { name: t('panels.editor.conflict_diff.accept') });
+    const group = accept.parentElement!;
+    expect(group).toContain(screen.getByRole('button', { name: t('panels.editor.conflict_diff.revert') }));
+    expect(group.className).toContain('ml-auto');
+    expect(group.className).toContain('flex-wrap');
+    expect(screen.getByText('2 处差异').className).toContain('truncate');
   });
 });
 

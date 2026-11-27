@@ -5,8 +5,23 @@ import { TitleBar } from '../../shell/TitleBar';
 import { useEditorStore } from '../../stores/editor.store';
 import { useWorkspaceStore } from '../../stores/workspace.store';
 
-const h = vi.hoisted(() => ({ zoom: vi.fn(() => 1) }));
-vi.mock('@/lib/co-api', () => ({ coApi: { window: { getZoomFactor: h.zoom } } }));
+const h = vi.hoisted(() => ({
+  zoom: vi.fn(() => 1),
+  isFullScreen: vi.fn(async () => ({ ok: true as const, data: false })),
+  fullScreenListeners: new Set<(v: boolean) => void>(),
+}));
+vi.mock('@/lib/co-api', () => ({
+  coApi: {
+    window: {
+      getZoomFactor: h.zoom,
+      isFullScreen: h.isFullScreen,
+      onFullScreenChange: (cb: (v: boolean) => void) => {
+        h.fullScreenListeners.add(cb);
+        return () => h.fullScreenListeners.delete(cb);
+      },
+    },
+  },
+}));
 
 beforeEach(() => {
   useEditorStore.setState({ tabs: [], activeTabId: null });
@@ -144,5 +159,58 @@ describe('TitleBar · macOS 界面缩放下高度不变', () => {
     });
     const again = render(<TitleBar />);
     expect(header(again.container).style.zoom).toBe('');
+  });
+});
+
+describe('TitleBar · macOS 红绿灯留位(VSCode mac window-controls-container,全屏时隐藏)', () => {
+  const setPlatform = (value: string) => Object.defineProperty(navigator, 'platform', { value, configurable: true });
+  const title = (c: HTMLElement) => c.querySelector<HTMLElement>('[data-title-text]')!;
+  const flush = () => act(async () => {});
+  afterEach(() => {
+    setPlatform('');
+    h.isFullScreen.mockResolvedValue({ ok: true, data: false });
+    h.fullScreenListeners.clear();
+  });
+  const push = (v: boolean) =>
+    act(() => {
+      for (const l of [...h.fullScreenListeners]) l(v);
+    });
+
+  it('macOS 非全屏:标题两侧各留 80px(对称居中、长标题不压红绿灯);进入全屏 → 48px,退出 → 恢复', async () => {
+    setPlatform('MacIntel');
+    useWorkspaceStore.setState({ root: `/w/${'long-name-'.repeat(20)}` });
+    const { container } = render(<TitleBar />);
+    await flush();
+    expect(title(container).className).toContain('px-20');
+    expect(title(container).className).toContain('truncate');
+    push(true);
+    expect(title(container).className).toContain('px-12');
+    expect(title(container).className).not.toContain('px-20');
+    push(false);
+    expect(title(container).className).toContain('px-20');
+  });
+
+  it('启动即全屏(查询初值)→ 不留位;推送先于迟到的初值到达时以推送为准', async () => {
+    setPlatform('MacIntel');
+    h.isFullScreen.mockResolvedValue({ ok: true, data: true });
+    const { container, unmount } = render(<TitleBar />);
+    await flush();
+    expect(title(container).className).toContain('px-12');
+    unmount();
+    let resolve!: (v: { ok: true; data: boolean }) => void;
+    h.isFullScreen.mockImplementation(() => new Promise((r) => (resolve = r)));
+    const again = render(<TitleBar />);
+    push(true);
+    await act(async () => resolve({ ok: true, data: false }));
+    expect(title(again.container).className).toContain('px-12');
+  });
+
+  it('非 macOS(原生标题栏)不留红绿灯位、不查询全屏', async () => {
+    setPlatform('Win32');
+    h.isFullScreen.mockClear();
+    const { container } = render(<TitleBar />);
+    await flush();
+    expect(title(container).className).toContain('px-12');
+    expect(h.isFullScreen).not.toHaveBeenCalled();
   });
 });

@@ -20,6 +20,14 @@
      (VSCode compareEditor.nextChange / previousChange)循环跳转,跳转后读屏播报「第 n 处差异，共 m 处，第 L 行」,无差异播报「没有差异」。
    - 读屏名称:两侧文本区「{name}（在磁盘上，只读），编辑器」/「{name}（你的版本），编辑器」;工具栏 role=toolbar 有名称。
    - 磁盘再次变化(fs:dir-changed 命中该文件,或 watcher 恢复覆盖它)→ 重读,左侧更新;读失败 → 提示原因,左侧为空。
+   - 窄宽改单栏内联(VSCode `diffEditor.useInlineViewWhenSpaceIsLimited` 默认开,`renderSideBySideInlineBreakpoint` 900):差异区宽
+     ≤ `CONFLICT_DIFF_INLINE_BREAKPOINT`(900)→ 单个可编辑编辑器 = 你的版本,磁盘版本被删 / 改掉的行以只读块显示在上方
+     (@codemirror/merge `unifiedMergeView`,无逐块接受 / 拒绝按钮);宽度跨过阈值时随之切换(宽度为 0 = 隐藏 / 未布局 → 不切换)。
+     切换只重建视图:你的版本内容(含未保存修改)、CRLF、光标位置不变,原先在差异编辑器里的焦点留在「你的版本」;磁盘版本更新、
+     差异导航与读屏播报、接受 / 使用磁盘版本在两种布局下行为一致。两栏标题在内联时合成一行「磁盘 ↔ 你的版本」。
+     (偏离:VSCode 拖动分隔条从窄拉宽时保持内联,这里只按宽度判定;VSCode 读屏模式下不自动内联,这里不区分。)
+   - 工具栏窄时换行(按钮组整体靠右,仍放不下再横向滚动),按钮文字不换行(设计层 Button `white-space: nowrap`)、不盖住代码;
+     状态文字截断。
    - Markdown 按源码文本比较(markdown 高亮,不进 Milkdown)。
    - 两侧合计超过 `CONFLICT_DIFF_MAX_CHARS` → 不计算差异,显示提示;接受 / 使用磁盘版本仍可用。差异计算另有单次超时上限。
 4. 动作(工具栏按钮 + 命令面板命令 `workbench.files.action.acceptLocalChanges` / `workbench.files.action.revertLocalChanges`,
@@ -43,8 +51,8 @@
 |---|---|
 | `src/panels/Editor/conflict-diff-constants.ts` | 面板 type / id / params |
 | `src/panels/Editor/conflict-compare.ts` | 打开差异 tab、接受 / 放弃、原 tab 关闭时自动关闭、命令 |
-| `src/panels/Editor/conflict-diff-model.ts` | 纯逻辑:大小上限、差异块定位、dir-changed 命中 |
-| `src/panels/Editor/ConflictDiffPanel.tsx` | 差异视图(MergeView)与工具栏 |
+| `src/panels/Editor/conflict-diff-model.ts` | 纯逻辑:大小上限、差异块定位、dir-changed 命中、宽度 → 布局 |
+| `src/panels/Editor/ConflictDiffPanel.tsx` | 差异视图(MergeView / unifiedMergeView)与工具栏 |
 | `src/panels/Editor/EditorPanel.tsx` / `src/lib/ConfirmDialog.tsx` | 冲突确认框的「比较」按钮(extraActions) |
 | `src/shell/dock/strip-terminal-layout.ts` | 布局持久化剥离 |
 | `src/shell/dock/useDockLocaleSync.ts` | 标题 titleArgs |
@@ -54,3 +62,4 @@
 | `conflict-diff-persistence.spec.ts` | 契约 2(标题随语言)、6 |
 | `conflict-diff-model.spec.ts` | 纯逻辑单元(TDD) |
 | `tests/e2e/editor-save-conflict-compare.spec.ts` | 真实 Electron:冲突 → 比较 → 内容正确 → 接受 / 使用磁盘;Markdown 比较 |
+| `tests/e2e/conflict-diff-narrow.spec.ts` | 真实 Electron:窄窗口两组 → 内联、工具栏不溢出;拉宽 → 并排,内容不丢 |

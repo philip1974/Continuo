@@ -197,6 +197,13 @@ describe('结果树与计数', () => {
     const mark = items[1]!.querySelector('mark')!;
     expect(mark.textContent).toBe('foo');
     expect(mark.className).toContain('text-list-highlight');
+    // 预览用 UI 比例字体(VSCode .linematch 不设等宽);放不下时先截后文(收缩权重大)、再从左截前文,命中不收缩
+    const preview = items[1]!.querySelector<HTMLElement>('[data-search-preview]')!;
+    expect(preview.className).not.toContain('font-mono');
+    expect(items[1]!.querySelector('.font-mono')).toBeNull();
+    expect(preview.querySelector('[data-preview-before]')!.className).toContain('wm-truncate-start');
+    expect(mark.className).toContain('shrink-0');
+    expect(mark.nextElementSibling!.className).toContain('shrink-[1000]');
     expect(screen.getByRole('status').textContent).toBe('2 个文件中有 3 个结果');
     act(() => {
       setLocale('en');

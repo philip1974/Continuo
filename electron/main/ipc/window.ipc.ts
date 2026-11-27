@@ -27,7 +27,7 @@ import {
 } from '../persistence';
 import { EXPLORER_FILE_NAME } from '../../shared/explorer-persistence-schema';
 import { EXPLORER_CHANNELS } from '../../shared/persistence-channels';
-import { broadcastToWindows } from '../lib/broadcast';
+import { broadcastToWindows, sendToWindow } from '../lib/broadcast';
 import { seedWindowFromWorkspaceSnapshot } from '../services/workspace-snapshot.service';
 import {
   clearWindow as clearWindowRoot,
@@ -229,6 +229,7 @@ function switchWindows(current: BrowserWindow | null): { entries: WindowSwitchEn
 
 const CloseInput = z.object({}).strict();
 const FocusInput = z.object({}).strict();
+const IsFullScreenInput = z.object({}).strict();
 const RelaunchInput = z.object({}).strict();
 // popoutName:命令在 dockview popout 子窗里触发(renderer 的命令窗口是子窗)→ 作用于发起方打开的、以此为 window.open 名的子窗。
 const ViewActionInput = z
@@ -352,6 +353,12 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
   safeHandle(WINDOW_CHANNELS.SET_MENU_CHECKED, SetMenuCheckedInput, (input) => {
     if (setMenuChecked(input.checked)) deps.rebuildAppMenu();
   });
+  // 发起方所在窗口是否全屏(macOS 标题栏据此决定是否给红绿灯留位;之后的变化由 wireFullScreenNotify 推送)。
+  safeHandleWithCtx(WINDOW_CHANNELS.IS_FULL_SCREEN, IsFullScreenInput, (_input, { event }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
+    return win.isFullScreen();
+  });
   // 激活发起方所在窗口(主窗 renderer 把面板 / 选择器打开在主窗、而系统焦点在 popout 子窗时 → 焦点随之进主窗)。
   safeHandleWithCtx(WINDOW_CHANNELS.FOCUS, FocusInput, (_input, { event }) => {
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -385,4 +392,14 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
       clearEditorDocuments(win.id);
     });
   });
+}
+
+/**
+ * 主窗口进入 / 退出全屏 → 推送 FULL_SCREEN_CHANGED(payload = 现在是否全屏)。macOS 标题栏全屏时不再给红绿灯留位。
+ * BDD: src/__tests__/title-bar/
+ */
+export function wireFullScreenNotify(win: BrowserWindow): void {
+  const send = () => sendToWindow(win, WINDOW_CHANNELS.FULL_SCREEN_CHANGED, win.isFullScreen(), '[full-screen]');
+  win.on('enter-full-screen', send);
+  win.on('leave-full-screen', send);
 }

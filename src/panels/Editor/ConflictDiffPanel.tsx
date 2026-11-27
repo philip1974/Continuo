@@ -1,5 +1,7 @@
 // 保存冲突差异 tab(VSCode「{file} (in file) ↔ {file} (in Code)」差异编辑器;懒加载 chunk,含 @codemirror/merge)。
 //
+// - 布局:差异区宽 > 900 左右并排(MergeView);≤ 900 单栏内联(unifiedMergeView,VSCode diffEditor.useInlineViewWhenSpaceIsLimited),
+//   宽度跨过阈值时重建视图 —— 「你的版本」就是 store 里的文档,重建只换视图,内容 / 光标 / 焦点照旧。
 // - 左:磁盘当前内容,只读(可聚焦、可选中复制);磁盘再次变化(dir-changed 命中该文件 / watcher 恢复)→ 重读并更新。
 // - 右:你的版本 = 编辑器 store 里的同一文档:这里输入即改原 tab(原 tab 同步变脏 / 变化),原 tab 里的编辑也同步过来。
 // - 逐行高亮 + 行内差异(@codemirror/merge highlightChanges);上一处 / 下一处差异(工具栏按钮,编辑器内 Alt+F5 / Shift+Alt+F5,
@@ -8,9 +10,17 @@
 // - 两侧合计过大(CONFLICT_DIFF_MAX_CHARS)不计算差异,只显示提示;差异计算另有单次超时。
 // Markdown 按源码文本比较(markdown 高亮)。BDD: src/__tests__/editor-save-conflict-compare/
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MergeView, getChunks, goToNextChunk, goToPreviousChunk } from '@codemirror/merge';
-import { Compartment, EditorState, Prec, type Extension } from '@codemirror/state';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  MergeView,
+  getChunks,
+  getOriginalDoc,
+  goToNextChunk,
+  goToPreviousChunk,
+  originalDocChangeEffect,
+  unifiedMergeView,
+} from '@codemirror/merge';
+import { ChangeSet, Compartment, EditorSelection, EditorState, Prec, type Extension } from '@codemirror/state';
 import { EditorView, keymap, type ViewUpdate } from '@codemirror/view';
 import { Button, IconButton } from '@/design';
 import { useLocale, useT } from '@/i18n/react';
@@ -40,8 +50,10 @@ import type { ConflictDiffParams } from './conflict-diff-constants';
 import {
   CONFLICT_DIFF_TIMEOUT_MS,
   chunkIndexAt,
+  conflictDiffLayoutFor,
   dirChangeTouchesFile,
   isConflictDiffTooLarge,
+  type ConflictDiffLayout,
 } from './conflict-diff-model';
 
 type DiskVersion =
@@ -113,6 +125,10 @@ const diffTheme = EditorView.theme({
   '&.cm-merge-b .cm-changedText': { background: 'color-mix(in srgb, var(--md-git-added) 34%, transparent)' },
   '&.cm-merge-a .cm-changedLineGutter': { background: 'var(--md-git-deleted)' },
   '&.cm-merge-b .cm-changedLineGutter': { background: 'var(--md-git-added)' },
+  // 单栏内联:磁盘版本被删 / 改掉的行(只读块)与其中的行内差异、gutter 条,配色同左侧
+  '.cm-deletedChunk': { backgroundColor: 'color-mix(in srgb, var(--md-git-deleted) 12%, transparent)' },
+  '.cm-deletedChunk .cm-deletedText': { background: 'color-mix(in srgb, var(--md-git-deleted) 34%, transparent)' },
+  '.cm-deletedLineGutter': { background: 'var(--md-git-deleted)' },
   // 两侧之间的分隔线
   '&.cm-merge-a': { borderRight: '1px solid var(--md-outline-variant)' },
   '.cm-content': { padding: '8px 0' },
@@ -123,7 +139,17 @@ const diffTheme = EditorView.theme({
   },
 });
 
+/** 当前视图:并排时 a = 磁盘(只读)、b = 你的版本;内联时只有 b(原文 = 磁盘版本)。 */
+interface DiffViews {
+  readonly a: EditorView | null;
+  readonly b: EditorView;
+  /** 外层 DOM(popout 重绑 root 用)。 */
+  readonly dom: HTMLElement;
+  destroy(): void;
+}
+
 interface MergeHostProps {
+  readonly layout: ConflictDiffLayout;
   readonly tabId: string;
   readonly filePath: string;
   readonly diskText: string;
@@ -133,9 +159,11 @@ interface MergeHostProps {
   readonly navRef: React.MutableRefObject<((dir: 1 | -1) => void) | null>;
 }
 
-function MergeHost({ tabId, filePath, diskText, onChunksChanged, navRef }: MergeHostProps) {
+function MergeHost({ layout, tabId, filePath, diskText, onChunksChanged, navRef }: MergeHostProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const mvRef = useRef<MergeView | null>(null);
+  const mvRef = useRef<DiffViews | null>(null);
+  /** 换布局重建前「你的版本」的选区(按当前文档长度夹取后带进新视图)。 */
+  const selectionRef = useRef<EditorSelection | null>(null);
   const { resolved } = useTheme();
   const locale = useLocale();
   const themeCompartment = useRef(new Compartment());
@@ -149,6 +177,8 @@ function MergeHost({ tabId, filePath, diskText, onChunksChanged, navRef }: Merge
   const lastSyncedRef = useRef<string | null>(null);
   const eolRef = useRef<'\r\n' | '\n'>('\n');
   const lastFocusedRef = useRef<'a' | 'b'>('b');
+  /** 换布局卸载旧视图时焦点是否在差异编辑器里(重建后据此把焦点还给「你的版本」)。 */
+  const prevHadFocusRef = useRef(false);
   const onChunksRef = useRef(onChunksChanged);
   onChunksRef.current = onChunksChanged;
   const content = useEditorStore((s) => findEditorFileTabById(s.tabs, tabId)?.content ?? null);
@@ -164,8 +194,8 @@ function MergeHost({ tabId, filePath, diskText, onChunksChanged, navRef }: Merge
     (dir: 1 | -1, from?: EditorView) => {
       const mv = mvRef.current;
       if (!mv) return;
-      const side = from ? (from === mv.a ? 'a' : 'b') : lastFocusedRef.current;
-      const view = side === 'a' ? mv.a : mv.b;
+      const side = mv.a === null ? 'b' : from ? (from === mv.a ? 'a' : 'b') : lastFocusedRef.current;
+      const view = side === 'a' && mv.a !== null ? mv.a : mv.b;
       (dir > 0 ? goToNextChunk : goToPreviousChunk)(view);
       view.focus();
       const chunks = getChunks(view.state)?.chunks ?? [];
@@ -196,9 +226,13 @@ function MergeHost({ tabId, filePath, diskText, onChunksChanged, navRef }: Merge
     const name = basename(filePath);
     const md = isMarkdownPath(filePath);
     const lang = (): Extension => pickLanguage(filePath, md ? 'markdown' : undefined);
+    // 「你的版本」= store 里的文档(换布局重建时也从这里取:视图里的每次输入都已同步写进 store)
     const initial = useEditorStore.getState().tabs.find((x) => x.id === tabId)?.content ?? '';
     eolRef.current = detectLineEnding(initial);
     lastSyncedRef.current = initial;
+    // 换布局重建:旧视图里的焦点 / 选区带到新的「你的版本」
+    const prev = selectionRef.current;
+    selectionRef.current = null;
     const navKeys = Prec.high(
       keymap.of([
         { key: 'Alt-F5', run: (v) => (navigate(1, v), true) },
@@ -218,85 +252,125 @@ function MergeHost({ tabId, filePath, diskText, onChunksChanged, navRef }: Merge
         },
       }),
     ];
-    const mv = new MergeView({
-      a: {
-        doc: diskText,
-        extensions: [
-          ...common('a'),
-          EditorState.readOnly.of(true),
-          labelA.current.of(codeMirrorContentLabel(t('panels.editor.conflict_diff.disk_label', { name }))),
-          langA.current.of(lang()),
-          EditorView.updateListener.of((u: ViewUpdate) => {
-            if (u.docChanged || u.selectionSet) report(u.view, 'a');
-          }),
-        ],
-      },
-      b: {
-        doc: initial,
-        extensions: [
-          ...common('b'),
-          labelB.current.of(codeMirrorContentLabel(t('panels.editor.conflict_diff.mine_label', { name }))),
-          langB.current.of(lang()),
-          EditorView.updateListener.of((u: ViewUpdate) => {
-            if (u.docChanged && !suppressEmit.current) {
-              const doc = u.state.doc;
-              const next = doc.sliceString(0, doc.length, eolRef.current);
-              lastSyncedRef.current = next;
-              useEditorStore.getState().updateContent(tabId, next);
-            }
-            if (u.docChanged || u.selectionSet) report(u.view, 'b');
-          }),
-        ],
-      },
-      parent: host,
-      highlightChanges: true,
-      gutter: true,
-      diffConfig: { scanLimit: 500, timeout: CONFLICT_DIFF_TIMEOUT_MS },
-    });
-    // 两侧在同一个滚动容器(.cm-mergeView,overflow-y: auto)里:MergeView 用占位对齐两侧行,一起滚动
-    mv.dom.style.height = '100%';
-    mvRef.current = mv;
-    report(mv.b, 'b');
+    const mineExtensions: Extension[] = [
+      ...common('b'),
+      labelB.current.of(codeMirrorContentLabel(t('panels.editor.conflict_diff.mine_label', { name }))),
+      langB.current.of(lang()),
+      EditorView.updateListener.of((u: ViewUpdate) => {
+        if (u.docChanged && !suppressEmit.current) {
+          const doc = u.state.doc;
+          const next = doc.sliceString(0, doc.length, eolRef.current);
+          lastSyncedRef.current = next;
+          useEditorStore.getState().updateContent(tabId, next);
+        }
+        if (u.docChanged || u.selectionSet) report(u.view, 'b');
+      }),
+    ];
+    const diffConfig = { scanLimit: 500, timeout: CONFLICT_DIFF_TIMEOUT_MS };
+    const initialDoc = EditorState.create({ doc: initial }).doc;
+    const selection = prev && prev.main.head <= initialDoc.length && prev.main.anchor <= initialDoc.length ? prev : undefined;
+    let views: DiffViews;
+    if (layout === 'split') {
+      const mv = new MergeView({
+        a: {
+          doc: diskText,
+          extensions: [
+            ...common('a'),
+            EditorState.readOnly.of(true),
+            labelA.current.of(codeMirrorContentLabel(t('panels.editor.conflict_diff.disk_label', { name }))),
+            langA.current.of(lang()),
+            EditorView.updateListener.of((u: ViewUpdate) => {
+              if (u.docChanged || u.selectionSet) report(u.view, 'a');
+            }),
+          ],
+        },
+        b: { doc: initialDoc, ...(selection ? { selection } : {}), extensions: mineExtensions },
+        parent: host,
+        highlightChanges: true,
+        gutter: true,
+        diffConfig,
+      });
+      // 两侧在同一个滚动容器(.cm-mergeView,overflow-y: auto)里:MergeView 用占位对齐两侧行,一起滚动
+      mv.dom.style.height = '100%';
+      views = { a: mv.a, b: mv.b, dom: mv.dom, destroy: () => mv.destroy() };
+    } else {
+      // 单栏内联:磁盘版本被删 / 改掉的行以只读块显示在你的版本上方;不要逐块接受 / 拒绝按钮(动作在工具栏,同并排布局)
+      const view = new EditorView({
+        parent: host,
+        state: EditorState.create({
+          doc: initialDoc,
+          ...(selection ? { selection } : {}),
+          extensions: [
+            ...mineExtensions,
+            unifiedMergeView({ original: diskText, highlightChanges: true, gutter: true, mergeControls: false, diffConfig }),
+          ],
+        }),
+      });
+      view.dom.style.height = '100%';
+      lastFocusedRef.current = 'b';
+      views = { a: null, b: view, dom: view.dom, destroy: () => view.destroy() };
+    }
+    mvRef.current = views;
+    report(views.b, 'b');
+    // 换布局重建:光标所在处滚回可见(新视图从顶部开始)
+    if (selection) views.b.dispatch({ effects: EditorView.scrollIntoView(selection.main.head, { y: 'center' }) });
     // 焦点给右侧「你的版本」(VSCode 打开差异编辑器聚焦 modified 一侧):打开面板的通用聚焦落在内容里第一个可编辑区(左侧
-    // 只读编辑器)或尚未落下(焦点在 body)时改到右侧;焦点在别处(用户已离开本面板)不抢。
+    // 只读编辑器)或尚未落下(焦点在 body)时改到右侧;焦点在别处(用户已离开本面板)不抢。换布局重建时旧视图已随卸载移除,
+    // 焦点落回 body,同样回到「你的版本」(此前焦点在面板外则不抢)。
     const doc = host.ownerDocument;
     const active = doc.activeElement;
     const panelRoot = host.closest('[data-conflict-diff-panel]');
-    if (active === null || active === doc.body || (panelRoot?.contains(active) ?? false)) mv.b.focus();
-    // 语言表里的语言包未加载 → 先纯文本,加载完两侧一起换上
+    const hadFocus = prev !== null ? prevHadFocusRef.current : true;
+    prevHadFocusRef.current = false;
+    if (hadFocus && (active === null || active === doc.body || (panelRoot?.contains(active) ?? false))) views.b.focus();
+    // 语言表里的语言包未加载 → 先纯文本,加载完一起换上
     const desc = md ? null : languageDescriptionFor(filePath);
     if (desc && !desc.support) {
       desc.load().then(
         (support) => {
-          if (mvRef.current !== mv) return;
-          mv.a.dispatch({ effects: langA.current.reconfigure(support) });
-          mv.b.dispatch({ effects: langB.current.reconfigure(support) });
+          if (mvRef.current !== views) return;
+          views.a?.dispatch({ effects: langA.current.reconfigure(support) });
+          views.b.dispatch({ effects: langB.current.reconfigure(support) });
         },
         () => {},
       );
     }
     // popout 弹出 / 收回只移动 DOM:按所在文档重绑 root(同 CodeEditor)
-    const rebind = () => rebindCodeMirrorRoots(mv.dom);
+    const rebind = () => rebindCodeMirrorRoots(views.dom);
     rebind();
     const unregisterRoot = registerEditorRootRebind(rebind);
     return () => {
       unregisterRoot();
-      mv.destroy();
+      // 换布局 / 卸载:记下「你的版本」的选区与焦点,重建时带过去
+      selectionRef.current = views.b.state.selection;
+      const focusedEl = host.ownerDocument.activeElement;
+      prevHadFocusRef.current = focusedEl !== null && views.dom.contains(focusedEl);
+      views.destroy();
       mvRef.current = null;
     };
-    // 只建一次;之后的内容 / 主题 / 语言变化走下面的 effect
+    // 只在布局变化时重建;之后的内容 / 主题 / 语言变化走下面的 effect
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [layout]);
 
   // 磁盘版本变化 → 左侧换成新内容(只派发变化段)
   useEffect(() => {
     const mv = mvRef.current;
     if (!mv) return;
-    const cur = mv.a.state.doc.toString();
-    const next = mv.a.state.toText(diskText).toString();
+    if (mv.a !== null) {
+      const cur = mv.a.state.doc.toString();
+      const next = mv.a.state.toText(diskText).toString();
+      if (cur === next) return;
+      const change = minimalChange(cur, next) ?? { from: 0, to: cur.length, insert: next };
+      mv.a.dispatch({ changes: change });
+      return;
+    }
+    // 内联:原文(磁盘版本)以 effect 更新
+    const original = getOriginalDoc(mv.b.state);
+    const cur = original.toString();
+    const next = mv.b.state.toText(diskText).toString();
     if (cur === next) return;
     const change = minimalChange(cur, next) ?? { from: 0, to: cur.length, insert: next };
-    mv.a.dispatch({ changes: change });
+    mv.b.dispatch({ effects: originalDocChangeEffect(mv.b.state, ChangeSet.of(change, original.length)) });
   }, [diskText]);
 
   // 原 tab 那边的编辑 / 程序化改内容 → 右侧套用(本视图输入的回声跳过)
@@ -320,8 +394,7 @@ function MergeHost({ tabId, filePath, diskText, onChunksChanged, navRef }: Merge
   useEffect(() => {
     const mv = mvRef.current;
     if (!mv) return;
-    const effects = themeCompartment.current.reconfigure(codeEditorTheme(resolved));
-    mv.a.dispatch({ effects });
+    mv.a?.dispatch({ effects: themeCompartment.current.reconfigure(codeEditorTheme(resolved)) });
     mv.b.dispatch({ effects: themeCompartment.current.reconfigure(codeEditorTheme(resolved)) });
   }, [resolved]);
 
@@ -329,7 +402,7 @@ function MergeHost({ tabId, filePath, diskText, onChunksChanged, navRef }: Merge
     const mv = mvRef.current;
     if (!mv) return;
     const name = basename(filePath);
-    mv.a.dispatch({
+    mv.a?.dispatch({
       effects: [
         phrasesCompartment.current.reconfigure(codeMirrorPhrases()),
         labelA.current.reconfigure(codeMirrorContentLabel(t('panels.editor.conflict_diff.disk_label', { name }))),
@@ -345,7 +418,7 @@ function MergeHost({ tabId, filePath, diskText, onChunksChanged, navRef }: Merge
 
   useEffect(() => {
     const mv = mvRef.current;
-    mv?.a.requestMeasure();
+    mv?.a?.requestMeasure();
     mv?.b.requestMeasure();
   }, [fontSize]);
 
@@ -395,6 +468,20 @@ export function ConflictDiffPanel({ params }: ConflictDiffPanelProps) {
   const onChunksChanged = useCallback((count: number, current: number) => {
     setChunks((c) => (c.count === count && c.current === current ? c : { count, current }));
   }, []);
+  // 差异区宽度 → 并排 / 内联(挂载时同步量一次,首帧即是正确布局;之后随 ResizeObserver 切换)
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [layout, setLayout] = useState<ConflictDiffLayout | null>(null);
+  const hasFile = filePath !== null;
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const measure = () => setLayout((cur) => conflictDiffLayoutFor(el.getBoundingClientRect().width, cur ?? 'split'));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasFile]);
 
   const run = (choice: ConflictResolution): void => {
     if (busy) return;
@@ -414,10 +501,11 @@ export function ConflictDiffPanel({ params }: ConflictDiffPanelProps) {
 
   return (
     <div className="flex h-full w-full flex-col bg-canvas" data-conflict-diff-panel="">
+      {/* 窄宽:按钮组整体换到下一行(靠右),仍放不下(组宽 < 单个按钮)再横向滚动;不固定高度,换行时不盖住下方代码 */}
       <div
         role="toolbar"
         aria-label={tr('panels.editor.conflict_diff.toolbar')}
-        className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-2"
+        className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 overflow-x-auto border-b border-line px-2 py-0.5"
       >
         <IconButton
           aria-label={tr('panels.editor.conflict_diff.previous')}
@@ -435,35 +523,46 @@ export function ConflictDiffPanel({ params }: ConflictDiffPanelProps) {
         >
           {CHEVRON_DOWN}
         </IconButton>
-        {showDiff && <span className="truncate px-1 text-xs text-fg-muted">{status}</span>}
-        <div className="min-w-0 flex-1" />
-        <Button variant="ghost" size="sm" disabled={busy} onClick={() => run('revert')}>
-          {tr('panels.editor.conflict_diff.revert')}
-        </Button>
-        <Button variant="primary" size="sm" disabled={busy} onClick={() => run('accept')}>
-          {tr('panels.editor.conflict_diff.accept')}
-        </Button>
-      </div>
-      {/* 两侧标题(VSCode 差异编辑器标题「{file} (in file) ↔ {file} (in Code)」拆到两栏上方) */}
-      <div className="flex h-6 shrink-0 text-xs text-fg-muted" aria-hidden="true">
-        <div className="min-w-0 flex-1 truncate border-r border-line px-3 leading-6">
-          {tr('panels.editor.conflict_diff.disk_side', { name })}
+        {showDiff && <span className="min-w-0 truncate px-1 text-xs text-fg-muted">{status}</span>}
+        <div className="ml-auto flex shrink-0 flex-wrap justify-end gap-1">
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => run('revert')}>
+            {tr('panels.editor.conflict_diff.revert')}
+          </Button>
+          <Button variant="primary" size="sm" disabled={busy} onClick={() => run('accept')}>
+            {tr('panels.editor.conflict_diff.accept')}
+          </Button>
         </div>
-        <div className="min-w-0 flex-1 truncate px-3 leading-6">{tr('panels.editor.conflict_diff.mine_side', { name })}</div>
+      </div>
+      {/* 两侧标题(VSCode 差异编辑器标题「{file} (in file) ↔ {file} (in Code)」拆到两栏上方;内联时合成一行) */}
+      <div className="flex h-6 shrink-0 text-xs text-fg-muted" aria-hidden="true" data-conflict-diff-sides="">
+        {layout === 'unified' ? (
+          <div className="min-w-0 flex-1 truncate px-3 leading-6">
+            {`${tr('panels.editor.conflict_diff.disk_side', { name })} ↔ ${tr('panels.editor.conflict_diff.mine_side', { name })}`}
+          </div>
+        ) : (
+          <>
+            <div className="min-w-0 flex-1 truncate border-r border-line px-3 leading-6">
+              {tr('panels.editor.conflict_diff.disk_side', { name })}
+            </div>
+            <div className="min-w-0 flex-1 truncate px-3 leading-6">{tr('panels.editor.conflict_diff.mine_side', { name })}</div>
+          </>
+        )}
       </div>
       {disk.kind === 'error' && (
         <div role="status" className="bg-panel-soft px-4 py-2 text-xs text-fg-muted">
           {tr('panels.editor.conflict_diff.read_failed', { reason: localizeErrorByCode(disk.code, disk.message) })}
         </div>
       )}
-      <div className="min-h-0 flex-1">
+      <div ref={bodyRef} className="min-h-0 flex-1" data-conflict-diff-body="">
         {tooLarge ? (
           <div role="status" className="p-4 text-sm text-fg-muted">
             {tr('panels.editor.conflict_diff.too_large')}
           </div>
         ) : (
-          showDiff && (
+          showDiff &&
+          layout !== null && (
             <MergeHost
+              layout={layout}
               tabId={tabId}
               filePath={filePath}
               diskText={diskText}

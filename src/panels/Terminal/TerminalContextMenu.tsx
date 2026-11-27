@@ -7,6 +7,7 @@ import * as Menu from '@radix-ui/react-context-menu';
 import { useState, type ReactNode } from 'react';
 import { MenuItem } from '@/design';
 import { useT } from '@/i18n';
+import { CONTEXT_MENU_CONTENT_CLASS_NAME } from '@/lib/menu-surface';
 
 export interface TerminalContextMenuActions {
   readonly hasSelection: () => boolean;
@@ -17,10 +18,6 @@ export interface TerminalContextMenuActions {
   /** 菜单关闭后焦点回到终端(触发区本身不可聚焦)。 */
   readonly focus: () => void;
 }
-
-// 与 Explorer ContextMenu / DropdownMenu 同一浮层外观。
-const contentCls =
-  'min-w-[180px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-popover outline-none';
 
 function Item({ onSelect, disabled, children }: { onSelect: () => void; disabled?: boolean; children: ReactNode }) {
   return (
@@ -55,7 +52,7 @@ export function TerminalContextMenu({
       </Menu.Trigger>
       <Menu.Portal container={portalHost}>
         <Menu.Content
-          className={contentCls}
+          className={CONTEXT_MENU_CONTENT_CLASS_NAME}
           collisionPadding={8}
           onCloseAutoFocus={(e) => {
             e.preventDefault();

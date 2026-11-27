@@ -1402,6 +1402,10 @@
 
 - [`mcp-tool-gates.spec.ts`](./mcp-tool-gates/mcp-tool-gates.spec.ts)
 
+## [menu-overflow-scroll](./menu-overflow-scroll/README.md)
+
+- [`menu-overflow-scroll.spec.tsx`](./menu-overflow-scroll/menu-overflow-scroll.spec.tsx)
+
 ## [migration-shell-env](./migration-shell-env/README.md)
 
 - [`host-helper-import.spec.ts`](./migration-shell-env/host-helper-import.spec.ts)
@@ -2309,6 +2313,7 @@
 
 ## [TitleBar(macOS 顶栏:workspace + active file 文件名)](./title-bar/README.md)
 
+- [`title-bar-full-screen-ipc.spec.ts`](./title-bar/title-bar-full-screen-ipc.spec.ts)
 - [`title-bar.spec.tsx`](./title-bar/title-bar.spec.tsx)
 
 ## [unified-toast-notification](./unified-toast-notification/README.md)
@@ -2447,6 +2452,7 @@
 - [`search-open-editors.spec.tsx`](./workspace-search/search-open-editors.spec.tsx)
 - [`search-panel-placement.spec.tsx`](./workspace-search/search-panel-placement.spec.tsx)
 - [`search-path-gone.spec.ts`](./workspace-search/search-path-gone.spec.ts)
+- [`search-preview.spec.ts`](./workspace-search/search-preview.spec.ts)
 - [`search-query.spec.ts`](./workspace-search/search-query.spec.ts)
 - [`search-view.spec.tsx`](./workspace-search/search-view.spec.tsx)
 

@@ -11,9 +11,12 @@ import {
   EDITOR_MIN_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
+  sidebarFitsBesideDock,
   sidebarMaxWidthFor,
   useLayoutUiStore,
 } from '../../stores/layout-ui.store';
+import { setDockApi } from '../../shell/dock/dock-api-ref';
+import type { DockviewApi } from 'dockview-react';
 import { useWorkspaceStore } from '../../stores/workspace.store';
 
 const originalWidth = window.innerWidth;
@@ -39,6 +42,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  act(() => setDockApi(null));
   delete (window as { api?: unknown }).api;
   cleanup();
   Object.defineProperty(window, 'innerWidth', { value: originalWidth, configurable: true, writable: true });
@@ -94,5 +98,79 @@ describe('侧栏宽度受窗口宽约束', () => {
     fireEvent.mouseMove(document, { clientX: 90 });
     expect(useLayoutUiStore.getState().sidebarWidth).toBe(640 - EDITOR_MIN_WIDTH - 10);
     fireEvent.mouseUp(document);
+  });
+});
+
+/** 假 dock api:只有 minimumWidth 与布局事件(网格最小宽 = 各组最小宽之和,由测试设定)。 */
+function fakeDock(minimumWidth: number) {
+  const listeners = new Set<() => void>();
+  const on = (cb: () => void) => {
+    listeners.add(cb);
+    return { dispose: () => listeners.delete(cb) };
+  };
+  const dock = {
+    minimumWidth,
+    onDidLayoutChange: on,
+    onDidAddGroup: on,
+    onDidRemoveGroup: on,
+  };
+  return {
+    api: dock as unknown as DockviewApi,
+    setMin(w: number) {
+      act(() => {
+        dock.minimumWidth = w;
+        for (const l of [...listeners]) l();
+      });
+    },
+  };
+}
+
+describe('侧栏让位按 dock 网格实际最小宽度(多组并排)', () => {
+  it('sidebarMaxWidthFor:扣掉 max(EDITOR_MIN_WIDTH, dock 最小宽);sidebarFitsBesideDock 只看 dock 实际最小宽', () => {
+    expect(sidebarMaxWidthFor(600, 100)).toBe(600 - EDITOR_MIN_WIDTH);
+    expect(sidebarMaxWidthFor(900, 470)).toBe(900 - 470);
+    expect(sidebarMaxWidthFor(600, 470)).toBe(SIDEBAR_MIN_WIDTH);
+    expect(sidebarFitsBesideDock(352, 100)).toBe(true);
+    expect(sidebarFitsBesideDock(352, 152)).toBe(true);
+    expect(sidebarFitsBesideDock(352, 200)).toBe(false);
+  });
+
+  it('三组并排(最小宽 300)+ 窗口 700:侧栏显示宽 = 可用宽 − 300,保存值不变', () => {
+    const dock = fakeDock(300);
+    act(() => setDockApi(dock.api));
+    useLayoutUiStore.setState({ sidebarWidth: 480 });
+    const { container } = render(<ExplorerSidebar />);
+    setWindowWidth(700);
+    const aside = container.querySelector('aside')!;
+    expect(aside.style.width).toBe(`${700 - 300}px`);
+    // 再加一组(最小宽 450)→ 侧栏随之让位
+    dock.setMin(450);
+    expect(aside.style.width).toBe(`${700 - 450}px`);
+    expect(container.querySelector('[role=separator]')!.getAttribute('aria-valuemax')).toBe(String(700 - 450));
+    expect(useLayoutUiStore.getState().sidebarWidth).toBe(480);
+  });
+
+  it('窗口变窄到侧栏缩到最小宽 dock 仍放不下 → 侧栏收起(sidebarOpen=false,同 VSCode snap);单组时不收起', () => {
+    const dock = fakeDock(100);
+    act(() => setDockApi(dock.api));
+    render(<ExplorerSidebar />);
+    setWindowWidth(352); // 单组:352 − 200 ≥ 100,保留最小宽侧栏(jsdom 里侧栏左边缘 0,可用宽 = 窗口宽)
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+    dock.setMin(200); // 两组并排:352 − 200 < 200 放不下 → 收起
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(false);
+  });
+
+  it('窗口缩窄触发收起;用户在窄窗口里再打开侧栏 → 不会被立刻收回(只在「放得下 → 放不下」时收起)', () => {
+    const dock = fakeDock(200);
+    act(() => setDockApi(dock.api));
+    render(<ExplorerSidebar />);
+    setWindowWidth(800);
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+    setWindowWidth(352);
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(false);
+    act(() => useLayoutUiStore.getState().setSidebarOpen(true));
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+    setWindowWidth(340);
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
   });
 });

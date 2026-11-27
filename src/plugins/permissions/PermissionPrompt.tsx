@@ -172,7 +172,7 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
       </ul>
       {/* 「尚未生效」提示的常驻 status 区域在按钮上方(见 prompt-grant-hint),底部不多出空白。 */}
       <PromptGrantHint guard={guard} />
-      <div className="flex justify-between gap-2">
+      <div className="flex flex-wrap justify-between gap-2">
         <Button
           variant="ghost"
           size="sm"
@@ -188,7 +188,7 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
               : 'permissions.prompt.select_all',
           )}
         </Button>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="ghost"
             size="sm"
@@ -259,7 +259,7 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
         </ul>
       </div>
       <PromptGrantHint guard={guard} />
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
         <Button
           variant="ghost"
           size="sm"

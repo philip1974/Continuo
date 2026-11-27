@@ -1,7 +1,8 @@
 // Explorer 固定侧边栏(VSCode 风),挂在 IconSidebar 右侧、Dockview 左侧。
 // 不参与 Dockview 拖拽。右边 4px 拖拽条改宽度,clamp 200-500;
 // sidebarOpen / sidebarWidth 由 explorer.json 持久化(layoutUi 字段)。
-// 窄窗口让位(同 VSCode):显示宽度另受窗口宽约束,给编辑区留 EDITOR_MIN_WIDTH,保存值不变。
+// 窄窗口让位(同 VSCode):显示宽度另受窗口宽约束,给编辑区留 max(EDITOR_MIN_WIDTH, dock 网格实际最小宽),保存值不变;
+// 缩到最小宽 dock 仍放不下(多组并排的窄窗口)→ 侧栏收起(同 VSCode 侧栏 snap)。
 // 文件树下方是可折叠的「大纲」分区(VSCode 资源管理器视图容器里的 Outline 视图;BDD: src/__tests__/markdown-outline/)。
 
 import { useLayoutEffect, useRef, useState } from 'react';
@@ -10,9 +11,12 @@ import { OutlineSection } from '@/panels/Outline/OutlineView';
 import { ExplorerVisibleContext } from '@/panels/Explorer/visibility';
 import {
   SIDEBAR_MIN_WIDTH,
+  sidebarFitsBesideDock,
   sidebarMaxWidthFor,
   useLayoutUiStore,
 } from '@/stores/layout-ui.store';
+import { useDockMinimumWidth } from '@/shell/dock/dock-minimum-width';
+import { toggleSidebarVisibility } from '@/panels/Explorer/explorer-commands';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useColumnResize, clampWidth } from '@/lib/use-column-resize';
 import { useT } from '@/i18n';
@@ -74,8 +78,10 @@ export function ExplorerSidebar() {
 /**
  * 仅打开时挂载:订阅 sidebarWidth,命令式写 aside 宽度(layout effect,首帧绘制前生效),并渲染右边
  * 拖拽条。宽度变化只重渲本组件,不碰 aside 内的文件树。
- * 显示宽度 = clamp(MIN, sidebarWidth, 窗口宽 − 侧栏左边缘 − EDITOR_MIN_WIDTH):监听窗口 resize 重算,
- * 保存的 sidebarWidth 不动(窗口放大后恢复);键盘 / 拖拽以显示宽度为起点、以有效上限为上限。
+ * 显示宽度 = clamp(MIN, sidebarWidth, 窗口宽 − 侧栏左边缘 − max(EDITOR_MIN_WIDTH, dock 网格最小宽)):监听窗口 resize /
+ * dock 布局变化重算,保存的 sidebarWidth 不动(窗口放大后恢复);键盘 / 拖拽以显示宽度为起点、以有效上限为上限。
+ * 侧栏缩到最小宽 dock 仍放不下 → 收起(sidebarOpen=false,同 VSCode 侧栏 snap;只在「放得下 → 放不下」的变化时收起,
+ * 用户在窄窗口里再打开不会被立刻收回)。
  * aside 经拖拽条的 parentElement 取得:挂载时父级 aside 的 ref 晚于子组件 layout effect 才挂上,
  * 而本组件自己 DOM 节点的 ref 在其 layout effect 前已就绪。
  */
@@ -86,8 +92,10 @@ function ExplorerSidebarResizer() {
   const resizeLabel = t('shell.aria.drag_resize');
 
   const handleRef = useRef<HTMLDivElement>(null);
-  // 侧栏可用宽度(侧栏左边缘到窗口右边缘);首帧按窗口宽估,layout effect 里按实际位置校正。
-  const [available, setAvailable] = useState(() => window.innerWidth);
+  // 侧栏可用宽度(侧栏左边缘到窗口右边缘);null = 尚未按实际位置量过(首帧按窗口宽估,layout effect 里校正)。
+  const [measured, setAvailable] = useState<number | null>(null);
+  const available = measured ?? window.innerWidth;
+  const dockMin = useDockMinimumWidth();
   useLayoutEffect(() => {
     const aside = handleRef.current?.parentElement;
     const win = aside?.ownerDocument.defaultView;
@@ -97,8 +105,21 @@ function ExplorerSidebarResizer() {
     win.addEventListener('resize', measure);
     return () => win.removeEventListener('resize', measure);
   }, []);
-  const max = sidebarMaxWidthFor(available);
+  const max = sidebarMaxWidthFor(available, dockMin);
   const displayWidth = clampWidth(width, SIDEBAR_MIN_WIDTH, max);
+
+  // 「放得下 → 放不下」时收起;首次量到的结果只记录(打开时已放不下 = 用户在窄窗口里主动打开,不收回)
+  const fits = measured === null ? null : sidebarFitsBesideDock(measured, dockMin);
+  const fitsRef = useRef<boolean | null>(null);
+  useLayoutEffect(() => {
+    if (fits === null) return;
+    const prev = fitsRef.current;
+    fitsRef.current = fits;
+    // 同 ⌘B 隐藏:侧栏里有焦点 → 交给活动 dock 面板,不落 body
+    if (prev === true && !fits && useLayoutUiStore.getState().sidebarOpen) {
+      toggleSidebarVisibility(handleRef.current?.ownerDocument ?? document);
+    }
+  }, [fits]);
 
   useLayoutEffect(() => {
     const aside = handleRef.current?.parentElement;

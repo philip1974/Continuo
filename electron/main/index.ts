@@ -158,7 +158,12 @@ import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
 import { registerDebugViewIpc } from './ipc/debug-view.ipc';
 import { DEBUG_VIEW_CHANNELS } from '../shared/debug-view-channels';
 import { sendToWindow } from './lib/broadcast';
-import { currentWindowBackgroundColor, openWorkspaceWindowWith, workspaceWindowOpts } from './ipc/window.ipc';
+import {
+  currentWindowBackgroundColor,
+  openWorkspaceWindowWith,
+  wireFullScreenNotify,
+  workspaceWindowOpts,
+} from './ipc/window.ipc';
 import { saveWindowEntryAsSnapshot } from './services/workspace-snapshot.service';
 import { findWindowEntryBySeq } from '../shared/window-entry-lookup';
 import { runWindowOpen, type WindowOpenFailureUi } from './lib/run-window-open';
@@ -809,6 +814,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   if (opts.workspace !== undefined) setWorkspaceRoot(win.id, opts.workspace);
   touchMainWindowFocus(seq); // 新窗口建出即获焦
   win.on('focus', () => touchMainWindowFocus(seq));
+  wireFullScreenNotify(win); // macOS 标题栏:全屏时不给红绿灯留位
   // 须先于 wireWindowCloseFlush 挂:关窗流程的 close 监听会同步隐藏窗口,之后取到的状态不可信。
   win.on('close', () => captureWindowState(seq, win));
   wireWindowCloseFlush(win);

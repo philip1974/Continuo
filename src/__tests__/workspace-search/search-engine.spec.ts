@@ -134,14 +134,14 @@ describe('命中:行列与预览', () => {
   });
 
   it('命中前过长截掉并加「…」;预览封顶', async () => {
-    const lead = 'x'.repeat(100);
+    const lead = 'x'.repeat(300);
     write('a.txt', `${lead}needle${'y'.repeat(1000)}`);
     const m = (await search(query('needle'))).files[0]!.matches[0]!;
-    expect(m.column).toBe(101);
+    expect(m.column).toBe(301);
     expect(m.preview.startsWith('…')).toBe(true);
     expect(m.preview.slice(m.previewStart, m.previewStart + m.previewLength)).toBe('needle');
     expect(m.previewStart).toBe(SEARCH_PREVIEW_LEAD + 1);
-    expect(m.preview.length).toBeLessThanOrEqual(SEARCH_PREVIEW_MAX + 1);
+    expect(m.preview.length).toBeLessThanOrEqual(SEARCH_PREVIEW_MAX);
   });
 });
 

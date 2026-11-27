@@ -23,6 +23,10 @@ describe('Button 样式契约', () => {
     expect(body).toMatch(/outline-offset:\s*\d+px/);
   });
 
+  it('标签不换行(white-space: nowrap):窄容器里按钮不被挤成逐字竖排、文字不溢出按钮', () => {
+    expect(ruleBody(BUTTON, '.wm-button')).toMatch(/white-space:\s*nowrap/);
+  });
+
   it('secondary hover 在原底色上叠加 state layer,不替换成半透明底色(否则 hover 反而变淡)', () => {
     const hover = ruleBody(BUTTON, '.wm-button[data-variant="secondary"]:hover:not(:disabled, [aria-disabled="true"])');
     expect(hover).not.toBe('');
@@ -113,17 +117,27 @@ describe('MenuItem 样式契约', () => {
 // 两主题各有取值;Tailwind 默认 shadow / shadow-xl 在暗色底上几乎不可见。
 describe('浮层阴影统一 shadow-popover', () => {
   const SHADOW_UTILITY = /(?:^|[^\w-])(shadow(?:-[a-z0-9]+(?:\/\d+)?|-\[[^\]]+\])?)(?=[^\w-]|$)/gm;
-  for (const file of [
-    'src/panels/Explorer/ContextMenu.tsx',
-    'src/lib/dropdown-menu.tsx',
-    'src/panels/Terminal/TerminalSearchBar.tsx',
-  ]) {
+  // 菜单浮层外观(右键菜单 / DropdownMenu)收口在 src/lib/menu-surface.ts
+  for (const file of ['src/lib/menu-surface.ts', 'src/panels/Terminal/TerminalSearchBar.tsx']) {
     it(`${file} 只用 shadow-popover`, () => {
       const used = Array.from(css(file).matchAll(SHADOW_UTILITY), (m) => m[1]);
       expect(used.length).toBeGreaterThan(0);
       expect(used.filter((u) => u !== 'shadow-popover')).toEqual([]);
     });
   }
+
+  it('菜单组件不自写阴影,都用 menu-surface 的共享外观', () => {
+    for (const file of [
+      'src/panels/Explorer/ContextMenu.tsx',
+      'src/lib/dropdown-menu.tsx',
+      'src/lib/TabContextMenu.tsx',
+      'src/panels/Terminal/TerminalContextMenu.tsx',
+    ]) {
+      const src = css(file);
+      expect(Array.from(src.matchAll(SHADOW_UTILITY), (m) => m[1]), file).toEqual([]);
+      expect(src, file).toMatch(/MENU_SURFACE_CLASS_NAME|CONTEXT_MENU_CONTENT_CLASS_NAME/);
+    }
+  });
 
   it('Toast.css 用 var(--wm-shadow-popover),不引用未定义的 --md-shadow-color', () => {
     const toast = css('src/notifications/Toast.css');

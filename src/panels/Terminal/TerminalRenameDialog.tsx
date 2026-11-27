@@ -51,7 +51,7 @@ export function TerminalRenameDialog({ sessionId, onClose }: { sessionId: string
         <p id={hintId} className="mb-5 mt-2 text-xs leading-relaxed text-fg-muted">
           {t('panels.terminal.rename_dialog.hint')}
         </p>
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>
             {t('panels.terminal.rename_dialog.cancel')}
           </Button>

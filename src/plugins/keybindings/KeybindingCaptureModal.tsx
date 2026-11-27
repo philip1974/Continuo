@@ -392,7 +392,7 @@ function KeybindingCaptureModalBody({
         </div>
       )}
 
-      <div className="mt-4 flex items-center justify-end gap-2">
+      <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onClose}>
           {t('common.cancel')}
         </Button>

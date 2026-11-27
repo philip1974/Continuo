@@ -85,7 +85,7 @@ function ConfirmDialogBody({
       <div id={descriptionId} className="mb-5 text-xs leading-relaxed text-fg-muted">
         {description}
       </div>
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
         {extraActions?.map((a) => (
           <Button key={a.label} variant="ghost" size="sm" onClick={a.onClick}>
             {a.label}

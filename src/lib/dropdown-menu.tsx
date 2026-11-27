@@ -8,6 +8,7 @@ import { useEffect, useRef, type FocusEvent, type ReactNode, type RefObject } fr
 import { useMenuKeyboard } from './use-menu-keyboard';
 import { useMenuAnchor } from './use-menu-anchor';
 import { useDismissOnOutsidePointer } from './use-dismiss-on-outside-pointer';
+import { MENU_SURFACE_CLASS_NAME } from './menu-surface';
 
 export interface DropdownMenuControls {
   /** 只关闭菜单(焦点交给随后的动作,如新建的面板)。 */
@@ -69,8 +70,8 @@ export function DropdownMenu({
       tabIndex={-1}
       onKeyDown={onKeyDown}
       onBlur={onBlur}
-      style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
-      className="z-modal min-w-[140px] outline-none overflow-hidden rounded-md border border-line bg-panel py-1 shadow-popover"
+      style={{ position: 'fixed', top: anchor.top, right: anchor.right, maxHeight: anchor.maxHeight }}
+      className={`z-modal min-w-[140px] ${MENU_SURFACE_CLASS_NAME}`}
     >
       {children({ close, closeAndRestore })}
     </div>,

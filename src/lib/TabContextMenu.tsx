@@ -10,6 +10,7 @@ import { useRef, useState, type KeyboardEvent, type ReactElement } from 'react';
 import { MenuItem } from '@/design';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { dispatchContextMenuAt, isContextMenuKey } from './context-menu-key';
+import { CONTEXT_MENU_CONTENT_CLASS_NAME } from './menu-surface';
 
 export type TabMenuEntry =
   | {
@@ -31,10 +32,6 @@ export type TabMenuEntry =
       readonly opensDialog?: boolean;
     }
   | 'separator';
-
-// 与 Explorer ContextMenu / DropdownMenu 同一浮层外观。
-const contentCls =
-  'min-w-[180px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-popover outline-none';
 
 /**
  * 聚焦的 tab 上按 Shift+F10 / 菜单键 → 在该元素(或 keyboardAnchor 给出的元素)处派发 contextmenu(冒泡到 Trigger 打开菜单)。
@@ -90,7 +87,7 @@ export function TabContextMenu({
       {open && (
         <Menu.Portal container={portalHost}>
           <Menu.Content
-            className={contentCls}
+            className={CONTEXT_MENU_CONTENT_CLASS_NAME}
             collisionPadding={8}
             onCloseAutoFocus={(e) => {
               // 焦点还原自己做:Radix FocusScope 按全局 document(主窗)记录 / 还原打开前焦点,popout 子窗里的 tab

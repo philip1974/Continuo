@@ -40,8 +40,10 @@
      因过大跳过的文件计数(`done.skippedLargeCount`)并报告路径(`done.skippedLargePaths`,至多
      `SEARCH_SKIPPED_LARGE_REPORT_MAX` 个;其它原因的跳过不计),供视图提示「已跳过 N 个大文件」。
    - 逐行匹配(`\r\n` / `\n`),每个命中一条结果:行号 / 列号 1 起(列按 UTF-16,与编辑器定位一致)、命中长度、预览行
-     (去行首空白;命中前超过 `SEARCH_PREVIEW_LEAD` 个字符时从命中前 `SEARCH_PREVIEW_LEAD` 处截起并加「…」,预览最长
-     `SEARCH_PREVIEW_MAX`)。零长度命中跳过。每文件最多 `SEARCH_MAX_RESULTS_PER_FILE`(1000)条(文件标记 `truncated`),
+     (`search-preview.spec.ts`,VSCode `Match.preview`:命中前文 `lcut(before, 26, '…')` —— 去前导空白,超过
+     `SEARCH_PREVIEW_LEAD`(26)个字符时在「保留至少 26 个字符」的最后一个词边界处截掉并加「…」;无词边界的长前文(整行 CJK /
+     base64,截后仍超 `SEARCH_PREVIEW_BEFORE_MAX`)按码点硬截到末 26 个字符;前文 + 命中 + 后文总长封顶 `SEARCH_PREVIEW_MAX`;
+     截点不拆代理对)。零长度命中跳过。每文件最多 `SEARCH_MAX_RESULTS_PER_FILE`(1000)条(文件标记 `truncated`),
      总计最多 `SEARCH_MAX_RESULTS`(10000)条(`limitHit`,停止搜索)。
    - 流式分批:命中文件攒批推送(`SEARCH_BATCH_MS` / 文件数),大工作区先出的结果先显示;结果顺序稳定(按枚举顺序)。
    - 执行在 worker 线程(VSCode 把 ripgrep 放在独立进程):用户正则的灾难性回溯不卡主进程;取消 = 终止 worker。
@@ -53,7 +55,8 @@
      新查询发起前取消在途查询,迟到的旧 searchId 事件丢弃;查询清空 → 取消并清空结果。
    - 结果树 `role=tree`:文件行 `treeitem`(`aria-level=1`、`aria-expanded`;文件名 + 相对目录 + 匹配数徽标,超长时目录先收缩、
      再截断文件名,徽标始终可见),可折叠;
-     匹配行 `treeitem`(`aria-level=2`;预览文本,命中用 `<mark>` 高亮 —— 复用 Quick Open 的 `PICKER_MATCH_CLASS_NAME`,
+     匹配行 `treeitem`(`aria-level=2`;预览文本用 UI 比例字体(VSCode `.linematch` 不设等宽字体),一行放不下时先截后文、
+     再从左侧截前文(省略号在左),命中词在默认侧栏宽度下始终可见(e2e `search-preview-visible`);命中用 `<mark>` 高亮 —— 复用 Quick Open 的 `PICKER_MATCH_CLASS_NAME`,
      `--md-list-highlight`,强制颜色下改下划线)。虚拟化渲染,`aria-activedescendant` 只指向已挂载行。
    - 键盘:查询框 ↓ 进入结果树;树内 ↑ / ↓ 移动、Home / End、PageDown / PageUp(先到可视区末 / 首行,再按可视行数翻页,不循环;VSCode `list.focusPageDown/Up`,共用 `src/lib/list-page-nav.ts`)、→ 展开 / 进入首个匹配、← 折叠 / 回到文件行、Enter / Space
      打开当前匹配(文件行:切换折叠);F4 / ⇧F4(面板内)下一个 / 上一个结果并以预览方式打开(VSCode pinned=false,见 editor-preview-tab)。打开 = `editor.openFile(path, { line, column, length })`

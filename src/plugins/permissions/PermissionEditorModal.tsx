@@ -263,7 +263,7 @@ function PermissionEditorModalBody({
           {t('permissions.editor.save_failed')}
         </div>
       )}
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onClose}>
           {t('permissions.editor.cancel')}
         </Button>

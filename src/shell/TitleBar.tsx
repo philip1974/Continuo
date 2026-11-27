@@ -5,7 +5,7 @@
 // 文件取主窗正显示的编辑器组的活动 tab(useMainWindowEditorGroupId),不取全局活动 tab:活动编辑器组可能在 popout 子窗
 // (子窗自己的原生标题见 popout-window-titles)。
 
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { coApi } from '@/lib/co-api';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import { groupActiveTabIdOf, useEditorStore } from '@/stores/editor.store';
@@ -45,6 +45,47 @@ function useTitleBarCounterZoom(): number | undefined {
   return factor === 1 ? undefined : 1 / factor;
 }
 
+/**
+ * 本窗口是否全屏(只在 macOS 订阅:全屏时红绿灯隐藏)。初值经 main 查询,之后跟随 main 推送;推送先到则不被迟到的初值覆盖。
+ * 取不到(无 preload / 旧 preload)按非全屏。
+ */
+function useMacFullScreen(mac: boolean): boolean {
+  const [fullScreen, setFullScreen] = useState(false);
+  useEffect(() => {
+    if (!mac) return;
+    let alive = true;
+    let pushed = false;
+    let unsubscribe = (): void => {};
+    try {
+      unsubscribe = coApi.window.onFullScreenChange((v) => {
+        pushed = true;
+        setFullScreen(v);
+      });
+      coApi.window.isFullScreen().then(
+        (r) => {
+          if (alive && !pushed && r.ok) setFullScreen(r.data);
+        },
+        () => {},
+      );
+    } catch {
+      // 无 preload(测试 / 非 Electron):按非全屏
+    }
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, [mac]);
+  return fullScreen;
+}
+
+/**
+ * 标题两侧留白。macOS 非全屏:左侧是原生红绿灯,两侧各留 80px —— 对称保持标题居中,长标题截断时也不压红绿灯(VSCode mac 给
+ * window-controls-container 留 70px,对应 titleBarStyle hidden;这里是 hiddenInset,红绿灯更靠里,多留 10px)。全屏(红绿灯
+ * 隐藏,VSCode .fullscreen 同样隐藏该容器)与其它平台(原生标题栏)保持 48px。
+ */
+const TITLE_PAD_MAC_TRAFFIC_LIGHTS = 'px-20';
+const TITLE_PAD_DEFAULT = 'px-12';
+
 export function TitleBar() {
   const t = useT();
   const root = useWorkspaceStore((s) => s.root);
@@ -82,12 +123,15 @@ export function TitleBar() {
     document.title = windowTitle;
   }, [windowTitle]);
   const counterZoom = useTitleBarCounterZoom();
+  const mac = detectPlatform() === 'mac';
+  const fullScreen = useMacFullScreen(mac);
+  const titlePad = mac && !fullScreen ? TITLE_PAD_MAC_TRAFFIC_LIGHTS : TITLE_PAD_DEFAULT;
 
   return (
     <header
       style={counterZoom === undefined ? undefined : { zoom: counterZoom }}
       className="flex h-9 shrink-0 items-center justify-center border-b border-line bg-panel/40 text-xs text-fg-muted select-none [-webkit-app-region:drag]">
-      <span className="truncate px-12" title={filePath ?? root ?? undefined}>
+      <span className={`truncate ${titlePad}`} title={filePath ?? root ?? undefined} data-title-text="">
         {fileName}
         {dirty && (
           <>
