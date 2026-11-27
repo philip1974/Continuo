@@ -76,3 +76,23 @@ export async function openFileOrNotify(
   return false;
 }
 
+/**
+ * 会话恢复(重启 / 切换文件夹)时 tab 因编码读不出被跳过(上次选定的编码已不可逆 / 不是 UTF-8 且无记录):
+ * `「恢复失败」 <name>：<原因>`,附「通过编码重新打开」→ 编码选择器,选定后按该编码打开(失败照常提示)。
+ * 不静默改用别的编码打开(可能是错码)。BDD: src/__tests__/editor-text-encoding/(encoding-restart.spec.ts)
+ */
+export function notifyRestoreEncodingFailed(
+  name: string,
+  failure: Failure,
+  openWithEncoding: (encoding: TextEncodingId) => Promise<OpenResult>,
+): void {
+  notify.error(fileFailureText(t('editor.restore_failed'), name, failure), {
+    code: failure.code,
+    actions: [
+      {
+        label: t('encoding_picker.reopen'),
+        run: () => promptOpenWithEncoding(name, (encoding) => openFileOrNotify(() => openWithEncoding(encoding), name)),
+      },
+    ],
+  });
+}

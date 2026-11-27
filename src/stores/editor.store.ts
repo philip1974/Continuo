@@ -848,7 +848,7 @@ function applyTabStateChange(
 
 /**
  * chromeVersion 覆盖的单 tab 字段(EditorHeader chrome / action 区的 effectiveMode、TitleBar、关窗脏确认上报的
- * 变脏代际)。新增影响这些 UI 的 tab 字段只需加在这里(此前每个 action 各写一套「是否 bump」判定,markSaved
+ * 变脏代际;用户选定的编码随会话快照持久化,会话持久化订阅 chromeVersion)。新增影响这些 UI 的 tab 字段只需加在这里(此前每个 action 各写一套「是否 bump」判定,markSaved
  * 曾漏判 dirtyGen)。`!!` 归一化 undefined / false。
  */
 function tabChromeChanged(prev: EditorTab, next: EditorTab): boolean {
@@ -861,7 +861,9 @@ function tabChromeChanged(prev: EditorTab, next: EditorTab): boolean {
     !!prev.unsafeEditAccepted !== !!next.unsafeEditAccepted ||
     !!prev.milkdownTooLarge !== !!next.milkdownTooLarge ||
     !!prev.milkdownLargeAccepted !== !!next.milkdownLargeAccepted ||
-    !!prev.orphaned !== !!next.orphaned
+    !!prev.orphaned !== !!next.orphaned ||
+    prev.encoding !== next.encoding ||
+    !!prev.encodingPinned !== !!next.encodingPinned
   );
 }
 

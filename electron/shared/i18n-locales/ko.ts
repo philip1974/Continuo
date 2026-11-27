@@ -477,6 +477,7 @@ export const ko: Record<TranslationKey, string> = {
   'editor.autosave_readonly_detail': '{reason}. {hotkey}로 덮어쓸지 선택할 수 있습니다.',
   'editor.autosave_paused_deleted': '자동 저장 일시 중지: 디스크에서 {name} 파일을 찾을 수 없습니다. 변경 내용은 편집기에 남아 있으며 {hotkey}로 다시 저장할 수 있습니다.',
   'editor.save_failed': '저장 실패',
+  'editor.restore_failed': '복원 실패',
   'editor.untitled_name': '제목 없음-{n}',
   'editor.save_as_action': '다른 이름으로 저장…',
   'editor.retry_save': '다시 시도',

@@ -176,3 +176,42 @@ test('已打开编辑器的未保存修改也能搜到(VSCode:内存内容覆盖
   // 磁盘上仍是旧内容(.ts 不自动保存)—— 结果来自内存
   expect(readFileSync(path.join(workspaceRoot, 'src', 'a.ts'), 'utf8')).not.toContain('unsavedZebra');
 });
+
+test('带 BOM 的 UTF-16 LE / BE 与 UTF-8 BOM 文件也能搜到;点击结果按正确编码打开并定位(BOM 不计入列号)', async ({
+  window,
+  workspaceRoot,
+}) => {
+  const text = 'line1\r\n    const bomNeedle = 3;\r\n';
+  const le = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')]);
+  const beBody = Buffer.from(text, 'utf16le');
+  for (let i = 0; i + 1 < beBody.length; i += 2) [beBody[i], beBody[i + 1]] = [beBody[i + 1]!, beBody[i]!];
+  writeFileSync(path.join(workspaceRoot, 'le.txt'), le);
+  writeFileSync(path.join(workspaceRoot, 'be.txt'), Buffer.concat([Buffer.from([0xfe, 0xff]), beBody]));
+  writeFileSync(path.join(workspaceRoot, 'bom8.txt'), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(`bomNeedle\n${text}`)]));
+  const input = await openSearch(window);
+  await input.fill('bomNeedle');
+  await expect(window.locator(STATUS)).toHaveText(summary(3, 4), { timeout: 10_000 });
+  const tree = resultsTree(window);
+  const encodingItem = window.locator('footer [data-statusbar-encoding]');
+  const cases: [string, string, string][] = [
+    ['le.txt', 'UTF-16 LE', '    const bomNeedle = 3;|10'],
+    ['be.txt', 'UTF-16 BE', '    const bomNeedle = 3;|10'],
+    ['bom8.txt', 'UTF-8 with BOM', 'bomNeedle|0'],
+  ];
+  for (const [name, label, at] of cases) {
+    // 打开的编辑器可能盖住搜索面板(同一 dock 组):⇧⌘F 切回(结果保留)
+    if (name !== cases[0]![0]) await openSearch(window);
+    const fileRow = tree.getByRole('treeitem', { name: new RegExp(`^${name.replace('.', '\\.')}`) }).first();
+    await expect(fileRow).toBeVisible();
+    // 文件行之后的第一条匹配
+    const rows = tree.getByRole('treeitem');
+    const idx = await rows.evaluateAll((els, n) => els.findIndex((e) => e.getAttribute('aria-level') === '1' && e.textContent?.startsWith(n)), name);
+    await rows.nth(idx + 1).click();
+    await expect
+      .poll(() => window.evaluate(() => globalThis.__continuoTest!.getEditorActiveTabId()), { timeout: 10_000 })
+      .toMatch(new RegExp(`${name.replace('.', '\\.')}$`));
+    await expect(encodingItem).toHaveText(label);
+    await expect.poll(() => caret(window), { timeout: 10_000 }).toBe(at);
+    await expect.poll(() => window.evaluate(() => document.getSelection()?.toString())).toBe('bomNeedle');
+  }
+});

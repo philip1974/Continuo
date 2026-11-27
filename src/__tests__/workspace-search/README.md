@@ -21,7 +21,10 @@
    - 范围:只搜**发送窗口**的工作区根(main 按发送方窗口取根,renderer 不传根);无工作区 → 错误。
    - 文件枚举复用 fs:list-dir 的 walker(不跟随符号链接、深度上限 `LIST_DIR_MAX_DEPTH`),排除表与 Quick Open 同一来源
      (`WORKSPACE_SCAN_EXCLUDE`:`.git` / `node_modules` / `dist` / `out` / `build` / `.next` …);符号链接、非普通文件
-     (FIFO / 设备)、> 1 MiB(`SEARCH_MAX_FILE_BYTES`)、非 UTF-8 或含 NUL 字节(二进制)的文件跳过;不读 `.gitignore`
+     (FIFO / 设备)、> 1 MiB(`SEARCH_MAX_FILE_BYTES`,按磁盘字节)、含 NUL 的文件(二进制)跳过。编码(`search-bom-encoding.spec.ts`;
+     VSCode 默认 `files.encoding=utf8` 时 ripgrep 按 BOM 嗅探):带 BOM 的 UTF-8 / UTF-16 LE / BE 按 BOM 可逆解码后搜(与编辑器打开
+     同一解码实现),BOM 不计入列号 —— 行 / 列 / 预览与编辑器里(内容不含 BOM)一致,点击打开时 tab 自动识别为同一编码;BOM 后字节
+     不可逆(奇数字节的 UTF-16、非法 UTF-8)的跳过;无 BOM 的须是合法 UTF-8,GBK 等(及无 BOM 的 UTF-16)不猜编码、跳过;不读 `.gitignore`
      (与 VSCode 默认 `search.useIgnoreFiles` 的偏离,见末节)。文件数上限 `SEARCH_MAX_FILES`,超出标记 `filesLimitHit`。
      因过大跳过的文件计数(`done.skippedLargeCount`)并报告路径(`done.skippedLargePaths`,至多
      `SEARCH_SKIPPED_LARGE_REPORT_MAX` 个;其它原因的跳过不计),供视图提示「已跳过 N 个大文件」。
@@ -76,6 +79,7 @@
 
 - `search-query.spec.ts` — 2 / 3(正则构建、glob 语义)
 - `search-engine.spec.ts` — 4 的搜索引擎(排除、跳过、限额、预览、分批)
+- `search-bom-encoding.spec.ts` — 4 的编码(带 BOM 的 UTF-8 / UTF-16)及 6 的覆盖键对这些文件同样成立
 - `search-ipc.spec.ts` — 4 的 IPC / 服务(窗口根、取消、事件转发、schema、preload 守卫)
 - `search-view.spec.tsx` — 5
 - `search-command.spec.ts` — 1

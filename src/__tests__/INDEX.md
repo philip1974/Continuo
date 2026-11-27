@@ -776,6 +776,7 @@
 ## [editor-text-encoding](./editor-text-encoding/README.md)
 
 - [`editor-encoding-flow.spec.ts`](./editor-text-encoding/editor-encoding-flow.spec.ts)
+- [`encoding-restart.spec.ts`](./editor-text-encoding/encoding-restart.spec.ts)
 - [`statusbar-encoding.spec.tsx`](./editor-text-encoding/statusbar-encoding.spec.tsx)
 - [`text-codec.spec.ts`](./editor-text-encoding/text-codec.spec.ts)
 
@@ -2299,6 +2300,7 @@
 
 ## [workspace-search — 工作区文本搜索视图(在文件中查找 ⇧⌘F)](./workspace-search/README.md)
 
+- [`search-bom-encoding.spec.ts`](./workspace-search/search-bom-encoding.spec.ts)
 - [`search-command.spec.ts`](./workspace-search/search-command.spec.ts)
 - [`search-engine.spec.ts`](./workspace-search/search-engine.spec.ts)
 - [`search-input-restart.spec.ts`](./workspace-search/search-input-restart.spec.ts)

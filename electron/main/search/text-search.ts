@@ -1,12 +1,15 @@
 // 工作区文本搜索引擎(在文件中查找,对齐 VSCode Search):在 worker 线程里运行(text-search.worker.ts),也可直接调用(单测)。
-// 枚举复用 fs:list-dir 的 walker 与 Quick Open 同一排除表;逐文件有界读(≤ 1 MiB、只读普通文件、要求合法 UTF-8、含 NUL 视作二进制),
+// 枚举复用 fs:list-dir 的 walker 与 Quick Open 同一排除表;逐文件有界读(≤ 1 MiB、只读普通文件、含 NUL 视作二进制;带 BOM 的
+// UTF-8 / UTF-16 LE / BE 按 BOM 可逆解码、BOM 不计入列号(VSCode 默认 files.encoding=utf8 时 ripgrep 按 BOM 嗅探);
+// 无 BOM 的须是合法 UTF-8,GBK 等不猜编码、跳过),
 // 逐行匹配(matchSearchText,renderer 搜已打开编辑器的内存内容用同一实现),命中文件按时间窗攒批经 onFiles 推出;
 // 因过大跳过的文件计数并报告路径(renderer 显示「已跳过 N 个大文件」);读不了的子目录跳过并计数(根读不了才整体失败),
 // 单个文件读失败(EACCES / EISDIR / ELOOP / ENAMETOOLONG 等)静默跳过该文件。BDD: src/__tests__/workspace-search/
 
 import path from 'node:path';
 import { scanDir } from '../ipc/fs/list-dir';
-import { readFileCappedFd } from '../lib/read-fh-capped';
+import { readBytesCappedFd } from '../lib/read-fh-capped';
+import { decodeTextFile, detectEncodingByBom } from '../lib/text-codec';
 import { LIST_DIR_MAX_DEPTH, WORKSPACE_SCAN_EXCLUDE } from '../../shared/fs-limits';
 import {
   buildSearchRegExp,
@@ -124,13 +127,29 @@ export async function runTextSearch(opts: TextSearchOptions): Promise<TextSearch
 /** readSearchableText 的「过大而跳过」标记(与其它跳过原因区分,用于「已跳过 N 个大文件」提示)。 */
 const TOO_LARGE: unique symbol = Symbol('too-large');
 
-/** 可搜索的文本;过大 → TOO_LARGE;其它跳过(符号链接被换入 / 非普通文件 / 非 UTF-8 / 含 NUL / 读失败)→ null。 */
+/**
+ * 可搜索的文本(不含 BOM,与编辑器打开后的内容同口径,列号对得上);过大 → TOO_LARGE;其它跳过(符号链接被换入 / 非普通文件 /
+ * 无 BOM 且非 UTF-8 / BOM 编码不可逆 / 含 NUL / 读失败)→ null。BDD: src/__tests__/workspace-search/(search-bom-encoding.spec.ts)
+ */
 async function readSearchableText(abs: string): Promise<string | typeof TOO_LARGE | null> {
   try {
-    const r = await readFileCappedFd(abs, SEARCH_MAX_FILE_BYTES, { requireUtf8: true });
-    if (r.tooLarge) return TOO_LARGE;
-    if (r.text === null || r.text.includes('\0')) return null;
-    return r.text;
+    const r = await readBytesCappedFd(abs, SEARCH_MAX_FILE_BYTES);
+    if (r.bytes === null) return TOO_LARGE;
+    const text = decodeSearchable(r.bytes);
+    return text === null || text.includes('\0') ? null : text;
+  } catch {
+    return null;
+  }
+}
+
+/** 带 BOM → 按 BOM 的编码(编辑器打开同一实现);否则严格 UTF-8(无 BOM 的 UTF-16 / GBK 等不猜,同改动前)。 */
+function decodeSearchable(bytes: Uint8Array): string | null {
+  if (detectEncodingByBom(bytes) !== null) {
+    const d = decodeTextFile(bytes);
+    return d.ok ? d.text : null;
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
   } catch {
     return null;
   }

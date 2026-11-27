@@ -29,6 +29,7 @@ editor?: {
     scrollTop?: number ≥ 0;
     image?: { scale: 'fit' | 0.1–20; scrollLeft: ≥ 0; scrollTop: ≥ 0 };
   }>;
+  encodings?: Array<{ path: string; encoding: TextEncodingId }>;  // 用户选定的编码(见 editor-text-encoding)
 }
 ```
 

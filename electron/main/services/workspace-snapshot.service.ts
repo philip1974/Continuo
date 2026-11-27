@@ -45,10 +45,15 @@ function scopedMru(mru: readonly string[] | undefined, open: readonly string[]):
 }
 
 function scopeEditor(editor: SnapshotEditor, inside: (p: string) => boolean): SnapshotEditor {
-  const { openFilePaths, activePath, mruPaths, viewStates, groups, activeGroup, ...rest } = editor;
+  const { openFilePaths, activePath, mruPaths, viewStates, encodings, groups, activeGroup, ...rest } = editor;
   const open = openFilePaths.filter(inside);
   const views = viewStates?.filter((v) => inside(v.path));
-  const viewsField = views === undefined || views.length === 0 ? null : { viewStates: views };
+  // 用户选定的编码(按文件)同视图状态剔除 root 外的
+  const encs = encodings?.filter((e) => inside(e.path));
+  const viewsField = {
+    ...(views === undefined || views.length === 0 ? null : { viewStates: views }),
+    ...(encs === undefined || encs.length === 0 ? null : { encodings: encs }),
+  };
   if (groups !== undefined) {
     const kept = groups
       .map((g): SnapshotGroup => {

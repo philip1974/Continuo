@@ -490,6 +490,7 @@ export const en = {
   'editor.autosave_readonly_detail': '{reason}. Press {hotkey} to choose whether to overwrite it.',
   'editor.autosave_paused_deleted': 'Auto-save paused: {name} no longer exists on disk. Your changes are kept in the editor; press {hotkey} to save it again.',
   'editor.save_failed': 'Failed to save',
+  'editor.restore_failed': 'Failed to restore',
   // 无标题编辑器(⌘N)的 tab 名 / 保存失败提示的按钮(VSCode Save As… / Retry;BDD: src/__tests__/editor-save-as/)
   'editor.untitled_name': 'Untitled-{n}',
   'editor.save_as_action': 'Save As…',

@@ -51,6 +51,10 @@ import {
   useSettingsStore,
 } from '@/stores/settings.store';
 import { readEditorFile } from '@/panels/Editor/editor-image';
+import { openFileByPath } from '@/panels/Editor/editor-file-actions';
+import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
+import { basenamePreserveTrailing } from '@/panels/Explorer/path-utils';
+import { notifyRestoreEncodingFailed } from '@/notifications/notify-open-failed';
 import './styles/tailwind.css';
 
 // E2E hook:Playwright 通过 page.evaluate 调 dock 操作 / store 重置。
@@ -272,7 +276,12 @@ export async function init(): Promise<void> {
     },
     {
       // 图片 tab 恢复同打开:stat 指纹,不读成文本(见 editor-image)
-      fs: { readFile: (p) => readEditorFile(coApi.fs, p) },
+      fs: { readFile: (p, o) => readEditorFile(coApi.fs, p, o) },
+      // 按上次选定的编码读不出 → 提示并可「通过编码重新打开」(BDD: src/__tests__/editor-text-encoding/)
+      onRestoreEncodingFailed: (path, failure) =>
+        notifyRestoreEncodingFailed(basenamePreserveTrailing(path), failure, (encoding) =>
+          openFileByPath(path, editorFileDeps, { encoding }),
+        ),
       windowSeq: initialWindowSeq,
       ...(initialWorkspace !== null ? { initialWorkspace } : {}),
       ...(initialFresh ? { fresh: true } : {}),

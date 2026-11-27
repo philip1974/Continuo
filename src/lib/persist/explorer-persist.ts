@@ -29,6 +29,7 @@ import {
   editorGroupIdsOf,
   editorGroupsOf,
   liveEditorViewOf,
+  withEncoding,
   type EditorGroup,
   type EditorGroupLayout,
   type EditorTab,
@@ -68,6 +69,7 @@ import {
   ExplorerSchema,
   ExplorerSchemaV3,
   WorkspaceSnapshotStateSchema,
+  type EditorEncodingEntry,
   type EditorViewStateEntry,
   type ExplorerPayloadV3,
   type WindowEntryV3,
@@ -81,6 +83,9 @@ import {
   type PersistedEditorViewState,
 } from '@/panels/Editor/editor-view-state-cache';
 import { notifyIfFailed } from '@/notifications/notify-thrown-error';
+import { readEncodingOf } from '@/panels/Editor/editor-encoding';
+import { ERROR_CODES } from '../../../electron/shared/error-codes';
+import type { TextEncodingId } from '../../../electron/shared/text-encoding';
 import { restoreSearchInput, searchInputSnapshot, useSearchStore } from '@/panels/Search/search-store';
 
 const DEBOUNCE_MS = 300;
@@ -135,10 +140,19 @@ export interface ExplorerPersistApi {
   switchWorkspace?: (input: DeepReadonly<WorkspaceSwitchInput>) => Promise<IpcResult<unknown>>;
 }
 
-/** Editor session 异步 hydrate 所需的 fs 子集(只用 readFile). */
+/** Editor session 异步 hydrate 所需的 fs 子集(只用 readFile;encoding = 上次会话里用户选定的编码). */
 export interface EditorSessionFsApi {
-  readFile: (path: string) => Promise<FsReadFileResult>;
+  readFile: (path: string, opts?: { readonly encoding: TextEncodingId }) => Promise<FsReadFileResult>;
 }
+
+/**
+ * 恢复编辑器 tab 时因编码读不出(按上次选定的编码不再可逆 FS_DECODE_FAILED / 不是 UTF-8 且没有记录的编码 FS_UNKNOWN_ENCODING)
+ * 而跳过的文件:不静默按别的编码打开,交给调用方提示并让用户重新选编码(BDD: src/__tests__/editor-text-encoding/)。
+ */
+export type RestoreEncodingFailedHandler = (
+  path: string,
+  failure: { readonly code: string; readonly message: string },
+) => void;
 
 export interface InitExplorerPersistenceExtras {
   readonly fs?: EditorSessionFsApi;
@@ -162,6 +176,8 @@ export interface InitExplorerPersistenceExtras {
   readonly fresh?: boolean;
   /** 同一窗口切换 root 后按快照恢复完(含编辑器 tab 读盘)时调用(组与 dock 编辑器面板对齐)。 */
   readonly onWorkspaceSnapshotRestored?: () => void;
+  /** 启动恢复 / 切换文件夹恢复时编码读不出的 tab(见 RestoreEncodingFailedHandler)。 */
+  readonly onRestoreEncodingFailed?: RestoreEncodingFailedHandler;
 }
 
 // ──────────────────────────────────────────────
@@ -371,6 +387,21 @@ export function collectEditorViewStates(
   return out;
 }
 
+/**
+ * 用户选定了编码的打开中 file tab(encodingPinned;与 openFilePaths 同口径跳过插件打开的 / 无标题的),每个文件一条,
+ * 至多 EDITOR_VIEW_STATES_MAX 条(VSCode FileEditorInput 序列化 encoding,恢复时作 preferredEncoding)。自动识别的不写。
+ * BDD: src/__tests__/editor-text-encoding/(encoding-restart.spec.ts)
+ */
+export function collectEditorEncodings(tabs: readonly EditorTab[]): EditorEncodingEntry[] {
+  const out: EditorEncodingEntry[] = [];
+  for (const tab of tabs) {
+    if (out.length >= EDITOR_VIEW_STATES_MAX) break;
+    if (tab.encodingPinned !== true || tab.pluginOpenedPath !== undefined || isUntitledPath(tab.filePath)) continue;
+    out.push({ path: tab.filePath, encoding: tab.encoding ?? 'utf8' });
+  }
+  return out;
+}
+
 export function copyPersistPaths(paths: readonly string[]): string[] {
   if (paths.length === 0) return EMPTY_PERSIST_PATHS;
   const out = new Array<string>(paths.length);
@@ -413,6 +444,7 @@ export function snapshotFromStores(
     ed.activeTabId,
   );
   const viewStates = collectEditorViewStates(ed.tabs, editorGroupsOf(ed), liveEditorViewOf);
+  const encodings = collectEditorEncodings(ed.tabs);
   const groupsSnap = collectEditorGroupsSnapshot(ed.tabs, ed.groups, ed.activeGroupId, ed.tabMru, ed.previewTabs);
   const mruSnap = collectEditorMruSnapshot(ed.tabs, ed.activeTabId, ed.groups, ed.tabMru);
   const previewSnap = collectEditorPreviewSnapshot(ed.tabs, ed.groups, ed.previewTabs);
@@ -437,6 +469,7 @@ export function snapshotFromStores(
       // 只在非默认时写(旧形态不变)
       ...(ed.mode === 'source' ? null : { mode: ed.mode }),
       ...(viewStates.length === 0 ? null : { viewStates }),
+      ...(encodings.length === 0 ? null : { encodings }),
       ...(mruSnap ?? null),
       ...(previewSnap ?? null),
       ...(groupsSnap ?? null),
@@ -530,12 +563,22 @@ export async function hydrateEditorTabs(
   snap: ExplorerSnapshot,
   fs: EditorSessionFsApi,
   windowSeq: number = PRIMARY_WINDOW_SEQ,
+  onEncodingFailed?: RestoreEncodingFailedHandler,
 ): Promise<void> {
   const entry = findWindowEntryBySeq(snap.windows, windowSeq);
-  if (entry) await restoreEditorTabs(entry, fs);
+  if (entry) await restoreEditorTabs(entry, fs, onEncodingFailed);
 }
 
-async function restoreEditorTabs(entry: ExplorerWindowEntry, fs: EditorSessionFsApi): Promise<void> {
+/** 恢复时编码读不出(见 RestoreEncodingFailedHandler)。 */
+function isEncodingFailure(code: string): boolean {
+  return code === ERROR_CODES.FS_DECODE_FAILED || code === ERROR_CODES.FS_UNKNOWN_ENCODING;
+}
+
+async function restoreEditorTabs(
+  entry: ExplorerWindowEntry,
+  fs: EditorSessionFsApi,
+  onEncodingFailed?: RestoreEncodingFailedHandler,
+): Promise<void> {
   if (!entry.editor || entry.editor.openFilePaths.length === 0) return;
   // 本轮 restore 期望的 workspace root(= hydrateStores 刚据此 snapshot 段设的 root)。
   // readFile 是异步的,期间用户可能切到别的 workspace(setRoot 会关掉 root 外 tab,但此刻
@@ -562,12 +605,14 @@ async function restoreEditorTabs(entry: ExplorerWindowEntry, fs: EditorSessionFs
   const before = useEditorStore.getState();
   const baselinePulse = before.editorFocusPulse;
   const baselineActive = before.activeTabId;
+  // 上次会话里用户选定的编码:按它读(否则 GBK 等文件自动识别读不出),恢复出的 tab 仍记为用户选定。
+  const encodings = new Map<string, TextEncodingId>();
+  for (const e of entry.editor.encodings ?? []) encodings.set(e.path, e.encoding);
   // 边界(E216):固定 worker 池并发读,峰值并发钳到 RESTORE_READ_CONCURRENCY(不一次性 fan-out 全部 readFile)。
-  const settled = await allSettledWithConcurrency(
-    paths,
-    RESTORE_READ_CONCURRENCY,
-    (path) => fs.readFile(path),
-  );
+  const settled = await allSettledWithConcurrency(paths, RESTORE_READ_CONCURRENCY, (path) => {
+    const encoding = encodings.get(path);
+    return encoding === undefined ? fs.readFile(path) : fs.readFile(path, { encoding });
+  });
   // 跨平台(复查 P2,pathEquals 相等族):root 守卫须用平台感知相等,不能字节级 `!==`。
   // expectedRoot / currentRoot 均经 normalizeWorkspaceRoot,可能为 null。Windows 文件系统
   // 大小写不敏感,恢复在途若同一文件夹以不同大小写被(重新)设为 root,字节比较会误判
@@ -605,14 +650,23 @@ async function restoreEditorTabs(entry: ExplorerWindowEntry, fs: EditorSessionFs
     const s = settled[i];
     if (!s || s.status !== 'fulfilled') continue; // reject → 当失败跳过(不抛)
     const r = s.value;
-    if (!r || !r.ok) continue;
+    if (!r) continue;
+    const path = paths[i]!;
+    if (!r.ok) {
+      // 编码读不出:不静默改用别的编码打开(可能是错码),提示并让用户重新选(读盘期间用户已自己打开的不提示)
+      if (typeof r.code === 'string' && isEncodingFailure(r.code) && !hasEditorTabWithId(useEditorStore.getState().tabs, path)) {
+        onEncodingFailed?.(path, { code: r.code, message: r.message });
+      }
+      continue;
+    }
     // 读盘期间用户已自己打开同一文件 → 保留其本会话状态
-    if (!hasEditorTabWithId(useEditorStore.getState().tabs, paths[i]!)) {
-      for (const view of viewStates.get(paths[i]!) ?? []) {
-        seedPersistedEditorViewState(paths[i]!, view, multiGroup ? view.group : undefined);
+    if (!hasEditorTabWithId(useEditorStore.getState().tabs, path)) {
+      for (const view of viewStates.get(path) ?? []) {
+        seedPersistedEditorViewState(path, view, multiGroup ? view.group : undefined);
       }
     }
-    store.openTab(createTab(paths[i]!, r.data, r.realPath, r.encoding), restoreOpts);
+    const created = createTab(path, r.data, r.realPath, r.encoding);
+    store.openTab(encodings.has(path) ? withEncoding(created, readEncodingOf(r), true) : created, restoreOpts);
   }
   // 多个编辑器组:按组分配刚恢复的文档(tab id = 打开时的路径;读盘失败的跳过,变空的组丢弃)。
   // 用户在读盘期间已打开 / 切换 → 那些文档留在活动组,不抢回活动组(同上方 keepUserActive)。
@@ -769,7 +823,7 @@ export async function initExplorerPersistence(
   // 2. async hydrate editor tabs(只在自己段存在且非 fresh 时 restore)
   if (!fresh && hydratedSnap && extras?.fs && findWindowEntryBySeq(hydratedSnap.windows, windowSeq)) {
     try {
-      await hydrateEditorTabs(hydratedSnap, extras.fs, windowSeq);
+      await hydrateEditorTabs(hydratedSnap, extras.fs, windowSeq, extras.onRestoreEncodingFailed);
     } catch (err) {
       console.warn('[explorer-persist] hydrate editor failed', err);
     }
@@ -911,7 +965,7 @@ function wireWorkspaceSnapshots(
     if (!parsed.success || gen !== switchGen || root === null || !pathEquals(root, to)) return;
     const entry: ExplorerWindowEntry = { windowSeq, ...parsed.data, workspace: { root } };
     hydrateWindowSegment(entry);
-    if (extras?.fs) await restoreEditorTabs(entry, extras.fs);
+    if (extras?.fs) await restoreEditorTabs(entry, extras.fs, extras.onRestoreEncodingFailed);
     extras?.onWorkspaceSnapshotRestored?.();
   };
   setBeforeWorkspaceRootSwitch((from, to) => {

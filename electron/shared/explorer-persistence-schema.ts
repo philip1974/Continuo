@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { IMAGE_MAX_SCALE, IMAGE_MIN_SCALE } from './image-preview';
 import { EDITOR_GROUP_ID_RE, EDITOR_GROUPS_MAX } from './editor-group-id';
 import { SEARCH_GLOB_MAX, SEARCH_PATTERN_MAX } from './workspace-search';
+import { TEXT_ENCODING_IDS, type TextEncodingId } from './text-encoding';
 
 // 边界(E14):explorer.json 的路径数组/字符串此前无上限。损坏/畸形快照只要 shape 对就通过,
 // loadExplorer/hydrate 会接受超大数组,随后批量恢复 tab、展开树、写回快照 → 启动卡顿、IPC/JSON
@@ -95,6 +96,18 @@ const EditorViewStateEntrySchema = z
   })
   .strict();
 
+/**
+ * 用户选定的文件编码(「通过编码重新打开 / 保存」,VSCode FileEditorInput 序列化的 encoding → 恢复时作 preferredEncoding):
+ * 每个文件一条(文档跨组共享同一编码),只写用户选定的(自动识别的 BOM / UTF-8 重启后照样识别),条数上限同 viewStates。
+ * 编码 id 白名单 = shared/text-encoding。BDD: src/__tests__/editor-text-encoding/(encoding-restart.spec.ts)
+ */
+const EditorEncodingEntrySchema = z
+  .object({
+    path: pathStr(),
+    encoding: z.enum(TEXT_ENCODING_IDS as [TextEncodingId, ...TextEncodingId[]]),
+  })
+  .strict();
+
 const editorGroupId = (): z.ZodString => z.string().max(32).regex(EDITOR_GROUP_ID_RE);
 
 const EditorGroupSessionSchema = z
@@ -120,6 +133,8 @@ const EditorSessionSchema = z
     /** Markdown 视图模式(全局);只在非默认(source)时写。 */
     mode: z.enum(['edit', 'source', 'preview']).optional(),
     viewStates: z.array(EditorViewStateEntrySchema).max(EDITOR_VIEW_STATES_MAX).optional(),
+    /** 用户选定编码的打开中文件(见 EditorEncodingEntrySchema);缺省 = 全部自动识别(旧数据同)。 */
+    encodings: z.array(EditorEncodingEntrySchema).max(EDITOR_VIEW_STATES_MAX).optional(),
     /**
      * 编辑器组(只在多于一个组时写;旧字段 openFilePaths / activePath 仍是全部文档 / 活动组的活动文件,旧版本照常读成单组)。
      * BDD: src/__tests__/editor-groups/
@@ -131,6 +146,7 @@ const EditorSessionSchema = z
   .strict();
 
 export type EditorViewStateEntry = z.infer<typeof EditorViewStateEntrySchema>;
+export type EditorEncodingEntry = z.infer<typeof EditorEncodingEntrySchema>;
 
 // 搜索视图的输入跨重启(VSCode SearchView 视图状态:query.contentPattern / regex / caseSensitive / wholeWords /
 // folderIncludes / folderExclusions / queryDetailsExpanded;恢复输入,不自动重搜)。只写非默认项;长度上限与
