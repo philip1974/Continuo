@@ -8,6 +8,18 @@ import { killPluginShellProcesses } from '../lib/plugin-shell-children';
 import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import { ShellExecInputSchema as ExecInput } from '../../shared/shell-exec-schema';
 import { MAX_EXTERNAL_URL_LEN } from '../../shared/url-limits';
+import { BrowserWindow, type WebContents } from 'electron';
+import {
+  DEFAULT_TRUSTED_DOMAINS,
+  TRUSTED_DOMAINS_MAX,
+  TRUSTED_DOMAIN_MAX_LEN,
+} from '../../shared/trusted-domains';
+import {
+  getUserTrustedDomains,
+  onUserTrustedDomainsChanged,
+  setUserTrustedDomains,
+} from '../services/trusted-domains.service';
+import { broadcastToWindows } from '../lib/broadcast';
 
 const KillPluginProcessesInput = z
   .object({ pluginId: z.string().min(1).max(PLUGIN_ID_MAX_LEN) })
@@ -19,6 +31,16 @@ const OpenExternalInput = z
     url: z.string().min(1).max(MAX_EXTERNAL_URL_LEN),
   })
   .strict();
+
+const SetTrustedDomainsInput = z
+  .object({ domains: z.array(z.string().max(TRUSTED_DOMAIN_MAX_LEN)).max(TRUSTED_DOMAINS_MAX) })
+  .strict();
+
+/** 确认框挂在哪个窗口:获焦窗口(点击发生在 popout 子窗时就是它,子窗界面由主窗 renderer 驱动),否则发送方窗口。 */
+function dialogParent(sender: WebContents): BrowserWindow | null {
+  const focused = BrowserWindow.getFocusedWindow();
+  return focused && !focused.isDestroyed() ? focused : BrowserWindow.fromWebContents(sender);
+}
 
 export function registerShellIpc(): void {
   // 归属登记用 main 侧的发送方 webContents id(非 renderer 自报)。
@@ -38,9 +60,15 @@ export function registerShellIpc(): void {
     KillPluginProcessesInput,
     ({ pluginId }, { event }) => killPluginShellProcesses(event.sender.id, pluginId),
   );
-  safeHandle(
-    SHELL_CHANNELS.OPEN_EXTERNAL,
-    OpenExternalInput,
-    openExternalUrl,
+  safeHandleWithCtx(SHELL_CHANNELS.OPEN_EXTERNAL, OpenExternalInput, (input, { event }) =>
+    openExternalUrl(input, dialogParent(event.sender)),
+  );
+  safeHandle(SHELL_CHANNELS.TRUSTED_DOMAINS_GET, z.undefined(), async () => ({
+    user: await getUserTrustedDomains(),
+    defaults: DEFAULT_TRUSTED_DOMAINS,
+  }));
+  safeHandle(SHELL_CHANNELS.TRUSTED_DOMAINS_SET, SetTrustedDomainsInput, ({ domains }) => setUserTrustedDomains(domains));
+  onUserTrustedDomainsChanged((list) =>
+    broadcastToWindows(SHELL_CHANNELS.TRUSTED_DOMAINS_CHANGED, () => list, '[shell] TRUSTED_DOMAINS_CHANGED'),
   );
 }

@@ -674,9 +674,10 @@ function windowOpenHandler({ url, features }: HandlerDetails, openerId?: number)
 }
 
 // 页面内容触发的「离开应用」(window.open 被拒 / 主框架导航被拦)统一出口:与外链 IPC 同一规则
-//(shell.service 的 openExternalIfAllowed:长度上限 + scheme 白名单 + sanitize),不放行的静默丢弃。
+//(shell.service 的 openExternalIfAllowed:长度上限 + scheme 白名单 + sanitize + 受信域名确认),不放行的静默丢弃。
+// 确认框挂在获焦窗口上(链接刚在那里被点击)。
 function openExternalFromPage(url: string): void {
-  void openExternalIfAllowed(url).catch((err: unknown) => console.warn('[nav] openExternal failed', err));
+  void openExternalIfAllowed(url, BrowserWindow.getFocusedWindow()).catch((err: unknown) => console.warn('[nav] openExternal failed', err));
 }
 
 interface CreateMainWindowOpts {

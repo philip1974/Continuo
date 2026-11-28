@@ -1,12 +1,15 @@
 import { Fragment, type ReactNode } from 'react';
 import { PICKER_MATCH_CLASS_NAME } from './picker-row';
+import { revealInvisibleChars } from '@/lib/untrusted-text';
 
 /**
  * 把 text 里命中的字符包成 <mark>(连续下标合成一段)。indices 是升序的命中下标,按 offset 换算到 text 内
  *(text 是匹配源 [offset, offset + text.length) 那一段,如命令的分类 / 标题、文件的目录 / 文件名);落在段外的忽略。
  * 只换样式,文字内容与顺序不变 —— 行的读屏名称照旧连贯。
  */
-export function highlightMatches(text: string, indices: readonly number[] | null, offset = 0): ReactNode {
+export function highlightMatches(raw: string, indices: readonly number[] | null, offset = 0): ReactNode {
+  // 双向控制 / 零宽字符可见化(等长替换,下标不变;Quick Open 的文件名 / 目录、命令、符号都经这里显示)
+  const text = revealInvisibleChars(raw);
   if (!indices || indices.length === 0) return text;
   const parts: ReactNode[] = [];
   let pos = 0;

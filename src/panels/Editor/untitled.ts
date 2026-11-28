@@ -2,6 +2,7 @@
 //(见 electron/shared/untitled)。语言模式 = 纯文本(标识无扩展名);首次保存走另存为;自动保存跳过;不进会话快照 / 最近关闭
 //(Continuo 不做热退出,关闭 / 关窗时有内容即按脏文件确认)。tab 名按界面语言(「Untitled-1」/「无标题-1」)。
 // BDD: src/__tests__/editor-save-as/
+import { revealInvisibleChars } from '@/lib/untrusted-text';
 import { t } from '@/i18n';
 import { basenameForChrome } from '@/lib/path-label';
 import { createTab, groupTabsOf, useEditorStore, type EditorTab } from '@/stores/editor.store';
@@ -43,7 +44,8 @@ export function newUntitledFile(requestedGroupId?: string): string {
 /** tab / 标题栏 / 确认框里显示的文件名:无标题 → 按界面语言的「Untitled-N」;其余同 basenameForChrome。 */
 export function editorTabTitle(filePath: string): string {
   const n = untitledNumberOf(filePath);
-  return n === null ? basenameForChrome(filePath) : t('editor.untitled_name', { n });
+  // 文件名里的双向控制 / 零宽字符可见化(tab、标题栏、状态栏、确认框与提示都经这里取名)
+  return n === null ? revealInvisibleChars(basenameForChrome(filePath)) : t('editor.untitled_name', { n });
 }
 
 /** 首行推断名字的最大长度(VSCode UntitledTextEditorModel.FIRST_LINE_NAME_MAX_LENGTH)。 */

@@ -11,7 +11,8 @@
 
 import { Plugin } from '@/plugins/Plugin';
 import { lazyPanel, preloadableLazy } from '@/lib/lazy-panel';
-import { openSettingsPanel, toggleSettingsPanel } from '@/lib/toggle-settings-panel';
+import { openSettingsPanel, openSettingsWithQuery, toggleSettingsPanel } from '@/lib/toggle-settings-panel';
+import { WORKBENCH_TRUSTED_DOMAINS } from '@/plugins/settings/core-setting-specs';
 import { loadCategoryTabContent } from './lazy-category-tab';
 import { preloadPluginsTabs } from './PluginsTabPlugin';
 import { preloadKeybindingsTab } from './KeybindingsTabPlugin';
@@ -51,6 +52,16 @@ export default class SettingsPanelPlugin extends Plugin {
       categoryKey: 'commands.preferences.category',
       keywordsKey: 'commands.preferences.open_settings.keywords',
       fn: () => openSettingsPanel(),
+    });
+    this.addCommand({
+      // VSCode「Manage Trusted Domains」(workbench.action.manageTrustedDomain,trustedDomains.ts):外链确认框「配置受信任的域 →
+      // 管理受信任的域」也发这个命令。打开设置并只列出受信任的域这一项。
+      id: 'workbench.action.manageTrustedDomain',
+      title: 'Manage Trusted Domains',
+      titleKey: 'commands.preferences.manage_trusted_domains.title',
+      category: 'Preferences',
+      categoryKey: 'commands.preferences.category',
+      fn: () => openSettingsWithQuery(`@id:${WORKBENCH_TRUSTED_DOMAINS.id}`),
     });
     this.addCommand({
       id: 'settings.toggle',

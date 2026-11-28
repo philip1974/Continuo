@@ -6,6 +6,8 @@
 // theme:跟随 ThemeProvider 的 resolved(light / dark / hcDark / hcLight)— 与 CodeEditor 一致,
 //   切主题时不重建 term,只改 term.options.theme(避免丢历史输出)。
 
+import { visibleUntrustedText } from '@/lib/untrusted-text';
+import { MAX_EXTERNAL_URL_LEN } from '../../../electron/shared/url-limits';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -433,6 +435,14 @@ export function terminalLinkHoverHint(platform: Platform = detectPlatform()): st
   return t('panels.terminal.link_hover', { key: platform === 'mac' ? '⌘' : 'Ctrl' });
 }
 
+/**
+ * 悬停 OSC 8 超链接(程序输出的 `ESC ] 8 ;; <uri> ST 文字 ESC ] 8 ;; ST`,显示文字可与地址完全不同)时的提示:真实地址 + 「⌘+单击打开
+ * 链接」(VSCode terminalLinkManager linkHandler.hover:`[uri](uri) (cmd + click)`)。地址里的不可见 / 双向控制字符可见化。
+ */
+export function terminalOscLinkHoverHint(uri: string, platform: Platform = detectPlatform()): string {
+  return `${visibleUntrustedText(uri, MAX_EXTERNAL_URL_LEN)}\n${terminalLinkHoverHint(platform)}`;
+}
+
 /** 悬停本地文件链接时的提示(「⌘+单击打开文件」)。 */
 export function terminalFileLinkHoverHint(platform: Platform = detectPlatform()): string {
   return t('panels.terminal.file_link_hover', { key: platform === 'mac' ? '⌘' : 'Ctrl' });
@@ -614,6 +624,22 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
       screenReaderMode: initOptions.screenReaderMode,
       theme: terminalThemeFor(initOptions.resolved),
       minimumContrastRatio: terminalMinimumContrastRatio(initOptions.resolved),
+      // OSC 8 超链接(VSCode terminalLinkManager 的 linkHandler):不设时 xterm 普通单击就弹英文原生 confirm、确定后也打不开。
+      // 与普通 URL 链接同一规则:⌘ / Ctrl+单击才打开,走同一外链出口(scheme 白名单 + 受信域名确认,不允许的给失败提示);
+      // 悬停显示真实地址。非 http(s) 也交给出口判定(否则 xterm 静默不处理)。
+      linkHandler: {
+        allowNonHttpProtocols: true,
+        activate: (event, uri) => {
+          if (!isTerminalLinkActivation(event)) return;
+          notifyIfFailed(coApi.shell.openExternal(uri));
+        },
+        hover: (_event, uri) => {
+          container.title = terminalOscLinkHoverHint(uri);
+        },
+        leave: () => {
+          container.removeAttribute('title');
+        },
+      },
     });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);

@@ -614,6 +614,23 @@ export const GENERAL_RESTORE_WINDOWS: CoreSettingSpec<boolean> = {
 };
 
 /**
+ * 外链受信域名(VSCode「Manage Trusted Domains」/ workbench.action.manageTrustedDomain 打开的受信域名列表):值不存在设置值
+ * store 里 —— 权威值在 main(外链确认由 main 判定、确认框里的「信任 <域名>」由 main 写入),设置页用 TrustedDomainsSettingRow 经
+ * IPC 读写。spec 只为让它出现在通用页、可被搜索与 `@id:` 定位。BDD: src/__tests__/external-link-trusted-domains/
+ */
+export const WORKBENCH_TRUSTED_DOMAINS: CoreSettingSpec<string> = {
+  id: 'workbench.trustedDomains',
+  category: 'general',
+  title: 'Trusted domains',
+  titleKey: 'settings.general.trusted_domains',
+  descriptionKey: 'settings.general.trusted_domains.desc',
+  keywordsKey: 'settings.general.trusted_domains.keywords',
+  type: 'text',
+  default: '',
+  priority: 6,
+};
+
+/**
  * 缩放级别(VSCode window.zoomLevel,默认 0,范围 -8..8,每级 ±20%,可填小数):作用于所有窗口(主窗、新窗口、popout 子窗),
  * 重启后保持。放大 / 缩小 / 重置缩放命令改的就是它(VSCode window.zoomPerWindow=false 的语义);ZoomLevelFromSettings 推给 main
  * 套用并缓存(冷启动首窗即用)。BDD: src/__tests__/window-zoom/

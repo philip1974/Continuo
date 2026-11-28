@@ -5,7 +5,9 @@
 import { MAX_EXTERNAL_URL_LEN, startsWithAllowedExternalScheme } from '../../shared/url-limits';
 import { startsWithAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { spawn } from 'node:child_process';
-import { shell } from 'electron';
+import { shell, type BrowserWindow } from 'electron';
+import { confirmOpenExternal } from '../external-link-confirm';
+import { isHttpUrl } from '../../shared/trusted-domains';
 import { codedError, errorMessage } from '../../shared/error-message';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { SHELL_MAX_TIMEOUT_MS } from '../../shared/shell-limits';
@@ -364,22 +366,28 @@ export function sanitizeExternalUrl(url: string): string {
 }
 
 /**
- * 外链出口的唯一规则:长度上限(MAX_EXTERNAL_URL_LEN)→ scheme 白名单(isAllowedExternalUrl)→ sanitize 后交系统打开。
- * 不放行返回 false(不打开)。renderer 显式外链 IPC 与页面触发的「离开应用」(window.open 被拒 / 主框架导航被拦)共用
+ * 外链出口的唯一规则:长度上限(MAX_EXTERNAL_URL_LEN)→ scheme 白名单(isAllowedExternalUrl)→ sanitize →
+ * http(s) 且不在受信域名内时先确认(confirmOpenExternal,VSCode 链接保护)→ 交系统打开。
+ * 不放行(规则拒绝)返回 false;用户在确认框里取消 / 只复制也返回 true(不是错误,调用方不提示失败)。
+ * renderer 显式外链 IPC 与页面触发的「离开应用」(window.open 被拒 / 主框架导航被拦)共用
  * —— 此前两处各自组合这三步,安全出口新增规则时易只改一处。
+ * @param win 发起的窗口(确认框挂在它上面)
  */
-export async function openExternalIfAllowed(url: unknown): Promise<boolean> {
+export async function openExternalIfAllowed(url: unknown, win: BrowserWindow | null = null): Promise<boolean> {
   if (typeof url !== 'string' || url.length === 0 || url.length > MAX_EXTERNAL_URL_LEN) return false;
   if (!isAllowedExternalUrl(url)) return false;
-  await shell.openExternal(sanitizeExternalUrl(url));
+  const target = sanitizeExternalUrl(url);
+  if (isHttpUrl(target) && !(await confirmOpenExternal(target, win))) return true;
+  await shell.openExternal(target);
   return true;
 }
 
 export async function openExternalUrl(
   input: IpcShellOpenExternalInput,
+  win: BrowserWindow | null = null,
 ): Promise<void> {
   const url = input.url;
-  if (!(await openExternalIfAllowed(url))) {
+  if (!(await openExternalIfAllowed(url, win))) {
     throw new Error(
       `[shell.openExternal] scheme not allowed: ${url.slice(0, 32)}...`,
     );

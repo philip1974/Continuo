@@ -8,6 +8,7 @@ import { cleanup, render, act, waitFor } from '@testing-library/react';
 const h = vi.hoisted(() => ({
   openExternal: vi.fn(),
   notifyError: vi.fn(),
+  notifyWarn: vi.fn(),
   openFileByPath: vi.fn(),
   onLinkClick: { current: null as ((href: string) => void) | null },
 }));
@@ -39,7 +40,7 @@ vi.mock('../../lib/co-api', () => ({
   },
 }));
 vi.mock('../../notifications/notify', () => ({
-  notify: { error: h.notifyError },
+  notify: { error: h.notifyError, warn: h.notifyWarn },
 }));
 
 // perf E2:EditorPanel 内编辑引擎 lazy 加载 → render 后须等引擎模块解析、Suspense 重试完成再断言。
@@ -55,11 +56,13 @@ const notifyErrorMock = h.notifyError;
 
 import { useEditorStore } from '../../stores/editor.store';
 import { EditorPanel } from '../../panels/Editor/EditorPanel';
+import { t } from '../../i18n';
 
 beforeEach(() => {
   h.onLinkClick.current = null;
   openExternalMock.mockReset();
   notifyErrorMock.mockReset();
+  h.notifyWarn.mockReset();
   h.openFileByPath.mockReset();
   h.openFileByPath.mockResolvedValue({ ok: true });
   useEditorStore.setState({
@@ -146,5 +149,34 @@ describe('a11y(A117) — Markdown 外链打开失败须有反馈', () => {
       expect(notifyErrorMock).toHaveBeenCalledTimes(1);
     });
     expect(String(notifyErrorMock.mock.calls[0]?.[0])).toContain('other.md');
+  });
+
+  // 第 6 项:不安全 / 未知 scheme 的链接此前点了静默无反应 → 提示「出于安全原因未打开此链接:<scheme>」,同一 scheme 只留一条。
+  it('不安全 / 未知 scheme → notify.warn 说明原因(带 scheme、按 scheme 去重),不调 openExternal', async () => {
+    render(<EditorPanel />);
+    await flushLazyEditors();
+    act(() => {
+      h.onLinkClick.current!('javascript:alert(1)');
+      h.onLinkClick.current!('JavaScript:void(0)');
+      h.onLinkClick.current!('vscode://evil/x');
+      h.onLinkClick.current!('file:///etc/passwd');
+    });
+    expect(openExternalMock).not.toHaveBeenCalled();
+    expect(h.notifyWarn.mock.calls.map((c) => [c[0], c[1]?.replaceKey])).toEqual([
+      [t('panels.editor.link.blocked_scheme', { scheme: 'javascript' }), 'editor.link-blocked:javascript'],
+      [t('panels.editor.link.blocked_scheme', { scheme: 'javascript' }), 'editor.link-blocked:javascript'],
+      [t('panels.editor.link.blocked_scheme', { scheme: 'vscode' }), 'editor.link-blocked:vscode'],
+      [t('panels.editor.link.blocked_scheme', { scheme: 'file' }), 'editor.link-blocked:file'],
+    ]);
+  });
+
+  it('空链接 / 无法解析的相对路径等不是 scheme 问题 → 不提示', async () => {
+    render(<EditorPanel />);
+    await flushLazyEditors();
+    act(() => {
+      h.onLinkClick.current!('#');
+      h.onLinkClick.current!('C:\\Windows\\x.md');
+    });
+    expect(h.notifyWarn).not.toHaveBeenCalled();
   });
 });

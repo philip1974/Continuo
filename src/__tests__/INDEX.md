@@ -882,6 +882,10 @@
 - [`statusbar-encoding.spec.tsx`](./editor-text-encoding/statusbar-encoding.spec.tsx)
 - [`text-codec.spec.ts`](./editor-text-encoding/text-codec.spec.ts)
 
+## [editor-unicode-highlight(不可见 / 双向控制字符与同形字)](./editor-unicode-highlight/README.md)
+
+- [`editor-unicode-highlight.spec.ts`](./editor-unicode-highlight/editor-unicode-highlight.spec.ts)
+
 ## [编辑器视图状态按 tab 保留(VSCode 对齐)](./editor-view-state/README.md)
 
 - [`code-editor-view-state.spec.tsx`](./editor-view-state/code-editor-view-state.spec.tsx)
@@ -1109,6 +1113,12 @@
 
 - [`external-file-sync-owner.spec.tsx`](./external-file-sync-owner/external-file-sync-owner.spec.tsx)
 
+## [external-link-trusted-domains(外链确认 + 受信任的域)](./external-link-trusted-domains/README.md)
+
+- [`open-external-confirm.spec.ts`](./external-link-trusted-domains/open-external-confirm.spec.ts)
+- [`trusted-domains-settings.spec.tsx`](./external-link-trusted-domains/trusted-domains-settings.spec.tsx)
+- [`trusted-domains.spec.ts`](./external-link-trusted-domains/trusted-domains.spec.ts)
+
 ## [file-failure-reason(打开 / 保存失败提示:动作 + 文件名 + 本地化原因)](./file-failure-reason/README.md)
 
 - [`file-failure-reason.spec.tsx`](./file-failure-reason/file-failure-reason.spec.tsx)
@@ -1116,6 +1126,10 @@
 ## [file-icon(资源管理器文件图标化)](./file-icon/README.md)
 
 - [`file-icon.spec.ts`](./file-icon/file-icon.spec.ts)
+
+## [file-name-invisible-chars(文件名里的双向控制 / 零宽字符可见化)](./file-name-invisible-chars/README.md)
+
+- [`file-name-invisible-chars.spec.tsx`](./file-name-invisible-chars/file-name-invisible-chars.spec.tsx)
 
 ## [文件名 Unicode 归一化(filename-unicode-normalization)](./filename-unicode-normalization/README.md)
 
@@ -2362,6 +2376,7 @@
 
 ## [terminal-url-click](./terminal-url-click/README.md)
 
+- [`terminal-osc8-link.spec.ts`](./terminal-url-click/terminal-osc8-link.spec.ts)
 - [`terminal-url-click.spec.ts`](./terminal-url-click/terminal-url-click.spec.ts)
 
 ## [终端与 dock tab 交互对齐 VSCode 集成终端](./terminal-vscode-parity/README.md)

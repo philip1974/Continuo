@@ -1,4 +1,5 @@
 import { memo, useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { revealInvisibleChars } from '@/lib/untrusted-text';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
 import type { ItemInstance, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
@@ -419,7 +420,7 @@ export const FileRow = memo(function FileRow({
           className={gitKind !== undefined && gitColor ? `truncate ${GIT_KIND_TEXT_CLASS[gitKind]}` : 'truncate'}
           style={decoration?.textColor ? { color: decoration.textColor } : undefined}
         >
-          {data.name}
+          {revealInvisibleChars(data.name)}
         </span>
       )}
       {/* 读屏:git 状态进 treeitem 朗读(「a.ts, 已修改」);视觉上由颜色 / 徽标表达 */}

@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { revealInvisibleChars } from '@/lib/untrusted-text';
 import { Button, Modal } from '@/design';
 import { useT } from '@/i18n';
 import { useStableCallback } from '@/lib/use-stable-callback';
@@ -82,7 +83,8 @@ function ConfirmDialogBody({
         //(VSCode 对话框 word-wrap: break-word);韩文其余文字仍按词断行(继承根元素 keep-all)。
         className="mb-2 text-sm font-medium text-fg [overflow-wrap:anywhere]"
       >
-        {title}
+        {/* 标题里插值的文件名 / 进程名:双向控制 / 零宽字符可见化(文案本身不含这些字符) */}
+        {typeof title === 'string' ? revealInvisibleChars(title) : title}
       </h2>
       <div id={descriptionId} className="mb-5 text-xs leading-relaxed text-fg-muted [overflow-wrap:anywhere]">
         {description}

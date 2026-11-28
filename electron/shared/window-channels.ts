@@ -117,6 +117,9 @@ export interface WindowViewActionTarget {
 }
 
 /** 只出现在代码编辑器右键菜单里的菜单命令(edit-context-menu:更改所有匹配项 / 格式化文档;命令面板同时在应用菜单里)。 */
+/** main 原生对话框里的按钮触发的 renderer 命令(不在菜单栏里):外链确认框「配置受信任的域 → 管理受信任的域」打开设置页。 */
+export const DIALOG_COMMAND_IDS = ['workbench.action.manageTrustedDomain'] as const;
+
 export const EDITOR_CONTEXT_MENU_COMMAND_IDS = [
   'editor.action.changeAll',
   'editor.action.formatDocument',
@@ -162,6 +165,7 @@ export const MENU_COMMAND_IDS = [
   'editor.action.selectHighlights',
   // 编辑器右键菜单专用(不在应用菜单栏里;VSCode 同),见 EDITOR_CONTEXT_MENU_COMMAND_IDS
   ...EDITOR_CONTEXT_MENU_COMMAND_IDS,
+  ...DIALOG_COMMAND_IDS,
   // 显示
   'workbench.action.showCommands',
   'workbench.view.explorer',

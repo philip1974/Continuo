@@ -24,6 +24,7 @@ import { gotoLine } from '@codemirror/search';
 import { cursorSyntaxLeft, cursorSyntaxRight } from '@codemirror/commands';
 import { ROUTED_KEYMAP_COMMANDS } from './codemirror-text-commands';
 import { lineNumberSelect } from './codemirror-line-number-select';
+import { unicodeHighlight } from './codemirror-unicode-highlight';
 
 /** 去掉 CodeMirror 自带的转到行小面板(纯函数;其余绑定原样返回)。 */
 export function withoutConflictingSearchKeys(bindings: readonly KeyBinding[]): KeyBinding[] {
@@ -88,6 +89,8 @@ function buildBasicSetup(): Extension {
   }
   // 单击 / 拖动 / ⇧ 单击行号选整行(VSCode 同;BDD: src/__tests__/editor-line-number-select/)
   out.push(lineNumberSelect);
+  // 不可见 / 双向控制字符补全 + 同形字加框(VSCode renderControlCharacters / unicodeHighlight;BDD: src/__tests__/editor-unicode-highlight/)
+  out.push(unicodeHighlight);
   return out;
 }
 

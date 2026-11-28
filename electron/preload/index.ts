@@ -68,6 +68,7 @@ import {
   SHELL_CHANNELS,
   type IpcShellExecInput,
   type IpcShellExecResult,
+  type TrustedDomainsSnapshot,
 } from '../shared/shell-channels';
 import {
   AGENT_AUTH_CHANNELS,
@@ -550,6 +551,22 @@ const api = {
     /** 终止本窗口内某插件启动的全部 shell 进程(插件停用/卸载时 PluginManager 调用). */
     killPluginProcesses: (pluginId: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(SHELL_CHANNELS.KILL_PLUGIN_PROCESSES, { pluginId }),
+    /** 外链受信域名(设置页):用户添加的 + 默认项。 */
+    getTrustedDomains: (): Promise<IpcResult<TrustedDomainsSnapshot>> =>
+      ipcRenderer.invoke(SHELL_CHANNELS.TRUSTED_DOMAINS_GET),
+    /** 整体替换用户受信域名,返回规整后的列表。 */
+    setTrustedDomains: (domains: readonly string[]): Promise<IpcResult<readonly string[]>> =>
+      ipcRenderer.invoke(SHELL_CHANNELS.TRUSTED_DOMAINS_SET, { domains: [...domains] }),
+    /** 订阅用户受信域名变化(确认框里「信任 <域名>」、别的窗口的设置页),返 unsubscribe。 */
+    onTrustedDomainsChanged: (cb: (domains: readonly string[]) => void): (() => void) =>
+      subscribeIpc(
+        SHELL_CHANNELS.TRUSTED_DOMAINS_CHANGED,
+        guardedListener(
+          (p: unknown): p is string[] => Array.isArray(p) && p.every((d) => typeof d === 'string'),
+          '[shell] dropped malformed trusted-domains payload',
+          cb,
+        ),
+      ),
   },
   marketplace: {
     /**

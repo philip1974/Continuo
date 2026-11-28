@@ -6,6 +6,7 @@
 // 结果行右键 / Shift+F10 菜单(VSCode MenuId.SearchContext),外壳同 tab 右键菜单(TabContextMenu)。
 // BDD: src/__tests__/workspace-search/、src/__tests__/list-context-menus/
 
+import { revealInvisibleChars } from '@/lib/untrusted-text';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useShallow } from 'zustand/react/shallow';
@@ -429,7 +430,10 @@ export function SearchPanel() {
               const selected = item.index === activeIndex;
               const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: ROW_HEIGHT, transform: `translateY(${item.start}px)` };
               if (row.kind === 'file') {
-                const { name, dir } = splitRel(row.file.relPath);
+                const { name: rawName, dir: rawDir } = splitRel(row.file.relPath);
+                // 文件名 / 目录里的双向控制 / 零宽字符可见化(只改显示)
+                const name = revealInvisibleChars(rawName);
+                const dir = revealInvisibleChars(rawDir);
                 const count = row.file.matches.length;
                 // 名称着色 + 字母(在匹配数左侧,与名称同色、aria-hidden);悬浮提示追加状态,可访问名称不加(VSCode fileMatchAriaLabel)
                 const git = fileGitDecoration(gitIndex, root, row.file.path);

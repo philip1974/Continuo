@@ -1,4 +1,5 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { revealInvisibleChars } from '@/lib/untrusted-text';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
 import {
   basenamePreserveTrailing,
@@ -196,7 +197,7 @@ function ConfirmNameList({ names }: { names: readonly string[] }) {
     <ul className="mb-2 list-none">
       {shown.map((n, i) => (
         <li key={i} className="truncate text-fg">
-          {n}
+          {revealInvisibleChars(n)}
         </li>
       ))}
       {more > 0 && <li>{tt('panels.explorer.trash_confirm.more', { count: more })}</li>}

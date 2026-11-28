@@ -12,6 +12,7 @@ import {
   GENERAL_RESTORE_WINDOWS,
   GENERAL_THEME,
   WINDOW_ZOOM_LEVEL,
+  WORKBENCH_TRUSTED_DOMAINS,
 } from '@/plugins/settings/core-setting-specs';
 
 export default class GeneralTabPlugin extends Plugin {
@@ -34,5 +35,7 @@ export default class GeneralTabPlugin extends Plugin {
     this.addSettingItem(WINDOW_ZOOM_LEVEL);
     // 读屏优化(VSCode editor.accessibilitySupport;终端 screenReaderMode 按它 + 系统检测判定)
     this.addSettingItem(EDITOR_ACCESSIBILITY_SUPPORT);
+    // 外链受信域名(VSCode 链接保护的受信域名;值在 main,行由 TrustedDomainsSettingRow 渲染)
+    this.addSettingItem(WORKBENCH_TRUSTED_DOMAINS);
   }
 }

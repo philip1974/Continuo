@@ -56,7 +56,7 @@ import { editorFileDeps, saveAsDeps } from './editor-file-deps';
 import { useAutoSave } from './useAutoSave';
 import { resolveAutoSave, savesOnClose, useAutoSaveSettings } from './auto-save-config';
 import { NO_ACTIVE_TAB, useEditorFile } from './useEditorFile';
-import { resolveLink } from './link-resolve';
+import { blockedLinkScheme, resolveLink } from './link-resolve';
 import { followMarkdownLink } from './markdown-link-follow';
 import { startDebugDecorationSync } from './decorations/debug-decoration-sync';
 import { coApi } from '@/lib/co-api';
@@ -66,7 +66,7 @@ import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { notifySaveFailed, openFileOrNotify } from '@/notifications/notify-open-failed';
 import { openOsDroppedFiles } from './os-file-drop';
 import { isOsFileDrop } from './editor-media-drop';
-import type { NotifyAction } from '@/notifications/notify';
+import { notify, type NotifyAction } from '@/notifications/notify';
 import { basenameForChrome } from '@/lib/path-label';
 import { isModalOpenFor, winningCommandFor, withDefaultCommands } from '@/plugins/command-palette/useCommandHotkeys';
 import { coApp } from '@/plugins/co-app';
@@ -291,7 +291,15 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     (href: string) => {
       const currentPath = activeTab?.filePath ?? null;
       const target = resolveLink(href, currentPath);
-      if (!target) return;
+      if (!target) {
+        // 不安全 / 未知 scheme(javascript: / file: / 自定义协议 …):说明为什么没反应(VSCode 对不允许的 scheme 同样给出提示);
+        // 同一 scheme 只留一条。
+        const scheme = blockedLinkScheme(href);
+        if (scheme !== null) {
+          notify.warn(translate('panels.editor.link.blocked_scheme', { scheme }), { replaceKey: `editor.link-blocked:${scheme}` });
+        }
+        return;
+      }
       if (target.kind === 'file') {
         // a11y(A127,A117 同族):本地文件链接打开须检查 FileOpResult.ok + catch reject,否则
         // 目标文件不存在/读取失败时无 toast/live 反馈,用户只感知链接「没反应」(同外链分支)。

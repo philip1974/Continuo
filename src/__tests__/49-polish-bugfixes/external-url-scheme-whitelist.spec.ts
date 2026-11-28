@@ -73,7 +73,7 @@ describe('topic49 6thS · external URL scheme whitelist', () => {
 
   it('静态守卫:index.ts 不直接调 shell.openExternal,页面出口经 openExternalIfAllowed', () => {
     const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8');
-    expect(src).toMatch(/openExternalIfAllowed\(url\)/);
+    expect(src).toMatch(/openExternalIfAllowed\(url[,)]/);
     expect(src).not.toMatch(/shell\.openExternal\(/);
   });
 

@@ -24,6 +24,8 @@ import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
 import { ResetIcon } from '@/lib/ui-icons';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { GeneralIcon } from './tab-icons';
+import { WORKBENCH_TRUSTED_DOMAINS } from './core-setting-specs';
+import { TrustedDomainsSettingRow } from './TrustedDomainsSettingRow';
 import {
   clampSettingNumber,
   coerceSettingValue,
@@ -120,7 +122,13 @@ interface SettingItemRowProps {
   readonly isStillRegistered?: (id: string) => boolean;
 }
 
-export function SettingItemRow({
+export function SettingItemRow(props: SettingItemRowProps) {
+  // 外链受信域名的值在 main(不进设置值 store),用专门的行(见 WORKBENCH_TRUSTED_DOMAINS)
+  if (props.spec.id === WORKBENCH_TRUSTED_DOMAINS.id) return <TrustedDomainsSettingRow spec={props.spec} />;
+  return <ValueSettingItemRow {...props} />;
+}
+
+function ValueSettingItemRow({
   spec,
   isStillRegistered = () => true,
 }: SettingItemRowProps) {

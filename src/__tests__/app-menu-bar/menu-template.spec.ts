@@ -20,7 +20,7 @@ vi.mock('../../../electron/main/lib/menu-command', () => ({
 
 import { appMenuTemplate, type AppMenuActions } from '../../../electron/main/app-menu';
 import { setMenuKeybindings } from '../../../electron/main/menu-keybindings';
-import { EDITOR_CONTEXT_MENU_COMMAND_IDS, MENU_COMMAND_IDS } from '../../../electron/shared/window-channels';
+import { DIALOG_COMMAND_IDS, EDITOR_CONTEXT_MENU_COMMAND_IDS, MENU_COMMAND_IDS } from '../../../electron/shared/window-channels';
 import { en } from '@shared/i18n-locales/en';
 import { zh } from '@shared/i18n-locales/zh';
 import { ko } from '@shared/i18n-locales/ko';
@@ -224,10 +224,10 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
     ]);
   });
 
-  it('菜单用到的命令都已登记为菜单命令、并在命令注册表里注册(编辑器右键菜单专用的除外)', () => {
+  it('菜单用到的命令都已登记为菜单命令、并在命令注册表里注册(编辑器右键菜单 / 原生对话框专用的除外)', () => {
     bootCorePlugins();
     const used = new Set(flatten(template(true)).map(commandOf).filter((id): id is string => id !== undefined));
-    const contextMenu = new Set<string>(EDITOR_CONTEXT_MENU_COMMAND_IDS);
+    const contextMenu = new Set<string>([...EDITOR_CONTEXT_MENU_COMMAND_IDS, ...DIALOG_COMMAND_IDS]);
     // 菜单栏用到的都已登记;登记的除编辑器右键菜单的(其中「转到定义」菜单栏也有)外都在菜单栏里
     for (const id of used) expect(MENU_COMMAND_IDS as readonly string[], id).toContain(id);
     expect(MENU_COMMAND_IDS.filter((id) => !used.has(id) && !contextMenu.has(id))).toEqual([]);

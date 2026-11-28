@@ -13,7 +13,18 @@ export const SHELL_CHANNELS = {
    * (终审 P1:此前进程只按 webContents 归属,插件停用后长任务继续跑到超时)。
    */
   KILL_PLUGIN_PROCESSES: 'shell:kill-plugin-processes',
+  /** 外链受信域名(用户添加的部分;默认项见 shared/trusted-domains):读 → `{ user, defaults }`。 */
+  TRUSTED_DOMAINS_GET: 'shell:trusted-domains:get',
+  /** 整体替换用户受信域名(设置页编辑),返回规整后的列表。 */
+  TRUSTED_DOMAINS_SET: 'shell:trusted-domains:set',
+  /** main → renderer:用户受信域名变了(确认框「信任 <域名>」、别的窗口的设置页),payload 为新的用户列表。 */
+  TRUSTED_DOMAINS_CHANGED: 'shell:trusted-domains:changed',
 } as const;
+
+export interface TrustedDomainsSnapshot {
+  readonly user: readonly string[];
+  readonly defaults: readonly string[];
+}
 
 export interface IpcShellOpenExternalInput {
   readonly url: string;

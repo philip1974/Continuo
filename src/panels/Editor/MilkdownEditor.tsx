@@ -7,6 +7,8 @@
 //
 // 注意:Crepe 主题 CSS 自成体系,不与 Tailwind 冲突;直接 import frame-dark。
 
+import { visibleUntrustedText } from '@/lib/untrusted-text';
+import { MAX_EXTERNAL_URL_LEN } from '../../../electron/shared/url-limits';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Crepe, CrepeFeature } from '@milkdown/crepe';
 import { insertImageInputRule } from '@milkdown/kit/preset/commonmark';
@@ -1159,6 +1161,20 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
     activateLink(a, e);
   }, [activateLink]);
 
+  // 悬停链接显示真实地址(浏览器状态栏 / VSCode Markdown 预览悬停的对应物):链接文字可以与地址完全不同
+  // (`[https://good.example](https://evil.example)`)。title 挂在外层容器上(在 ProseMirror 的 DOM 之外,改它不触发
+  // ProseMirror 的 DOM 观察与重新解析);<a> 自带 title(Markdown `"标题"`)时浏览器显示它自己的,真实地址仍由外链确认框给出。
+  // 不可见 / 双向控制字符可见化(同授权弹窗)。
+  const handleMouseOver = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const a = (e.target as Element | null)?.closest?.('a') ?? null;
+    const href = a?.getAttribute('href') ?? a?.getAttribute('xlink:href');
+    if (href) e.currentTarget.title = visibleUntrustedText(href, MAX_EXTERNAL_URL_LEN);
+    else e.currentTarget.removeAttribute('title');
+  }, []);
+  const handleMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.removeAttribute('title');
+  }, []);
+
   // 链接气泡的「复制链接」(Crepe LinkTooltip 的 .link-preview .link-icon):上游处理器挂在该图标的
   // pointerdown 上,且只在 navigator.clipboard 存在时复制 —— PROD 的 sandboxSweep 把它清掉了,点了
   // 没反应;onCopyLink 配置项只是复制成功后的回调,改不了复制本身。故在外层捕获阶段截下该事件
@@ -1187,6 +1203,8 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
         onAuxClick={handleAuxClick}
         onKeyDown={handleKeyDown}
         onPointerDownCapture={handlePointerDownCapture}
+        onMouseOver={handleMouseOver}
+        onMouseLeave={handleMouseLeave}
         onScroll={handleScroll}
       >
         <CrepeEditor {...props} onReady={handleReady} onUnmount={handleCrepeUnmount} />

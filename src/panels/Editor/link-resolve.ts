@@ -100,6 +100,20 @@ function dirnameOf(p: string): string | null {
   return p.slice(0, idx);
 }
 
+/** 提示里显示的 scheme 上限(scheme 来自文件内容)。 */
+const BLOCKED_SCHEME_MAX = 32;
+
+/**
+ * 链接因 scheme 不安全 / 未知而不打开时(resolveLink → null 的那一类)返回小写 scheme(不含冒号,超长截断),供「出于安全原因未打开」
+ * 提示;其它情况(可打开、空链接、相对路径解析失败等)→ null。Windows 盘符 / UNC 绝对路径不是 scheme。
+ */
+export function blockedLinkScheme(href: string): string | null {
+  if (!href || href.length > MAX_FILE_LINK_LEN || isAbsolutePath(href) || !hasAnyScheme(href)) return null;
+  if (startsWithAllowedExternalScheme(href)) return null;
+  const scheme = href.slice(0, href.indexOf(':')).toLowerCase();
+  return scheme.length > BLOCKED_SCHEME_MAX ? `${scheme.slice(0, BLOCKED_SCHEME_MAX)}…` : scheme;
+}
+
 /**
  * 跨平台 normalize:去 `.` 段、弹 `..` 段。同时支持 `/` 与 `\` 分隔符,并保留路径根:
  *   - POSIX `/...`、Windows 盘符 `C:\`/`C:/`、UNC `\\server`。

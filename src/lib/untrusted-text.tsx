@@ -48,6 +48,18 @@ export function visibleUntrustedBlockText(text: string): string {
   return text.replace(BLOCK_LINE_BREAKS, '\n').replace(BLOCK_INVISIBLE, REPLACEMENT);
 }
 
+/** 文件名里要可见化的字符:控制字符(含换行 / Tab)、双向控制、零宽空格 / 连接符 / BOM。ZWNJ / ZWJ(U+200C / 200D)不算:
+ * emoji 组合与波斯文 / 印地文等正常文字要用。全是 BMP 单码元。 */
+const FILE_NAME_INVISIBLE = /[\p{Cc}\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/gu;
+
+/**
+ * 资源管理器 / tab / Quick Open / 搜索结果 / 确认框里的文件名:上述字符各换成「\uFFFD」(`\u202Etxt.exe` 不再显示成 `exe.txt`,
+ * 只差一个零宽字符的两个名字显示出来也不同)。**逐码元等长替换**:匹配高亮的下标照旧对得上;只改显示,不改实际路径与匹配。
+ */
+export function revealInvisibleChars(text: string): string {
+  return text.replace(FILE_NAME_INVISIBLE, REPLACEMENT);
+}
+
 /**
  * 对方可控的长文本完整显示(授权弹窗里要执行的命令):限高、可滚动、可折行的等宽块。label = 读屏名称(区域可 Tab 到,
  * 方向键滚动;内容即全文)。
