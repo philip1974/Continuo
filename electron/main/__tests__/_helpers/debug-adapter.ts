@@ -3,7 +3,7 @@
 // `{"type":"commonjs"}` 标记)不是同一机制,而当年正是 `.cjs` 掩盖了 ESM 误判导致的真机崩溃)。
 // electron/ 下测试不能从 src/ 导入(process-layering),故放在 electron 侧。
 import { execFile as execFileCb } from 'node:child_process';
-import { cp, mkdtemp, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -40,6 +40,40 @@ export async function prepareCommonJsAdapter(
   await cp(path.dirname(adapterPath), adapterDir, { recursive: true });
   await writeFile(path.join(adapterDir, 'package.json'), '{"type":"commonjs"}\n');
   return { dir, adapterPath: path.join(adapterDir, path.basename(adapterPath)) };
+}
+
+/** 真适配器用例共用的被调试程序:`scripts/debug-spike/fixture.ts` 编译出的 `.out/fixture.js`(gitignore,不随仓库走)。 */
+export const DEBUG_SPIKE_FIXTURE_TIMEOUT_MS = 60_000;
+
+const mtimeMs = async (file: string): Promise<number | null> => {
+  try {
+    return (await stat(file)).mtimeMs;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * 确保 `<spikeDir>/.out/fixture.js` 已由 `fixture.ts` 编译(缺或比源文件旧时跑一次 `tsc -p <spikeDir>/tsconfig.json`)。
+ * CI 先跑同一条 tsc(ci.yml debug-spike job),这里只补新 worktree / 只复制了 `.adapter` 的本地环境;只在适配器存在、
+ * 真适配器用例要跑时由其 beforeAll 调用,常规单测不付这次编译。返回编译出的路径;编译失败抛出带命令与输出的错误。
+ */
+export async function ensureDebugSpikeFixture(spikeDir: string): Promise<string> {
+  const out = path.join(spikeDir, '.out/fixture.js');
+  const [outTime, srcTime] = await Promise.all([mtimeMs(out), mtimeMs(path.join(spikeDir, 'fixture.ts'))]);
+  if (outTime !== null && (srcTime === null || outTime >= srcTime)) return out;
+  const tsc = path.join(process.cwd(), 'node_modules/typescript/bin/tsc');
+  const tsconfig = path.join(spikeDir, 'tsconfig.json');
+  try {
+    await execFile(process.execPath, [tsc, '-p', tsconfig], { timeout: DEBUG_SPIKE_FIXTURE_TIMEOUT_MS });
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; message?: string };
+    throw new Error(
+      `debug spike fixture 编译失败(真适配器用例需要 ${out}):tsc -p ${tsconfig}\n${e.stdout ?? ''}${e.stderr ?? ''}${e.message ?? ''}`,
+    );
+  }
+  if ((await mtimeMs(out)) === null) throw new Error(`tsc -p ${tsconfig} 之后仍没有 ${out}`);
+  return out;
 }
 
 export async function processInfo(pid: number | undefined): Promise<ProcessInfo | null> {

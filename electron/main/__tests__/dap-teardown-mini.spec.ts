@@ -5,8 +5,15 @@ import { once } from 'node:events';
 import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { prepareCommonJsAdapter, processInfo, pidsInProcessGroup, waitForDead } from './_helpers/debug-adapter';
+import { beforeAll, describe, expect, it } from 'vitest';
+import {
+  DEBUG_SPIKE_FIXTURE_TIMEOUT_MS,
+  ensureDebugSpikeFixture,
+  prepareCommonJsAdapter,
+  processInfo,
+  pidsInProcessGroup,
+  waitForDead,
+} from './_helpers/debug-adapter';
 import { sleep } from '../../shared/wait-at-most';
 
 const root = process.cwd();
@@ -22,6 +29,9 @@ const adapterExists = existsSync(adapterPath);
 const describeWithAdapter = adapterExists ? describe : describe.skip;
 
 describeWithAdapter('Phase 0b DAP teardown in electron/main context', () => {
+  // fixture 是 gitignore 的编译产物:新 worktree 只复制了 .adapter 时补编一次。
+  beforeAll(() => ensureDebugSpikeFixture(spikeDir), DEBUG_SPIKE_FIXTURE_TIMEOUT_MS);
+
   it(
     'spawns dapDebugServer from main-context child_process and reaps its POSIX process group',
     async () => {

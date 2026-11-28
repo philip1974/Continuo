@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   DEBUG_LAUNCH_SETTLE_WAIT_MS,
@@ -33,7 +33,14 @@ import {
 } from '../../shared/debug-view-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
-import { prepareCommonJsAdapter, pidsInProcessGroup, processInfo, waitForDead } from './_helpers/debug-adapter';
+import {
+  DEBUG_SPIKE_FIXTURE_TIMEOUT_MS,
+  ensureDebugSpikeFixture,
+  prepareCommonJsAdapter,
+  pidsInProcessGroup,
+  processInfo,
+  waitForDead,
+} from './_helpers/debug-adapter';
 
 // 模拟 Windows 平台(debug.service 经 node:os 的 platform() 判平台)。
 const platformMock = vi.hoisted(() => ({ value: null as NodeJS.Platform | null }));
@@ -3859,6 +3866,9 @@ function childVariable(parent: DebugVariable | undefined, name: string): DebugVa
 }
 
 describe.skipIf(!adapterExists)('DebugService real adapter', () => {
+  // fixture 是 gitignore 的编译产物:新 worktree 只复制了 .adapter 时补编一次。
+  beforeAll(() => ensureDebugSpikeFixture(spikeDir), DEBUG_SPIKE_FIXTURE_TIMEOUT_MS);
+
   it(
     'launch→breakpoint→variables/evaluate→continue; killByOwner 反收 adapter/debuggee 树',
     async () => {
@@ -4032,6 +4042,8 @@ describe.skipIf(!adapterExists)('DebugService real adapter', () => {
 //  - child session 建立之后再设的断点是否生效;
 //  - 带 worker_threads 的程序:worker 先退出不能把整个会话判为终止。
 describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 worker', () => {
+  beforeAll(() => ensureDebugSpikeFixture(spikeDir), DEBUG_SPIKE_FIXTURE_TIMEOUT_MS);
+
   async function withRealService<T>(
     files: Record<string, string>,
     run: (ctx: { service: DebugService; dir: string }) => Promise<T>,
