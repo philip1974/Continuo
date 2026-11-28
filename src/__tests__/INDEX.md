@@ -970,6 +970,10 @@
 
 - [`explorer-decorator.spec.ts`](./explorer-decorator/explorer-decorator.spec.ts)
 
+## [explorer-downgrade-compat(会话文件降级兼容)](./explorer-downgrade-compat/README.md)
+
+- [`explorer-downgrade-compat.spec.ts`](./explorer-downgrade-compat/explorer-downgrade-compat.spec.ts)
+
 ## [explorer-drag-copy(资源管理器树内 ⌥ 拖放复制)](./explorer-drag-copy/README.md)
 
 - [`drag-copy.spec.tsx`](./explorer-drag-copy/drag-copy.spec.tsx)

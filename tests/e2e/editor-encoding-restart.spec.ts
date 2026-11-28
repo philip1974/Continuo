@@ -1,7 +1,7 @@
 // 用户选定的编码跨重启 / 按文件夹快照恢复(VSCode FileEditorInput 序列化 encoding):GBK 与无 BOM 的 UTF-16 LE tab 重启后按原编码
 // 恢复;同一窗口切走再切回同样;文件已换成别的编码 → 不打开、提示「恢复失败」并可「通过编码重新打开」。
 // BDD: src/__tests__/editor-text-encoding/(encoding-restart.spec.ts)
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import iconv from 'iconv-lite';
@@ -12,6 +12,7 @@ import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
 import { waitForAppReady } from './helpers/app-ready';
+import { readPersistedExplorer } from './helpers/persisted-explorer';
 
 const apps: ElectronApplication[] = [];
 const dirs: string[] = [];
@@ -68,7 +69,7 @@ async function expectTabEncoding(win: Page, name: string, text: string, label: s
 
 function diskEncodings(ud: string): unknown {
   try {
-    const disk = JSON.parse(readFileSync(path.join(ud, 'explorer.json'), 'utf8')) as {
+    const disk = readPersistedExplorer(ud) as {
       windows: { editor?: { encodings?: { path: string; encoding: string }[] } }[];
     };
     return (disk.windows[0]?.editor?.encodings ?? []).map((e) => `${path.basename(e.path)}:${e.encoding}`).sort();

@@ -8,6 +8,7 @@ import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
 import { DOCK_POPOUT, openWorkspaceFile } from './helpers/editor';
 import { SETTINGS } from './helpers/settings';
+import { readPersistedExplorer } from './helpers/persisted-explorer';
 
 interface Rect {
   x: number;
@@ -77,7 +78,7 @@ test('主窗位置 / 尺寸重启后恢复,并写进 explorer.json 的 windowSta
   }, rect);
   await quit(a);
 
-  const persisted = JSON.parse(readFileSync(path.join(userData, 'explorer.json'), 'utf8')) as {
+  const persisted = readPersistedExplorer(userData) as {
     windows: Array<{ windowSeq: number; windowState?: { bounds: Rect } }>;
   };
   expect(persisted.windows.find((w) => w.windowSeq === 0)?.windowState?.bounds).toEqual(rect);

@@ -7,7 +7,7 @@
 //    两窗原生标题各是自己的文件、焦点在主窗编辑器。
 //    Playwright 默认焦点模拟让每个窗口 document.hasFocus() 都为 true、子窗 focus 事件不触发 → 关掉它,用 BrowserWindow.focus()
 //    真正切换窗口。
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
@@ -16,6 +16,7 @@ import { openTreeItem } from './helpers/explorer';
 import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
+import { readPersistedExplorer } from './helpers/persisted-explorer';
 
 const OUTPUT_TAB = /^(输出|Output|출력)/;
 const ALL_IN_OTHER_WINDOWS = /(其他窗口|other windows|다른 창)/;
@@ -238,7 +239,7 @@ test('带着弹出的编辑器组重启:活动组仍是主窗组,两窗原生标
   await editorRoots(win).first().locator('.cm-content').click();
   const persisted = () => {
     try {
-      const json = JSON.parse(readFileSync(path.join(ud, 'explorer.json'), 'utf8')) as {
+      const json = readPersistedExplorer(ud) as {
         windows?: Array<{ windowSeq: number; layout?: { activeGroup?: string; popoutGroups?: unknown[] }; editor?: { activeGroup?: string } }>;
       };
       const w = json.windows?.find((x) => x.windowSeq === 0);

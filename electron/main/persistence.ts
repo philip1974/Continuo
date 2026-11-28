@@ -1,5 +1,8 @@
 import fs from 'node:fs/promises';
-import { atomicWriteJsonCapped } from './lib/atomic-write';
+import nodePath from 'node:path';
+import { ERROR_CODES } from '../shared/error-codes';
+import { codedError } from '../shared/error-message';
+import { atomicWriteJsonCapped, atomicWriteText } from './lib/atomic-write';
 import { withExplorerFileMutex } from './lib/file-mutex';
 import { readTextCappedOrThrow } from './lib/read-fh-capped';
 
@@ -39,6 +42,16 @@ import type {
   WindowEntryV3,
 } from '../shared/explorer-persistence-schema';
 import { preserveCorruptSnapshot } from './lib/corrupt-snapshot';
+import {
+  explorerExtFilePath,
+  hashExplorerText,
+  hasExtFields,
+  isEmptyExplorerSession,
+  mergeExplorerExt,
+  parseExplorerExt,
+  splitExplorerPayload,
+  type ExplorerExtFile,
+} from './explorer-downgrade-compat';
 
 const DEFAULT_SORT = { by: 'name' as const, reverse: false };
 
@@ -389,7 +402,46 @@ const MAX_EXPLORER_FILE_BYTES = 16 * 1024 * 1024;
  * 写入、分配窗口编号、启动恢复全部失败且不自愈。
  */
 export async function writeExplorerFile(filePath: string, payload: ExplorerPayloadV3): Promise<void> {
-  await atomicWriteJsonCapped(filePath, payload, MAX_EXPLORER_FILE_BYTES);
+  // 降级兼容(见 explorer-downgrade-compat):explorer.json 只写 0.2.15 认识的字段,新增字段写旁挂 explorer-ext.json(带
+  // explorer.json 原文摘要)。先写旁挂再写 explorer.json:两次写之间崩溃 → 摘要不符,读时只丢 tab 结构字段,不丢会话。
+  const { legacy, ext } = splitExplorerPayload(payload);
+  const text = JSON.stringify(legacy, null, 2);
+  assertExplorerTextFits(filePath, text);
+  const extFile = explorerExtFilePath(filePath);
+  if (ext !== null) {
+    const extPayload: ExplorerExtFile = { ...ext, legacyHash: hashExplorerText(text) };
+    await atomicWriteJsonCapped(extFile, extPayload, MAX_EXPLORER_FILE_BYTES);
+  } else {
+    await fs.unlink(extFile).catch((err: NodeJS.ErrnoException) => {
+      if (err.code !== 'ENOENT') throw err;
+    });
+  }
+  await atomicWriteText(filePath, text);
+}
+
+function assertExplorerTextFits(filePath: string, text: string): void {
+  if (text.length * 3 > MAX_EXPLORER_FILE_BYTES && Buffer.byteLength(text, 'utf8') > MAX_EXPLORER_FILE_BYTES) {
+    throw codedError(
+      ERROR_CODES.PAYLOAD_TOO_LARGE,
+      `${nodePath.basename(filePath)} would exceed ${MAX_EXPLORER_FILE_BYTES} bytes; write rejected`,
+    );
+  }
+}
+
+/**
+ * 读旁挂文件:缺失 → null;损坏(JSON 坏 / 外壳不对)→ 留 .corrupt 快照后 null(只丢新增字段,下次写重建);
+ * 其它读错误(权限 / 超大)→ 抛(当前态未知,同 explorer.json,不拿它当空覆盖)。
+ */
+async function readExplorerExt(filePath: string): Promise<ExplorerExtFile | null> {
+  const extFile = explorerExtFilePath(filePath);
+  const raw = await readExplorerCapped(extFile);
+  if (raw === null) return null;
+  const ext = parseExplorerExt(raw);
+  if (ext === null) {
+    console.warn('[explorer] explorer-ext.json is corrupt; extra session fields dropped');
+    await preserveCorruptSnapshot(extFile, raw);
+  }
+  return ext;
 }
 
 async function readExplorerCapped(filePath: string): Promise<string | null> {
@@ -464,10 +516,26 @@ async function loadExplorerWithFormat(
   // writeExplorerFile 不执行 = 写中止;读路径经 safeHandle / 启动 try-catch 降级,均不覆盖磁盘。
   const raw = await readExplorerCapped(filePath);
   if (raw === null) return null;
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(raw);
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = undefined;
+  }
+  if (parsed !== undefined) {
+    // 旁挂文件的新增字段并进来再整体校验一次;合并结果不合法(旁挂文件畸形)→ 只认 explorer.json。
+    const ext = await readExplorerExt(filePath);
+    if (ext !== null) {
+      const merged = ExplorerSchemaV3.safeParse(mergeExplorerExt(parsed, ext, ext.legacyHash === hashExplorerText(raw)));
+      if (merged.success) return { payload: dedupeWindowsBySeq(merged.data), isV3: !hasExtFields(parsed as ExplorerPayloadV3) };
+      console.warn('[explorer] explorer-ext.json does not fit explorer.json; ignoring the extra fields');
+    }
+  }
+  try {
+    if (parsed === undefined) throw new Error('bad json');
     const v3 = ExplorerSchemaV3.safeParse(parsed);
-    if (v3.success) return { payload: dedupeWindowsBySeq(v3.data), isV3: true };
+    // isV3 = 已是 0.2.15 也能读的 v3(未拆分的旧文件含新增字段 → 启动时重写一次拆出去)
+    if (v3.success) return { payload: dedupeWindowsBySeq(v3.data), isV3: !hasExtFields(v3.data) };
     const v2 = ExplorerSchema.safeParse(parsed);
     if (v2.success) {
       return { payload: dedupeWindowsBySeq(migrateV2ToV3(v2.data)), isV3: false };
@@ -517,7 +585,14 @@ export async function prepareExplorerFileForBoot(
   activeSeqs: ReadonlySet<number>,
 ): Promise<void> {
   await withExplorerFileMutex(async () => {
-    const migrated = await migrateExplorerFile(explorerFile, legacyLayoutFile);
+    let migrated = await migrateExplorerFile(explorerFile, legacyLayoutFile);
+    if (migrated !== MIGRATE_UNKNOWN) {
+      try {
+        migrated = (await restoreSessionRejectedByOlderVersion(explorerFile, migrated)) ?? migrated;
+      } catch (err) {
+        console.warn('[boot] explorer.json.corrupt restore skipped', err);
+      }
+    }
     try {
       // MIGRATE_UNKNOWN(存在性无法确认)时迁移没读文件 → 收敛按原逻辑自己加载一次。
       const payload =
@@ -529,6 +604,36 @@ export async function prepareExplorerFileForBoot(
       console.warn('[boot] explorer window segment prune skipped', err);
     }
   });
+}
+
+/**
+ * 降级后再升级的会话找回:旧版本(0.2.15 的 strict schema)把新版写的 explorer.json 当损坏,原文留进 explorer.json.corrupt 后
+ * 用默认值重建。启动时若 .corrupt 能被本版本完整解析(= 当初不是真损坏,只是旧版本不认识新字段)、而当前会话没有任何用户数据
+ *(文件缺失,或只有旧版本重建的空会话),就自动恢复它 —— 当前没有可丢的东西,不必打扰用户;恢复后把 .corrupt 改名为
+ * .corrupt.restored,不重复恢复。当前会话已有数据(降级期间打开过文件夹 / 文件)→ 不动,.corrupt 原样保留。
+ * 返回恢复后的 payload;未恢复 → null。调用方须持 explorer 文件锁。
+ */
+async function restoreSessionRejectedByOlderVersion(
+  explorerFile: string,
+  current: ExplorerPayloadV3 | null,
+): Promise<ExplorerPayloadV3 | null> {
+  if (current === null ? await fileExists(explorerFile) : !isEmptyExplorerSession(current)) return null;
+  const corruptFile = `${explorerFile}.corrupt`;
+  const raw = await readExplorerCapped(corruptFile);
+  if (raw === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const v3 = ExplorerSchemaV3.safeParse(parsed);
+  if (!v3.success) return null;
+  const restored = dedupeWindowsBySeq(v3.data);
+  await writeExplorerFile(explorerFile, restored);
+  await fs.rename(corruptFile, `${corruptFile}.restored`).catch((err) => console.warn('[boot] corrupt rename failed', err));
+  console.warn('[boot] restored the session an older version had rejected (explorer.json.corrupt)');
+  return restored;
 }
 
 /**

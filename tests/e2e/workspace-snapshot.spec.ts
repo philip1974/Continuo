@@ -10,6 +10,7 @@ import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
 import { waitForAppReady } from './helpers/app-ready';
+import { readPersistedExplorer } from './helpers/persisted-explorer';
 
 const apps: ElectronApplication[] = [];
 const dirs: string[] = [];
@@ -38,7 +39,7 @@ interface Disk {
 
 function readDisk(ud: string): Disk | null {
   try {
-    return JSON.parse(readFileSync(path.join(ud, 'explorer.json'), 'utf8')) as Disk;
+    return readPersistedExplorer(ud) as Disk;
   } catch {
     return null;
   }

@@ -2,7 +2,7 @@
 // 活动的窗口;设置里关掉「启动时恢复所有窗口」后只恢复一个(最后活动的)。BDD: src/__tests__/restore-windows-on-launch/
 // 聚焦断言:主进程 BrowserWindow.getFocusedWindow()(系统级焦点),并在关掉 Playwright 焦点模拟(默认让每个窗口
 // document.hasFocus() 都为 true)后核对各窗口 document.hasFocus()。
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
@@ -11,6 +11,7 @@ import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
 import { GENERAL_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { readPersistedExplorer } from './helpers/persisted-explorer';
 
 const RESTORE_WINDOWS_SETTING = /^(启动时恢复所有窗口|Restore all windows on launch|시작 시 모든 창 복원)$/;
 
@@ -44,12 +45,14 @@ async function quit(a: ElectronApplication): Promise<void> {
   app = null;
 }
 
-function persisted(): {
+interface Persisted {
   restoreAllWindowsOnLaunch?: boolean;
   openWindowSeqs?: number[];
   windows: Array<{ windowSeq: number; workspace: { root: string | null } }>;
-} {
-  return JSON.parse(readFileSync(path.join(userData, 'explorer.json'), 'utf8'));
+}
+
+function persisted(): Persisted {
+  return readPersistedExplorer(userData) as Persisted;
 }
 
 /** 主进程当前聚焦主窗的 windowSeq(取自 URL query);没有聚焦窗口 → null。 */
