@@ -4,7 +4,12 @@ import { readFileSync } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { TerminalContextMenu, type TerminalContextMenuActions } from '../../panels/Terminal/TerminalContextMenu';
-import { isTerminalContextMenuKey } from '../../panels/Terminal/terminal-hotkeys';
+import {
+  isTerminalContextMenuKey,
+  TERMINAL_COPY_AND_CLEAR_SELECTION_COMMAND_ID,
+  TERMINAL_COPY_SELECTION_COMMAND_ID,
+  TERMINAL_PASTE_COMMAND_ID,
+} from '../../panels/Terminal/terminal-hotkeys';
 import { setLocale } from '../../i18n';
 import { coApp } from '../../plugins/co-app';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
@@ -132,6 +137,54 @@ describe('「清除终端」右侧显示键位(VSCode 终端右键同显示 ⌘K
     useKeybindingsStore.setState({ overrides: { 'terminal.clear': '' } });
     open(actions());
     expect(shortcut()).toBeNull();
+  });
+});
+
+// VSCode 终端右键菜单的「复制」「粘贴」就是 copySelection / paste 命令,右侧显示其主键位(Windows / Linux 复制 Ctrl+Shift+C ——
+// Windows 的 Ctrl+C 属于 copyAndClearSelection,菜单不显示;粘贴 Ctrl+V / Linux Ctrl+Shift+V);mac 两命令无默认键 → 不显示。
+describe('「复制」「粘贴」右侧显示 copySelection / paste 的当前生效键位', () => {
+  let original: CommandRegistry;
+  const install = (copy: string | undefined, paste: string | undefined): void => {
+    const commands = new CommandRegistry('other');
+    commands.register({ id: TERMINAL_COPY_SELECTION_COMMAND_ID, title: 'Copy Selection', hotkey: copy, fn: vi.fn() });
+    commands.register({ id: TERMINAL_COPY_AND_CLEAR_SELECTION_COMMAND_ID, title: 'Copy and Clear', hotkey: 'ctrl+c', fn: vi.fn() });
+    commands.register({
+      id: TERMINAL_PASTE_COMMAND_ID,
+      title: 'Paste',
+      hotkey: paste,
+      secondaryHotkeys: paste === undefined ? undefined : ['ctrl+shift+v'],
+      fn: vi.fn(),
+    });
+    (coApp as { commands: CommandRegistry }).commands = commands;
+  };
+  beforeEach(() => {
+    original = coApp.commands;
+    useKeybindingsStore.setState({ overrides: {} });
+  });
+  afterEach(() => {
+    (coApp as { commands: CommandRegistry }).commands = original;
+    useKeybindingsStore.setState({ overrides: {} });
+  });
+  const shortcutOf = (name: string) =>
+    screen.getByRole('menuitem', { name: new RegExp(`^${name}`) }).querySelector('.wm-menu-item__shortcut')?.textContent ??
+    null;
+
+  it('Windows 默认键:复制 Ctrl+Shift+C(不是 copyAndClearSelection 的 Ctrl+C)、粘贴 Ctrl+V;改键跟随', () => {
+    install('ctrl+shift+c', 'ctrl+v');
+    open(actions({ hasSelection: () => true }));
+    expect(shortcutOf('复制')).toBe('Ctrl+Shift+C');
+    expect(shortcutOf('粘贴')).toBe('Ctrl+V');
+    cleanup();
+    useKeybindingsStore.setState({ overrides: { [TERMINAL_PASTE_COMMAND_ID]: 'ctrl+alt+v' } });
+    open(actions());
+    expect(shortcutOf('粘贴')).toBe('Ctrl+Alt+V');
+  });
+
+  it('mac(两命令无默认键)→ 不显示', () => {
+    install(undefined, undefined);
+    open(actions());
+    expect(shortcutOf('复制')).toBeNull();
+    expect(shortcutOf('粘贴')).toBeNull();
   });
 });
 

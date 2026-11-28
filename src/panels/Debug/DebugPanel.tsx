@@ -240,14 +240,19 @@ function DebugToolbar({ stopped }: { readonly stopped: boolean }) {
   );
 }
 
-/** 控制台各类行的颜色(VSCode REPL:stderr 错误色、console 类别警告色、求值输入弱化)。 */
+/**
+ * 控制台各类行的颜色(VSCode REPL:stderr 错误色、console 类别警告色、求值输入弱化)与非颜色线索:每行左侧 2px 竖条位,
+ * stderr / error 实线、console / important 虚线,stdout 透明占位(强制颜色下 border-transparent 改 Canvas,不显形);
+ * 求值输入另有「›」前缀。色觉差异 / 强制颜色下仍能分出错误输出(WCAG 1.4.1;VSCode REPL 只靠颜色)。
+ */
 const CONSOLE_LINE_CLASS: Readonly<Record<string, string>> = {
-  stderr: 'text-error',
-  error: 'text-error',
-  console: 'text-warning',
-  important: 'text-warning',
-  input: 'text-fg-muted',
+  stderr: 'text-error border-solid border-error',
+  error: 'text-error border-solid border-error',
+  console: 'text-warning border-dashed border-warning',
+  important: 'text-warning border-dashed border-warning',
+  input: 'text-fg-muted border-transparent',
 };
+const CONSOLE_LINE_DEFAULT_CLASS = 'text-fg border-transparent';
 
 /** 控制台输入历史(VSCode REPL 历史:↑ 上一条 / ↓ 下一条;本次启动内各会话共用,最近 CONSOLE_HISTORY_MAX 条,连续重复只记一次)。 */
 const CONSOLE_HISTORY_MAX = 100;
@@ -383,7 +388,7 @@ function ConsoleSection({
               <div
                 key={line.id}
                 data-category={line.category}
-                className={`min-w-0 whitespace-pre-wrap break-all ${CONSOLE_LINE_CLASS[line.category] ?? 'text-fg'}`}
+                className={`min-w-0 whitespace-pre-wrap break-all border-l-2 pl-1.5 ${CONSOLE_LINE_CLASS[line.category] ?? CONSOLE_LINE_DEFAULT_CLASS}`}
               >
                 {line.category === 'input' ? `› ${line.text}` : line.text.replace(/\n$/, '')}
               </div>
@@ -567,7 +572,11 @@ function SourceLocation({
   );
 }
 
-/** 栈帧 / 断点行:整行是一个按钮(点击跳源码),右侧徽章在按钮外。title 省略时位置行即标题(断点)。 */
+/**
+ * 栈帧 / 断点行:整行是一个按钮(点击跳源码),右侧徽章在按钮外。title 省略时位置行即标题(断点)。
+ * 打不开的帧(无源码 / 内部伪路径)不是按钮:VSCode 调用栈给这类帧加 .disabled(opacity 0.65)弱化;这里不叠透明度
+ *(禁用按钮 opacity 0.5 把路径压到 2.34:1),改非交互元素 + 斜体 + 弱化文字色,各段对比度 ≥ 4.5。
+ */
 function SourceRow({
   title,
   detail,
@@ -583,20 +592,38 @@ function SourceRow({
 }) {
   // 只有绝对路径能打开:适配器给的 source.path 可能是内部伪路径(如 node 内部模块),点了只会报 INVALID_PATH。
   const openable = path !== undefined && isAbsolutePath(path);
+  const tooltip = path === undefined ? undefined : `${path}:${line}`;
+  const content = (
+    <>
+      {title !== undefined && (
+        <span className={`w-full truncate text-sm font-medium ${openable ? 'text-fg' : 'text-fg-muted'}`}>{title}</span>
+      )}
+      <SourceLocation path={path} line={line} emphasized={title === undefined} />
+      {detail !== undefined && <span className="w-full truncate text-xs text-fg-muted">{detail}</span>}
+    </>
+  );
   return (
     <Card className="flex items-center justify-between gap-3">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="min-w-0 flex-1 flex-col items-start text-left"
-        disabled={!openable}
-        onClick={openable ? () => openSource(path, line) : undefined}
-        title={path === undefined ? undefined : `${path}:${line}`}
-      >
-        {title !== undefined && <span className="w-full truncate text-sm font-medium text-fg">{title}</span>}
-        <SourceLocation path={path} line={line} emphasized={title === undefined} />
-        {detail !== undefined && <span className="w-full truncate text-xs text-fg-muted">{detail}</span>}
-      </Button>
+      {openable ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="min-w-0 flex-1 flex-col items-start text-left"
+          onClick={() => openSource(path, line)}
+          title={tooltip}
+        >
+          {content}
+        </Button>
+      ) : (
+        // 内边距同 Button sm(--wm-space-1_5 / --wm-space-2_5),与可打开的帧左对齐
+        <div
+          className="flex min-w-0 flex-1 flex-col items-start px-2.5 py-1.5 text-left italic"
+          data-deemphasized=""
+          title={tooltip}
+        >
+          {content}
+        </div>
+      )}
       {badge}
     </Card>
   );

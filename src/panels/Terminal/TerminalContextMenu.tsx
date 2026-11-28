@@ -13,7 +13,14 @@ import { useT } from '@/i18n';
 import { CONTEXT_MENU_CONTENT_CLASS_NAME } from '@/lib/menu-surface';
 import { useRegisteredCommandHotkeyText } from '@/lib/hotkey-label';
 import { coApp } from '@/plugins/co-app';
-import { detectTerminalOs, TERMINAL_CLEAR_COMMAND, TERMINAL_SPLIT_COMMAND_ID, type TerminalOs } from './terminal-hotkeys';
+import {
+  detectTerminalOs,
+  TERMINAL_CLEAR_COMMAND,
+  TERMINAL_COPY_SELECTION_COMMAND_ID,
+  TERMINAL_PASTE_COMMAND_ID,
+  TERMINAL_SPLIT_COMMAND_ID,
+  type TerminalOs,
+} from './terminal-hotkeys';
 
 export interface TerminalContextMenuActions {
   readonly hasSelection: () => boolean;
@@ -68,6 +75,11 @@ export function TerminalContextMenu({
   const splitShortcut = useRegisteredCommandHotkeyText(coApp.commands, TERMINAL_SPLIT_COMMAND_ID);
   // 「清除终端」右侧键位(VSCode 终端右键同显示 ⌘K;Windows / Linux 默认未绑定不显示),改键跟随
   const clearShortcut = useRegisteredCommandHotkeyText(coApp.commands, TERMINAL_CLEAR_COMMAND.id);
+  // 「复制」/「粘贴」右侧键位:VSCode 终端右键菜单的这两项就是 copySelection / paste 命令,显示其主键位 —— Windows / Linux
+  // 复制 Ctrl+Shift+C(Windows 的 Ctrl+C 属于另一个命令 copyAndClearSelection,菜单不显示)、粘贴 Ctrl+V / Ctrl+Shift+V;
+  // macOS 两命令无默认键(⌘C / ⌘V 走原生复制粘贴,见 terminal-hotkeys)→ 不显示。改键跟随。
+  const copyShortcut = useRegisteredCommandHotkeyText(coApp.commands, TERMINAL_COPY_SELECTION_COMMAND_ID);
+  const pasteShortcut = useRegisteredCommandHotkeyText(coApp.commands, TERMINAL_PASTE_COMMAND_ID);
   // 选了「拆分终端」:焦点要进新终端,关闭菜单时不把焦点交回本终端(否则本终端所在组重新变成活动组,新终端挂载时不再获焦)。
   const keepFocusAwayRef = useRef(false);
   // 打开时取一次:选区(mac 右键按下即选词,早于 contextmenu)与 portal 目标文档(popout 子窗的终端菜单画在子窗)。
@@ -126,10 +138,12 @@ export function TerminalContextMenu({
             {t('commands.terminal.split.title')}
           </Item>
           <Menu.Separator className="my-1 h-px bg-line" />
-          <Item onSelect={actions.copy} disabled={!hasSelection}>
+          <Item onSelect={actions.copy} disabled={!hasSelection} shortcut={copyShortcut}>
             {t('panels.terminal.ctx.copy')}
           </Item>
-          <Item onSelect={actions.paste}>{t('panels.terminal.ctx.paste')}</Item>
+          <Item onSelect={actions.paste} shortcut={pasteShortcut}>
+            {t('panels.terminal.ctx.paste')}
+          </Item>
           <Item onSelect={actions.selectAll}>{t('panels.terminal.ctx.select_all')}</Item>
           <Menu.Separator className="my-1 h-px bg-line" />
           <Item onSelect={actions.clear} shortcut={clearShortcut}>

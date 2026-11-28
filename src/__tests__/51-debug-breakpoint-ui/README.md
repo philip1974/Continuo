@@ -17,6 +17,8 @@
   缺省时回退内部 sessionId。
 - 源码位置(停点行、栈帧、断点)以「文件名:行号」为主,父目录弱化放其后并从前截断(design `TruncateStart`,保留靠近文件的
   目录),完整「路径:行号」在 title;路径未知显示「未知:行号」。
+- 打不开的栈帧(无源码 / 非绝对路径的内部伪路径,VSCode 调用栈给这类帧加 `.disabled` 弱化)不是按钮:非交互元素 + 斜体 + 名称
+  fg-muted,不叠透明度(禁用按钮 opacity 0.5 曾把路径压到 2.34:1),完整「路径:行号」仍在 title(`debug-panel.spec.tsx`)。
 - `breakpoints-changed` 事件携带该 source(`file`)的完整断点集合(adapter 校正后的行号),`debug.store` 整组替换该文件的记录、其它文件保留:同文件多个断点同时显示,同一逻辑断点被重新校正到别的行时不留旧红点。
 - Debug 事件同步(`startDebugStoreSync`)在 renderer 启动入口(`main-app` 的 `init()`,首次渲染前)开始,不依赖 Debug 面板挂载;重复调用幂等(只订阅一次);Debug 面板自身不再调用。main 按 owner window 只把事件发给本窗口。
 - renderer 重载(Cmd+R)后恢复现有调试会话:`subscribe` 返回本窗口(按 owner window 过滤)会话的快照 —— 当前停点(stopSeq / reason;栈帧由 main 按当前停点的线程取)、按 source 的完整断点集合(每会话断点总数封顶 `DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX`,超限**最新优先**:文件按最后一次发事件先后排列,保留最近的;main 快照、renderer 事件累计 / 快照校验 / 快照与事件合并共用 `capGroupsNewestFirst`)。`debug.store` 据此初始化并拉取停点的栈帧 / 作用域,之后事件照常增量;快照送达前已收到事件的会话以事件为准(不改停点、只补缺的 source,补入的排在前,与 main 顺序一致),已结束的会话不复活。

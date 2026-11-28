@@ -84,6 +84,31 @@ describe('调试控制台', () => {
     expect(lines[0]!.className).toMatch(/text-fg/);
   });
 
+  it('stderr / console 行另有非颜色线索:左侧竖条 stderr 实线、console 虚线,stdout 透明占位(色觉差异 / 强制颜色下可辨)', () => {
+    setLocale('en');
+    startDebugStoreSync();
+    emit({ type: 'started', sessionId: 's1' });
+    emit({
+      type: 'output',
+      sessionId: 's1',
+      entries: [
+        { seq: 0, category: 'stdout', output: 'out\n' },
+        { seq: 1, category: 'stderr', output: 'err\n' },
+        { seq: 2, category: 'console', output: 'note\n' },
+      ],
+    });
+    openConsole();
+    const [out, err, note] = Array.from(screen.getByRole('log').querySelectorAll('[data-category]')).map((el) =>
+      el.className.split(/\s+/),
+    );
+    for (const cls of [out!, err!, note!]) expect(cls).toContain('border-l-2');
+    expect(err).toEqual(expect.arrayContaining(['border-solid', 'border-error']));
+    expect(note).toEqual(expect.arrayContaining(['border-dashed', 'border-warning']));
+    expect(out).toContain('border-transparent');
+    expect(out).not.toContain('border-solid');
+    expect(out).not.toContain('border-dashed');
+  });
+
   it('只保留最近 DEBUG_VIEW_OUTPUT_ENTRIES_MAX 行,并提示更早的未显示;未知会话的 output 不建会话', () => {
     startDebugStoreSync();
     emit({ type: 'output', sessionId: 'ghost', entries: [{ seq: 0, category: 'stdout', output: 'x' }] });

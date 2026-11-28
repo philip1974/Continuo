@@ -153,6 +153,44 @@ describe('topic51 Op5 · DebugPanel', () => {
     expect(screen.getByText('verified')).toBeTruthy();
   });
 
+  // VSCode 调用栈给打不开的帧(无源码 / 内部伪路径)加 .disabled 弱化;这里改非交互元素 + 斜体 + 弱化文字色,不叠透明度
+  //(禁用按钮 opacity 0.5 把路径压到 2.34:1)。
+  it('打不开的帧不是按钮:非交互元素、斜体、名称 fg-muted、不带 opacity;可打开的帧仍是按钮', () => {
+    useDebugStore.setState({
+      activeSessionId: 's1',
+      sessions: new Map([
+        [
+          's1',
+          {
+            id: 's1',
+            label: 'prog.js',
+            breakpoints: [],
+            frames: [
+              { id: 1, name: 'main', source_path: '/repo/a.ts', line: 3, column: 1 },
+              { id: 2, name: 'Module._compile', source_path: 'node:internal/modules/cjs/loader', line: 1872, column: 1 },
+            ],
+            scopes: [],
+            variableRefs: new Map(),
+            stopped: { reason: 'breakpoint', stopSeq: 1, file: '/repo/a.ts', line: 3 },
+            lastStoppedOrder: 1,
+          },
+        ],
+      ]),
+    });
+    render(<DebugPanel />);
+    const openable = screen.getByText('main').closest('button');
+    expect(openable).not.toBeNull();
+    expect(openable!.disabled).toBe(false);
+    const name = screen.getByText('Module._compile');
+    expect(name.closest('button')).toBeNull();
+    const row = name.closest<HTMLElement>('[data-deemphasized]');
+    expect(row).not.toBeNull();
+    expect(row!.className.split(/\s+/)).toContain('italic');
+    expect(row!.className).not.toMatch(/opacity/);
+    expect(name.className.split(/\s+/)).toContain('text-fg-muted');
+    expect(row!.title).toBe('node:internal/modules/cjs/loader:1872');
+  });
+
   // activeSessionId 只指向已停下的会话;会话 continue 后面板仍显示该(运行中)会话与其断点,而非「无调试会话」。
   it('会话运行中(未停)→ 显示该会话、徽章「running」、断点页可进,不显示「No debug session」', () => {
     useDebugStore.setState({

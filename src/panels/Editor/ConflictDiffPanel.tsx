@@ -118,25 +118,68 @@ function useDiskVersion(
   return disk;
 }
 
-/** 差异配色:取 git 装饰 token(已在亮 / 暗两套主题里给值),整行淡底 + 行内较深底;gutter 实色条。 */
+/**
+ * 增删指示符(VSCode diffEditor.renderIndicators 默认开:删除行 gutter 画 codicon diff-remove「−」、新增行 diff-insert「+」,
+ * 并排与内联两种布局都有):画在 @codemirror/merge 的变更 gutter 里,色盲 / 强制颜色下不只靠红绿底色区分。
+ * 字形用 mask(颜色 = currentColor = git 装饰色);每个符号高 1lh,纵向重复 —— 内联布局的一整块删除行只有一个 gutter 元素,
+ * 照样每行一个「−」(VSCode 每行一个)。SVG 只作遮罩形状,fill / stroke 的颜色不参与显示。
+ */
+const indicatorMask = (path: string): string =>
+  `url("data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='${path}' stroke='black' stroke-width='1.4' stroke-linecap='round' fill='none'/></svg>`,
+  )}")`;
+/** 删除行「−」/ 新增行「+」的遮罩(导出供规范钉住形状不同)。 */
+export const DIFF_REMOVE_INDICATOR = indicatorMask('M3.5 6h5');
+export const DIFF_INSERT_INDICATOR = indicatorMask('M3.5 6h5M6 3.5v5');
+
+const indicator = (mask: string) => ({
+  content: '""',
+  position: 'absolute',
+  inset: '0',
+  backgroundColor: 'currentColor',
+  maskImage: mask,
+  maskRepeat: 'repeat-y',
+  maskPosition: 'center top',
+  maskSize: '100% 1lh',
+});
+
+/** 差异配色:取 git 装饰 token(已在亮 / 暗两套主题里给值),整行淡底 + 行内较深底;gutter 淡底 + 「−」/「+」指示符。 */
 const diffTheme = EditorView.theme({
   '&.cm-merge-a .cm-changedLine': { backgroundColor: 'color-mix(in srgb, var(--md-git-deleted) 12%, transparent)' },
   '&.cm-merge-b .cm-changedLine': { backgroundColor: 'color-mix(in srgb, var(--md-git-added) 12%, transparent)' },
   '&.cm-merge-a .cm-changedText': { background: 'color-mix(in srgb, var(--md-git-deleted) 34%, transparent)' },
   '&.cm-merge-b .cm-changedText': { background: 'color-mix(in srgb, var(--md-git-added) 34%, transparent)' },
-  '&.cm-merge-a .cm-changedLineGutter': { background: 'var(--md-git-deleted)' },
-  '&.cm-merge-b .cm-changedLineGutter': { background: 'var(--md-git-added)' },
-  // 单栏内联:磁盘版本被删 / 改掉的行(只读块)与其中的行内差异、gutter 条,配色同左侧
+  // 变更 gutter:库默认 3px 实色条 → 12px 宽、与该行同样的淡底,里面画指示符(VSCode 的 gutter-insert / gutter-delete 底色 +
+  // insert-sign / delete-sign)
+  '.cm-changeGutter': { width: '12px', paddingLeft: '0' },
+  '.cm-changeGutter .cm-gutterElement': { position: 'relative' },
+  '&.cm-merge-a .cm-changedLineGutter, .cm-deletedLineGutter': {
+    background: 'color-mix(in srgb, var(--md-git-deleted) 12%, transparent)',
+    color: 'var(--md-git-deleted)',
+  },
+  '&.cm-merge-b .cm-changedLineGutter': {
+    background: 'color-mix(in srgb, var(--md-git-added) 12%, transparent)',
+    color: 'var(--md-git-added)',
+  },
+  '&.cm-merge-a .cm-changedLineGutter::before, .cm-deletedLineGutter::before': indicator(DIFF_REMOVE_INDICATOR),
+  '&.cm-merge-b .cm-changedLineGutter::before': indicator(DIFF_INSERT_INDICATOR),
+  // 单栏内联:磁盘版本被删 / 改掉的行(只读块)与其中的行内差异,配色同左侧
   '.cm-deletedChunk': { backgroundColor: 'color-mix(in srgb, var(--md-git-deleted) 12%, transparent)' },
   '.cm-deletedChunk .cm-deletedText': { background: 'color-mix(in srgb, var(--md-git-deleted) 34%, transparent)' },
-  '.cm-deletedLineGutter': { background: 'var(--md-git-deleted)' },
   // 两侧之间的分隔线
   '&.cm-merge-a': { borderRight: '1px solid var(--md-outline-variant)' },
   '.cm-content': { padding: '8px 0' },
-  // 强制颜色(高对比度):底色被抹掉,行内差异改画轮廓仍可辨
+  // 强制颜色(高对比度):底色被抹掉,行内差异改画轮廓仍可辨;gutter 保住指示符(forced-color-adjust: none + 系统色:
+  // Canvas 底上 CanvasText 的「−」/「+」)
   '@media (forced-colors: active)': {
     '.cm-changedText': { outline: '1px solid CanvasText' },
-    '.cm-changedLineGutter': { background: 'CanvasText' },
+    // 选择器与上面的配色规则同优先级(主题类 + 两个类),后写者胜。@media 块里不能用 &(EditorView.theme 会把 & 换成
+    // 「@media …」本身,生成无效选择器),故用 .cm-changeGutter 补足优先级。
+    '.cm-changeGutter .cm-changedLineGutter, .cm-changeGutter .cm-deletedLineGutter': {
+      forcedColorAdjust: 'none',
+      background: 'Canvas',
+      color: 'CanvasText',
+    },
   },
 });
 

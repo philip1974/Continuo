@@ -27,6 +27,7 @@ import {
   type PromptGrantGuard,
 } from '@/lib/use-prompt-grant-guard';
 import { PromptGrantHint } from '@/lib/prompt-grant-hint';
+import { SeverityIcon } from '@/lib/ui-icons';
 import { UNTRUSTED_PATH_MAX_CHARS, UntrustedBlock, UntrustedText } from '@/lib/untrusted-text';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { terminalPanelTitle, terminalTitleInputOf } from '@/shell/dock/terminal-panel-id';
@@ -273,8 +274,13 @@ function AgentAuthPromptBody({
         {pending.external ? (
           <p className="mb-3 text-xs text-fg">{t('permissions.agent.external_caller')}</p>
         ) : null}
-        <p className="mb-1 text-2xs text-fg-dim">
-          {t(hintKey)}
+        {/* 授权后果(风险说明):不能是弹窗里字号最小、颜色最淡的一行 —— 12px 正文色 + 警告图标(VSCode 工作区信任对话框
+            的风险说明配 warning / shield codicon)。图标仅装饰,文字本身就是说明。 */}
+        <p className="mb-1 flex items-start gap-1.5 text-xs text-fg" data-auth-risk-note="">
+          <span className="mt-px shrink-0 text-warning">
+            <SeverityIcon level="warning" size={14} />
+          </span>
+          <span className="min-w-0">{t(hintKey)}</span>
         </p>
       </div>
       {/* 「尚未生效」提示的常驻 status 区域放在按钮上方(占说明与按钮之间的间距),底部不多出空白。 */}

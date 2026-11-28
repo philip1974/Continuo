@@ -145,10 +145,17 @@ const DARK_THEME: ITheme = {
 //   256-color grayscale 高段 250-255、truecolor 180+ 灰阶 — 这些都绕过 16-ANSI 槽。
 //   xterm `minimumContrastRatio` option 在 rendering 时自动拔 fg 到对比达标,
 //   是 VSCode terminal 同款策略。
-//   light = 7 (AAA), dark = 1 (dark 调色板已达 AA,不动)。
+//   light = 7 (AAA);dark = 4.5(VSCode terminal.integrated.minimumContrastRatio 默认值,各主题同为 4.5)。dark 原为 1
+//   (「调色板已达 AA」只对 16 色前景成立:ANSI black #20252b 在底色上 1.20、brightBlack #6e7681(zsh-autosuggestions 等)4.04,
+//   256 色 / truecolor 更不受控)。light 保留 7:比 VSCode 默认更严,是 issue #24 为 dim 单元格(按 ratio/2 处理)刻意选的。
 //   **dim 单元 xterm 按 ratio/2 处理(红队 P0.1)**:light dim 实际保 ~3.5:1(AA Large),
 //   非 AA 但可读;commit body 显式声明此点,不谎称达 AA。
 //   构造时 + theme effect 同步 set,避免主题切换残留旧值。
+/** 终端最低对比度(xterm minimumContrastRatio):light 7、dark 4.5,见上方注释。构造时与主题切换时同用。 */
+export function terminalMinimumContrastRatio(resolved: 'light' | 'dark'): number {
+  return resolved === 'dark' ? 4.5 : 7;
+}
+
 const LIGHT_THEME: ITheme = {
   // = 画布色(design-tokens.css `:root` 的 --md-surface),同 DARK_THEME。
   background: '#fffbff',
@@ -538,8 +545,8 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
       cursorStyle: initOptions.cursorStyle,
       screenReaderMode: initOptions.screenReaderMode,
       theme: initOptions.resolved === 'dark' ? DARK_THEME : LIGHT_THEME,
-      // light 7 (AAA), dark 1 — 见 LIGHT_THEME 注释 (issue #24)
-      minimumContrastRatio: initOptions.resolved === 'dark' ? 1 : 7,
+      // light 7 (AAA), dark 4.5(VSCode 默认)— 见 LIGHT_THEME 注释 (issue #24)
+      minimumContrastRatio: terminalMinimumContrastRatio(initOptions.resolved),
     });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -987,8 +994,8 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     const term = termRef.current;
     if (!term) return;
     term.options.theme = resolved === 'dark' ? DARK_THEME : LIGHT_THEME;
-    // 同步 minimumContrastRatio,避免 dark→light 残留 1 / light→dark 拔亮 dim prompt
-    term.options.minimumContrastRatio = resolved === 'dark' ? 1 : 7;
+    // 同步 minimumContrastRatio,避免主题切换后残留另一主题的值
+    term.options.minimumContrastRatio = terminalMinimumContrastRatio(resolved);
   }, [resolved]);
 
   // 主题切换 → 搜索装饰色作废并重画。addon 不比较 decorations(同词重搜不重画高亮),故先清旧高亮连带其缓存词;

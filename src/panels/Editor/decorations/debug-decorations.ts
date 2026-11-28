@@ -184,7 +184,8 @@ const debugDecorationsHostExtension: Extension = [
       backgroundColor: 'var(--color-debug-exec-marker)',
       pointerEvents: 'none',
     },
-    // 组合标记:箭头主体里嵌断点红点(在箭头的裁剪范围内,红点仍可见)。
+    // 组合标记:箭头主体里嵌断点红点(在箭头的裁剪范围内,红点仍可见)。红点外描一圈画布色:红 / 黄两色亮度接近
+    //(亮色 #d32f2f / #a87700 仅 1.26:1,红色盲下更难分),靠这圈底色把红点从箭头里分出来。
     '.cm-debug-exec-marker.cm-debug-exec-on-breakpoint::after': {
       content: '""',
       position: 'absolute',
@@ -195,6 +196,21 @@ const debugDecorationsHostExtension: Extension = [
       borderRadius: '50%',
       transform: 'translateY(-50%)',
       backgroundColor: 'var(--color-debug-breakpoint)',
+      boxShadow: '0 0 0 1px var(--md-surface)',
+    },
+    // 强制颜色(Windows 高对比度):背景色被抹成 Canvas,只靠 background-color 画的红点 / 箭头 / 执行行黄底全部消失。
+    // VSCode 的断点 / 执行箭头是 codicon 字形(前景色),高对比度下仍按系统前景色画出;这里用 forced-color-adjust: none
+    // 保住背景并改系统色:红点 CanvasText、箭头 Highlight、箭头里的红点 HighlightText(与箭头必有对比);执行行画 1px
+    // Highlight 轮廓(底色交给系统,文字照常 CanvasText)。
+    '@media (forced-colors: active)': {
+      '.cm-debug-breakpoint-marker': { forcedColorAdjust: 'none', backgroundColor: 'CanvasText' },
+      '.cm-debug-exec-marker': { forcedColorAdjust: 'none', backgroundColor: 'Highlight' },
+      '.cm-debug-exec-marker.cm-debug-exec-on-breakpoint::after': {
+        forcedColorAdjust: 'none',
+        backgroundColor: 'HighlightText',
+        boxShadow: 'none',
+      },
+      '.cm-line.cm-debug-exec-line': { outline: '1px solid Highlight', outlineOffset: '-1px' },
     },
   }),
 ];

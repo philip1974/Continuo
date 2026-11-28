@@ -101,3 +101,46 @@ export function ExcludeIcon({ size }: IconProps) {
     </StrokeIcon>
   );
 }
+
+/**
+ * 严重级别图标(VSCode 通知 / 问题的 codicon error / warning / info,success 用 pass 的圆圈对勾):靠形状区分等级,不只靠颜色
+ *(色觉差异 / 强制颜色下仍可辨,WCAG 1.4.1)。描边 currentColor,颜色由调用方给。
+ */
+export type SeverityLevel = 'error' | 'warning' | 'info' | 'success';
+
+const DOT = { fill: 'currentColor', stroke: 'none' } as const;
+
+export function SeverityIcon({ level, size }: IconProps & { readonly level: SeverityLevel }) {
+  switch (level) {
+    case 'error':
+      return (
+        <StrokeIcon size={size}>
+          <circle cx="8" cy="8" r="6" />
+          <path d="M5.9 5.9l4.2 4.2M10.1 5.9l-4.2 4.2" />
+        </StrokeIcon>
+      );
+    case 'warning':
+      return (
+        <StrokeIcon size={size}>
+          <path d="M8 2.2l6.1 11H1.9z" />
+          <path d="M8 6.4v3.3" />
+          <circle cx="8" cy="11.6" r="0.8" {...DOT} />
+        </StrokeIcon>
+      );
+    case 'info':
+      return (
+        <StrokeIcon size={size}>
+          <circle cx="8" cy="8" r="6" />
+          <path d="M8 7.4v3.8" />
+          <circle cx="8" cy="5.2" r="0.8" {...DOT} />
+        </StrokeIcon>
+      );
+    case 'success':
+      return (
+        <StrokeIcon size={size}>
+          <circle cx="8" cy="8" r="6" />
+          <path d="M5.4 8.2l1.8 1.8 3.5-3.7" />
+        </StrokeIcon>
+      );
+  }
+}

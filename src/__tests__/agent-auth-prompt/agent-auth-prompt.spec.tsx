@@ -163,6 +163,28 @@ describe('AgentAuthPrompt — 渲染条件', () => {
     expect(modal.textContent).toContain('读取变量');
   });
 
+  // 授权后果(风险说明)不能是弹窗里字号最小、颜色最淡的一行(此前 10px fg-dim):≥ 12px(text-xs)正文色 + 警告图标
+  //(VSCode 工作区信任对话框的风险说明配 warning / shield codicon);图标仅装饰,文字仍是说明本身。
+  it('风险说明:12px 正文色 + 警告图标(aria-hidden),仍在 aria-describedby 说明里', () => {
+    installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
+    });
+    const note = document.querySelector<HTMLElement>('[data-auth-risk-note]')!;
+    expect(note).not.toBeNull();
+    const cls = note.className.split(/\s+/);
+    expect(cls).toEqual(expect.arrayContaining(['text-xs', 'text-fg']));
+    expect(cls).not.toContain('text-2xs');
+    expect(cls).not.toContain('text-fg-dim');
+    const icon = note.querySelector('svg');
+    expect(icon?.getAttribute('aria-hidden')).toBe('true');
+    expect(icon?.parentElement?.className).toContain('text-warning');
+    expect(note.textContent).toContain('MCP');
+    const describedBy = document.querySelector('[role="dialog"]')!.getAttribute('aria-describedby')!;
+    expect(document.getElementById(describedBy)!.contains(note)).toBe(true);
+  });
+
   it('未识别的 method → 「调用 ${method}」', () => {
     installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
     render(<AgentAuthPrompt />);

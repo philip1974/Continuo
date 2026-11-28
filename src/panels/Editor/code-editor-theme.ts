@@ -13,7 +13,10 @@ import { EditorView } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
 import { codeMirrorFind } from './codemirror-find';
 
-const SELECTION = 'color-mix(in srgb, var(--md-primary) 28%, transparent)';
+/** 选区底:theme.css 的 --md-editor-selection(两主题各取值,保证注释 / 关键字等语法色叠选区后的对比度,见该 token 注释)。 */
+const SELECTION = 'var(--md-editor-selection)';
+/** 查找的当前匹配:主色 28%(与 Markdown 编辑器的当前匹配同色,见 milkdown-font-override.css)。 */
+const SEARCH_CURRENT = 'color-mix(in srgb, var(--md-primary) 28%, transparent)';
 
 /** 编辑器外观(亮 / 暗共用,全部走 token)。`dark` 只影响 CodeMirror 内建样式选亮 / 暗变体。 */
 function chromeTheme(dark: boolean): Extension {
@@ -47,7 +50,7 @@ function chromeTheme(dark: boolean): Extension {
         backgroundColor: 'color-mix(in srgb, var(--md-warning) 30%, transparent)',
         outline: '1px solid color-mix(in srgb, var(--md-warning) 60%, transparent)',
       },
-      '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: SELECTION },
+      '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: SEARCH_CURRENT },
       // 强制颜色(Windows 高对比度):底色被抹成 Canvas、轮廓改 CanvasText,当前匹配与其它匹配、选区都不可辨。
       // 对齐 VSCode 高对比度主题:当前匹配 2px Highlight 实线(contrastActiveBorder),其它匹配 1px CanvasText 虚线,
       // 选区画 Highlight 轮廓(不改底色:选区层在文字下方,Highlight 底 + CanvasText 字在部分高对比度主题下对比不足)。
@@ -55,6 +58,16 @@ function chromeTheme(dark: boolean): Extension {
         '.cm-searchMatch': { outline: '1px dashed CanvasText' },
         '.cm-searchMatch.cm-searchMatch-selected': { outline: '2px solid Highlight' },
         '.cm-selectionBackground': { outline: '1px solid Highlight', outlineOffset: '-1px' },
+        // 与选区相同的文本 / 光标处单词的其它出现处(VSCode HC editor.selectionHighlightBorder = contrastActiveBorder,
+        // hc 主题 border-style: dotted)与匹配括号(editorBracketMatch.border = contrastBorder,实线):底色被抹掉后改画轮廓。
+        '.cm-selectionMatch': { outline: '1px dotted CanvasText', outlineOffset: '-1px' },
+        // (@media 块里不能写 &:EditorView.theme 会把 & 换成「@media …」,生成无效选择器)
+        '.cm-matchingBracket': { outline: '1px solid CanvasText', outlineOffset: '-1px' },
+        // 缩进参考线(库用 background 渐变 + 自定义属性画线):普通线 GrayText、当前块那一条 CanvasText(VSCode HC
+        // editorIndentGuide.activeBackground1 比普通线更亮);forced-color-adjust: none 保住系统色渐变。颜色属性设在行元素本身
+        //(行内 --indent-markers 渐变在该元素上解析 var()),不与库 baseTheme 在编辑器根上的 &light / &dark 比优先级。
+        '.cm-indent-markers': { '--indent-marker-bg-color': 'GrayText', '--indent-marker-active-bg-color': 'CanvasText' },
+        '.cm-indent-markers::before': { forcedColorAdjust: 'none' },
         // 查找选项 toggle 勾选态(同 forced-colors.css 的 [aria-pressed=true]:内嵌 2px Highlight 轮廓)
         '.cm-panel label.cm-search-option:has(input:checked)': { outline: '2px solid Highlight', outlineOffset: '-2px' },
       },
@@ -81,7 +94,8 @@ function chromeTheme(dark: boolean): Extension {
         outline: 'none',
       },
       '.cm-textfield:focus': { borderColor: 'var(--md-focus-ring)', backgroundColor: 'var(--md-surface-container)' },
-      '.cm-textfield::placeholder': { color: 'var(--md-outline)' },
+      // 占位文字同 design Input(--md-fg-dim:亮色 outline 在 container-low 上只有 4.14:1)
+      '.cm-textfield::placeholder': { color: 'var(--md-fg-dim)' },
       // 查找无结果(codemirror-find.ts 置 aria-invalid):错误色描边,聚焦再加 1px 错误色环 —— 同 design Input 的校验失败态
       // (VSCode inputValidation.errorBorder)。
       '.cm-textfield[aria-invalid="true"], .cm-textfield[aria-invalid="true"]:focus': { borderColor: 'var(--md-error)' },

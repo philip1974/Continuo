@@ -41,7 +41,9 @@
 
 - main 订阅 DAP `output` 事件(telemetry 不收,category 缺省 console),去 ANSI、单条按 16 KiB 截断,按会话写入环形缓冲
   (10000 条 / 2 MiB,丢最旧;seq 从 0 递增不回退),每 50ms 合批推 `output` 事件(会话结束 / 拆除前先推完)。
-- 调试视图「调试控制台」页:显示最近 1000 行(更早的提示未显示),stdout 常规色、stderr / 求值失败错误色、console 类别警告色;
+- 调试视图「调试控制台」页:显示最近 1000 行(更早的提示未显示),stdout 常规色、stderr / 求值失败错误色、console 类别警告色,
+  且不只靠颜色:每行左侧 2px 竖条位,stderr / error 实线、console / important 虚线、stdout 透明占位(色觉差异 / 强制颜色下可辨;
+  VSCode REPL 只靠颜色,刻意增强);
   新输出到达时若已在底部则跟随。底部输入框 Enter 求值(DAP evaluate context=repl,停住时在首帧求值),输入与结果追加到控制台。
   - REPL(VSCode Debug Console):输入框 ↑ / ↓ 翻输入历史(VSCode `navigateHistory`:↑ 上一条、到最早一条停住;↓ 下一条、过了最新
     一条清空;本次启动内各会话共用、最近 100 条、连续重复只记一次;读屏播报取出的内容)。

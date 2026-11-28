@@ -17,7 +17,9 @@
   border-color: var(--md-focus-ring);
   background-color: var(--md-surface-container);
 }
-.wm-input::placeholder { color: var(--md-outline); }
+/* 占位文字(VSCode input.placeholderForeground):用 --md-fg-dim 而非 --md-outline —— 亮色 outline #79747e 在 container-low 上
+ * 只有 4.14:1,fg-dim 5.50(暗色两者同值 #8d90a0,不变)。 */
+.wm-input::placeholder { color: var(--md-fg-dim); }
 .wm-input:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .wm-input[data-variant="mono"] { font-family: var(--wm-font-mono); font-size: var(--wm-text-md); }

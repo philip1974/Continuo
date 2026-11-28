@@ -365,6 +365,12 @@
 - [`cold-start-drag-folder.spec.ts`](./cold-start-drag-folder/cold-start-drag-folder.spec.ts)
 - [`reload-after-fresh.spec.ts`](./cold-start-drag-folder/reload-after-fresh.spec.ts)
 
+## [色觉差异 / 强制颜色下的非颜色线索](./color-vision-cues/README.md)
+
+- [`editor-forced-colors.spec.ts`](./color-vision-cues/editor-forced-colors.spec.ts)
+- [`terminal-min-contrast.spec.ts`](./color-vision-cues/terminal-min-contrast.spec.ts)
+- [`toast-severity-icons.spec.tsx`](./color-vision-cues/toast-severity-icons.spec.tsx)
+
 ## [column-resize (Sidebar 拖拽改宽)](./column-resize/README.md)
 
 - [`compute.spec.ts`](./column-resize/compute.spec.ts)
@@ -455,6 +461,7 @@
 ## [design-system](./design-system/README.md)
 
 - [`components.spec.tsx`](./design-system/components.spec.tsx)
+- [`contrast.spec.ts`](./design-system/contrast.spec.ts)
 - [`roving-index.spec.ts`](./design-system/roving-index.spec.ts)
 - [`style-contracts.spec.ts`](./design-system/style-contracts.spec.ts)
 - [`theme-provider.spec.tsx`](./design-system/theme-provider.spec.tsx)

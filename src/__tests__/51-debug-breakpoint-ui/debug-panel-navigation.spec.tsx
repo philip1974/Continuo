@@ -126,8 +126,11 @@ describe('点栈帧 / 断点 → 打开源码并定位到行', () => {
       };
     });
     render(<DebugPanel />);
-    const btn = screen.getByRole('button', { name: /native/ }) as HTMLButtonElement;
-    expect(btn.disabled).toBe(true);
+    // 不可打开的帧是非交互元素(不是禁用按钮,见 debug-panel.spec「打不开的帧不是按钮」)
+    expect(screen.queryByRole('button', { name: /native/ })).toBeNull();
+    const row = screen.getByText('native').closest<HTMLElement>('[data-deemphasized]')!;
+    fireEvent.click(row);
+    expect(h.openFile).not.toHaveBeenCalled();
   });
 });
 
@@ -141,9 +144,8 @@ describe('源码跳转 · 非绝对路径', () => {
       };
     });
     render(<DebugPanel />);
-    const btn = screen.getByRole('button', { name: /internal/ }) as HTMLButtonElement;
-    expect(btn.disabled).toBe(true);
-    fireEvent.click(btn);
+    expect(screen.queryByRole('button', { name: /internal/ })).toBeNull();
+    fireEvent.click(screen.getByText('internal').closest<HTMLElement>('[data-deemphasized]')!);
     expect(h.openFile).not.toHaveBeenCalled();
   });
 });

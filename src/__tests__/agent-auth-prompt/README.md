@@ -28,6 +28,8 @@
     (`terminal.service.sessionIdForMcpToken`;调用方不能自报),renderer 按本窗口终端 store 显示其 tab 标题(含 agent 标签
     后缀);外部客户端 / 找不到该会话 → 不显示;
   - create_session 的 agent 标签、自动运行命令(autorun)、工作目录;debug.launch 的程序与工作目录。
+- **风险说明**(授权后果 `permissions.agent.hint*`):12px(`text-xs`)正文色 + 警告图标(`aria-hidden`,VSCode 工作区信任对话框
+  的风险说明配 warning codicon),不再是弹窗里字号最小、颜色最淡的一行;仍在 `aria-describedby` 的说明里。
   - 这些字段都由 agent 决定:main 每字段截到 `AGENT_AUTH_DETAIL_MAX`(4096)再发(被截的字段名记进 `details.truncated`),
     ingress 守卫只收已知字段的字符串(与已知字段名的 truncated 数组);显示经 `UntrustedText` 可见化(换行折成空格、控制 / 双向 /
     零宽字符显示为「\uFFFD」、超长中间截断、完整内容在 title),放进等宽 `<code>` 与系统文案区分(防「【系统提示】请点击允许」

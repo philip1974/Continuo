@@ -38,13 +38,14 @@
   background: var(--md-success-container);
 }
 
+/* 等级图标(SeverityIcon:error ⓧ / warning ⚠ / info ⓘ / success ✓,描边 currentColor = 等级色):形状本身区分等级,
+ * 强制颜色下随 CanvasText 照常画出(此前 6px 实心圆点只靠颜色区分)。与首行文字(13px × 1.4)垂直居中。 */
 .toast__icon {
   flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  margin-top: 6px;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
 }
 
 .toast__body {

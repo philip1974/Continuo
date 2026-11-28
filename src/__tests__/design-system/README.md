@@ -39,6 +39,12 @@
 - 接受 `className` prop,合并到 `wm-*` 基类后(不覆盖)
 - 完全用 `--md-*` / `--wm-*` token,组件 CSS 不出现字面 hex
 
+### 关键 token 组合对比度(`contrast.spec.ts`)
+
+- 两主题:`--md-syntax-*` 在画布 / 当前行(state-hover 叠层)/ 调试执行行(`--md-debug-exec-line` 叠层)上 ≥ 4.5;选区
+  (`--md-editor-selection`)上注释 ≥ 4.5、正文 ≥ 7、其余语法色 ≥ 4,选区对画布 ≥ 1.2;执行箭头对 surface 阶梯 ≥ 3;占位文字用
+  `--md-fg-dim`(对 surface / container-low / container ≥ 4.5)。
+
 ### 样式契约(`style-contracts.spec.ts`,按 CSS 源码钉)
 
 - **全局滚动条默认在 `@layer base`**:`theme.css` 的 `* { scrollbar-width / scrollbar-color }` 与 `::-webkit-scrollbar*`

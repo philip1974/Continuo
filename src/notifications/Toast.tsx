@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { FocusEvent, ReactNode } from 'react';
 import type { Notification } from './types';
 import { Button } from '@/design';
+import { SeverityIcon } from '@/lib/ui-icons';
 import './Toast.css';
 
 export interface ToastProps {
@@ -88,7 +89,10 @@ export function Toast({
       onFocus={onFocus}
       onBlur={onBlur}
     >
-      <span className="toast__icon" aria-hidden="true" />
+      {/* 等级图标按形状区分(VSCode 通知的 error / warning / info codicon):色觉差异 / 强制颜色下不只靠颜色(WCAG 1.4.1)。 */}
+      <span className="toast__icon" aria-hidden="true" data-icon={level}>
+        <SeverityIcon level={level} size={14} />
+      </span>
       {actions !== undefined && actions.length > 0 ? (
         // 有按钮:正文与按钮行竖排(按钮在正文下方)
         <div className="toast__main">

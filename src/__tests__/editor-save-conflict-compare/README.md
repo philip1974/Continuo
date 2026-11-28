@@ -16,6 +16,9 @@
    面板类型注册为 hidden(不进 Dock「⋯」菜单,插件 app.dock.openPanel 按 type 打开也忽略)+ multiInstance。
 3. 差异视图(懒加载 chunk,@codemirror/merge):
    - 左 = 磁盘当前内容,只读(可聚焦);右 = 原 tab 的同一文档:右侧输入即改原 tab(变脏、内容同步),原 tab 的编辑也同步到右侧。
+   - 增删指示符(VSCode `diffEditor.renderIndicators` 默认开):并排时左侧变更行 gutter「−」、右侧「+」;内联时磁盘版本的只读块
+     每行一个「−」、你的版本的变更行「+」(gutter 12px 淡底 + git 装饰色遮罩字形);强制颜色下 gutter `forced-color-adjust: none`
+     + `Canvas` 底 `CanvasText` 字形,不只靠红绿底色区分。
    - 逐行高亮 + 行内差异;工具栏显示差异数 / 当前第几处;上一处 / 下一处差异按钮与编辑器内 Alt+F5 / Shift+Alt+F5
      (VSCode compareEditor.nextChange / previousChange)循环跳转,跳转后读屏播报「第 n 处差异，共 m 处，第 L 行」,无差异播报「没有差异」。
    - 读屏名称:两侧文本区「{name}（在磁盘上，只读），编辑器」/「{name}（你的版本），编辑器」;工具栏 role=toolbar 有名称。

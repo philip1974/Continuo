@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorView } from '@codemirror/view';
 import { getOriginalDoc } from '@codemirror/merge';
 import { useEditorStore } from '@/stores/editor.store';
-import { ConflictDiffPanel } from '@/panels/Editor/ConflictDiffPanel';
+import { ConflictDiffPanel, DIFF_INSERT_INDICATOR, DIFF_REMOVE_INDICATOR } from '@/panels/Editor/ConflictDiffPanel';
 import { CONFLICT_DIFF_TITLE_KEY } from '@/panels/Editor/conflict-diff-constants';
 import { CONFLICT_DIFF_MAX_CHARS } from '@/panels/Editor/conflict-diff-model';
 import { ThemeContext } from '@/theme/ThemeProvider';
@@ -68,6 +68,16 @@ const side = (s: 'a' | 'b') => document.querySelector<HTMLElement>(`.cm-merge-${
 const viewOf = (s: 'a' | 'b') => EditorView.findFromDOM(side(s))!;
 const docOf = (s: 'a' | 'b') => viewOf(s).state.doc.toString();
 
+/** 注入到文档里的 CodeMirror 主题 CSS(StyleModule 在 jsdom 里写 <style>)。 */
+const injectedCss = (): string =>
+  [...document.querySelectorAll('style')].map((el) => el.textContent ?? '').join('\n').replace(/\s+/g, ' ');
+/** 选择器(子串)命中的规则体,多条拼接。 */
+const ruleBodies = (css: string, selector: RegExp): string =>
+  Array.from(css.matchAll(/([^{}]+)\{([^{}]*)\}/g))
+    .filter((m) => selector.test(m[1]!))
+    .map((m) => m[2]!)
+    .join(' ');
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.dirListeners.length = 0;
@@ -80,6 +90,33 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('两侧内容与高亮', () => {
+  // VSCode diffEditor.renderIndicators(默认开):删除行 gutter「−」、新增行「+」,并排与内联都画 —— 色盲 / 强制颜色下不只靠红绿底。
+  it('并排:左侧变更行 gutter 画「−」、右侧画「+」(形状不同的遮罩,颜色 = git 装饰色);强制颜色下保住指示符', async () => {
+    renderPanel();
+    await flush();
+    expect(side('a').querySelectorAll('.cm-changeGutter .cm-changedLineGutter').length).toBeGreaterThan(0);
+    expect(side('b').querySelectorAll('.cm-changeGutter .cm-changedLineGutter').length).toBeGreaterThan(0);
+    const css = injectedCss();
+    const minus = ruleBodies(css, /\.cm-merge-a \.cm-changedLineGutter::before/);
+    const plus = ruleBodies(css, /\.cm-merge-b \.cm-changedLineGutter::before/);
+    expect(minus).toContain(`mask-image: ${DIFF_REMOVE_INDICATOR}`.replace(/\s+/g, ' '));
+    expect(plus).toContain(`mask-image: ${DIFF_INSERT_INDICATOR}`.replace(/\s+/g, ' '));
+    expect(DIFF_REMOVE_INDICATOR).not.toBe(DIFF_INSERT_INDICATOR);
+    for (const body of [minus, plus]) {
+      expect(body).toMatch(/background-color: currentColor/);
+      expect(body).toMatch(/mask-repeat: repeat-y/);
+    }
+    expect(ruleBodies(css, /\.cm-merge-a \.cm-changedLineGutter(?!::)/)).toMatch(/color: var\(--md-git-deleted\)/);
+    expect(ruleBodies(css, /\.cm-merge-b \.cm-changedLineGutter(?!::)/)).toMatch(/color: var\(--md-git-added\)/);
+    const forced = css.match(/@media \(forced-colors: active\) \{(.*?\})\s*\}/g)?.join(' ') ?? '';
+    const forcedGutter = ruleBodies(forced, /\.cm-changeGutter \.cm-changedLineGutter/);
+    expect(forcedGutter).toMatch(/forced-color-adjust: none/);
+    expect(forcedGutter).toMatch(/color: CanvasText/);
+    expect(ruleBodies(forced, /\.cm-changeGutter \.cm-deletedLineGutter/)).toMatch(/forced-color-adjust: none/);
+    // @media 里的选择器都挂在主题类下(不是把「@media …」当成选择器前缀的无效规则)
+    expect(css).not.toMatch(/@media \(forced-colors: active\)\s*[.&]/);
+  });
+
   it('左 = 磁盘版本(只读),右 = 你的版本;逐行与行内差异高亮;读屏名称', async () => {
     renderPanel();
     await flush();
@@ -305,6 +342,19 @@ describe('窄宽单栏内联(VSCode useInlineViewWhenSpaceIsLimited,宽 ≤ 900)
       fireEvent.click(screen.getByRole('button', { name: t('panels.editor.conflict_diff.next') }));
     });
     expect(mocks.announce).toHaveBeenLastCalledWith('第 1 处差异，共 2 处，第 2 行', expect.anything());
+  });
+
+  it('内联:磁盘版本被删 / 改掉的只读块 gutter 每行一个「−」(repeat-y,1lh 一个),你的版本的新增 / 改动行「+」', async () => {
+    width = 600;
+    renderPanel();
+    await flush();
+    expect(side('b').querySelector('.cm-changeGutter .cm-deletedLineGutter')).not.toBeNull();
+    expect(side('b').querySelector('.cm-changeGutter .cm-changedLineGutter')).not.toBeNull();
+    const css = injectedCss();
+    const minus = ruleBodies(css, /\.cm-deletedLineGutter::before/);
+    expect(minus).toContain(`mask-image: ${DIFF_REMOVE_INDICATOR}`);
+    expect(minus).toMatch(/mask-size: 100% 1lh/);
+    expect(ruleBodies(css, /\.cm-merge-b \.cm-changedLineGutter::before/)).toContain(`mask-image: ${DIFF_INSERT_INDICATOR}`);
   });
 
   it('宽度跨过阈值随之切换:你的版本内容(含未保存输入)/ 光标 / 焦点不丢,磁盘版本不变', async () => {

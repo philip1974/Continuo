@@ -37,10 +37,15 @@
 
   /* Debug 可视化:断点 gutter 红点 + 当前执行行黄底 / gutter 黄箭头(light 占位也给完整槽位)。执行行取 VSCode
    * editor.stackFrameHighlightBackground(light #ffff6673)与 debugIcon.breakpointCurrentStackframeForeground(light #BE8700),
-   * 与断点红色区分开。 */
+   * 与断点红色区分开。执行箭头 VSCode 原值 #be8700 在 container-low 上只有 2.87:1(WCAG 1.4.11 要求图形 ≥ 3),同色相加深到
+   * #a87700:对 surface 阶梯 3.86 / 3.60 / 3.41 / 3.23 / 3.06(BDD: src/__tests__/design-system/contrast.spec.ts)。 */
   --md-debug-breakpoint: #d32f2f;
   --md-debug-exec-line: rgba(255, 255, 102, 0.45);
-  --md-debug-exec-marker: #be8700;
+  --md-debug-exec-marker: #a87700;
+
+  /* 代码编辑器选区底(CodeEditor / Markdown 源码模式 / 冲突比较;MD3 无对应槽)。原 primary 28% 叠 surface 后注释只有 3.78、
+   * 变量名 3.53;primary 16%:注释 4.57 / 关键字 4.75 / 变量名 4.27,选区对 surface 1.26 仍可辨。 */
+  --md-editor-selection: rgba(103, 80, 164, 0.16);
 
   /* 次要弱化文字(MD3 无对应槽)。大量用作 10–12px 正文,须对 surface / container / container-high
    * ≥ 4.5:1(5.91 / 5.21 / 4.94);亮色 --md-outline(#79747e)在 container-low 上只有 4.14,故另取。 */
@@ -96,8 +101,14 @@
 .dark {
   /* Debug 可视化 */
   --md-debug-breakpoint: #ff6b6b;
-  --md-debug-exec-line: rgba(255, 255, 0, 0.2); /* VSCode dark #ffff0033 */
+  /* 执行行黄底:VSCode dark #ffff0033(20%)叠 surface 后 oneDark 变量名只有 3.26、注释 2.88;降到 10%:变量名 4.52、
+   * 关键字 4.91、函数名 6.12、注释 5.23(gutter 黄箭头仍标出执行行)。 */
+  --md-debug-exec-line: rgba(255, 255, 0, 0.1);
   --md-debug-exec-marker: #ffcc00;
+
+  /* 代码编辑器选区底:原 primary(淡天蓝)28% 叠 surface 后注释 2.62 / 变量名 2.97;改 primary-container(royal blue,同 VSCode
+   * Dark Modern 选区 #264f78 的深蓝)35%:注释 4.66 / 关键字 4.38 / 变量名 4.03 / 正文 10.01,选区对 surface 1.44。 */
+  --md-editor-selection: rgba(37, 99, 235, 0.35);
 
   /* 次要弱化文字(MD3 无对应槽,取 --md-outline 同值):对 surface / panel / hover 5.85 / 5.19 / 4.52。
    * 原 #6c6f7e 在 panel 上仅 3.30、hover 上 2.87。 */
@@ -109,7 +120,9 @@
   /* 列表命中字符:同 --md-primary,对弹窗底 / 选中 / 悬停 8.43 / 5.97 / 6.68 */
   --md-list-highlight: #b4c5ff;
 
-  /* 代码语法高亮:oneDark 原值(@codemirror/theme-one-dark),对 --md-surface #11131b 均 ≥ 5.1。 */
+  /* 代码语法高亮:oneDark 原值(@codemirror/theme-one-dark),对 --md-surface #11131b 均 ≥ 5.1。
+   * 注释 / 链接例外:oneDark #7d8799 在当前行(state-hover)上 4.32、执行行上 2.88,同色相提亮到 #939cad:
+   * surface 6.71 / 当前行 5.66 / 执行行 5.23 / 选区 4.66。 */
   --md-syntax-keyword: #c678dd;
   --md-syntax-name: #e06c75;
   --md-syntax-function: #61afef;
@@ -117,10 +130,10 @@
   --md-syntax-definition: #abb2bf;
   --md-syntax-type: #e5c07b;
   --md-syntax-operator: #56b6c2;
-  --md-syntax-comment: #7d8799;
+  --md-syntax-comment: #939cad;
   --md-syntax-string: #98c379;
   --md-syntax-heading: #e06c75;
-  --md-syntax-link: #7d8799;
+  --md-syntax-link: #939cad;
   --md-syntax-invalid: #ffffff;
 
   /* git 状态装饰:VSCode gitDecoration.* 暗色默认值。最低对比度(背景同亮色注释,最差多为搜索选中行 accent/15):
