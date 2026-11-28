@@ -29,11 +29,35 @@ export interface OutputChannelInfo {
 }
 
 export interface OutputChannelSnapshot {
-  /** 已完成的行 + 末尾未换行的部分(append 不带换行时)拼成的文本。 */
+  /** 已完成的行(最早 → 最近)。 */
+  readonly lines: readonly string[];
+  /**
+   * lines[0] 的绝对行号:通道建立以来写入的完整行按 0、1、2… 编号,环形缓冲丢掉 / 清除的行号不复用(= 累计丢弃的行数)。
+   * 面板按绝对行号给行做 key,锁定滚动时据此补偿头部丢掉的行高(正在看的内容不动)。
+   */
+  readonly firstLine: number;
+  /** 末尾未换行的部分(append 不带换行时;没有则为空串)。 */
+  readonly partial: string;
+  /** 已完成的行 + 末尾未换行的部分拼成的文本(按需拼接)。 */
   readonly text: string;
   readonly lineCount: number;
   /** 每次内容变化 +1(面板据此自动滚动)。 */
   readonly version: number;
+}
+
+function makeSnapshot(lines: readonly string[], firstLine: number, partial: string, version: number): OutputChannelSnapshot {
+  let text: string | null = null;
+  return {
+    lines,
+    firstLine,
+    partial,
+    get text() {
+      text ??= partial.length > 0 ? [...lines, partial].join('\n') : lines.join('\n');
+      return text;
+    },
+    lineCount: lines.length + (partial.length > 0 ? 1 : 0),
+    version,
+  };
 }
 
 class Channel {
@@ -41,6 +65,8 @@ class Channel {
   private readonly lines: string[] = [];
   private start = 0;
   private size = 0;
+  /** 累计写入的完整行数(清除不归零):当前最早一行的绝对行号 = pushed - size。 */
+  private pushed = 0;
   private chars = 0;
   private partial = '';
   version = 0;
@@ -58,6 +84,7 @@ class Channel {
       this.lines[this.start] = text;
       this.start = (this.start + 1) % OUTPUT_MAX_LINES;
     }
+    this.pushed += 1;
     this.chars += text.length;
     while (this.chars > OUTPUT_MAX_CHARS && this.size > 1) {
       this.chars -= this.lines[this.start]!.length;
@@ -101,8 +128,7 @@ class Channel {
     if (this.snapshot) return this.snapshot;
     const out = new Array<string>(this.size);
     for (let i = 0; i < this.size; i += 1) out[i] = this.lines[(this.start + i) % OUTPUT_MAX_LINES]!;
-    if (this.partial.length > 0) out.push(this.partial);
-    this.snapshot = { text: out.join('\n'), lineCount: out.length, version: this.version };
+    this.snapshot = makeSnapshot(out, this.pushed - this.size, this.partial, this.version);
     return this.snapshot;
   }
 }
@@ -113,7 +139,7 @@ let activeId: string | null = null;
 let autoScroll = true;
 let cachedList: readonly OutputChannelInfo[] | null = null;
 const EMPTY_LIST: readonly OutputChannelInfo[] = [];
-const EMPTY_SNAPSHOT: OutputChannelSnapshot = { text: '', lineCount: 0, version: 0 };
+const EMPTY_SNAPSHOT: OutputChannelSnapshot = makeSnapshot([], 0, '', 0);
 
 function emit(): void {
   for (const l of [...listeners]) l();

@@ -295,3 +295,72 @@ export default class Perm extends Plugin {
     }
   });
 });
+
+// 第六十九轮 A 组审计:通道满 10,000 行后锁定滚动,持续写入时视图不再上漂(VSCode 锁定后正在看的内容不动)。
+// BDD: src/__tests__/plugin-output-channel/
+test.describe('插件开发体验(第六十九轮)', () => {
+  const FILL = 'com.e2e.fill';
+  // onload 先写满 10,050 行(每 7 行一条会折行的长行),之后每 50ms 写 5 行(头部持续丢行)。
+  const FILL_MAIN = `const { Plugin } = globalThis.co;
+const line = (n) => 'fill line ' + n + (n % 7 === 3 ? ' ' + 'wrap '.repeat(80) : '');
+export default class Fill extends Plugin {
+  onload() {
+    let n = 0;
+    for (; n < 10050; n += 1) this.app.output.appendLine(line(n));
+    this.timer = setInterval(() => {
+      for (let i = 0; i < 5; i += 1) this.app.output.appendLine(line(n++));
+    }, 50);
+  }
+  onunload() {
+    clearInterval(this.timer);
+  }
+}
+`;
+
+  test.beforeEach(() => {
+    writePlugin(FILL, { id: FILL, name: 'PDX Fill', version: '1.0.0' }, FILL_MAIN);
+    writeFileSync(path.join(ud, 'plugins', '_enabled.json'), JSON.stringify([FILL]));
+  });
+
+  test('满 1 万行后锁定滚动:持续写入(头部丢行,含折行长行)时视口顶部的行与位置不变', async () => {
+    test.setTimeout(90_000);
+    const { app, win } = await launch();
+    try {
+      await win.evaluate(() => globalThis.__continuoTest!.executeCommand('workbench.view.output'));
+      const picker = win.locator('[data-output-channel-picker]');
+      await expect(picker).toBeVisible({ timeout: 15_000 });
+      await picker.click();
+      await win.getByRole('menuitemradio', { name: 'PDX Fill' }).click();
+      const body = win.locator(`[data-output-channel="plugin:${FILL}"]`);
+      // 通道里最早一行的行号(按文本取,不依赖面板的 DOM 结构)。
+      const firstLine = () => body.evaluate((el) => Number(/fill line (\d+)/.exec(el.textContent?.slice(0, 40) ?? '')?.[1] ?? -1));
+      await expect.poll(firstLine, { timeout: 15_000 }).toBeGreaterThan(0); // 已满、开始丢头部
+      const lock = body.locator('xpath=..').locator('button[aria-pressed]');
+
+      await body.hover();
+      await win.mouse.wheel(0, -4000);
+      await expect(lock).toHaveAttribute('aria-pressed', 'true', { timeout: 2_000 });
+      await win.waitForTimeout(800); // 滚轮动画结束
+      // 视口顶部那一行的文本与它相对滚动区顶部的位置(caretRangeFromPoint 取命中的字符所在行)。
+      const topLine = () =>
+        body.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const c = document.caretRangeFromPoint(r.left + 24, r.top + 10);
+          if (!c) return null;
+          const t = c.startContainer.textContent ?? '';
+          const start = t.lastIndexOf('\n', c.startOffset - 1) + 1;
+          const end = t.indexOf('\n', start);
+          return { text: t.slice(start, end < 0 ? undefined : end).slice(0, 20), offset: Math.round(c.getBoundingClientRect().top - r.top) };
+        });
+      const before = await topLine();
+      expect(before?.text).toMatch(/^fill line \d+/);
+      const firstBefore = await firstLine();
+      await win.waitForTimeout(2_000);
+      expect(await firstLine()).toBeGreaterThan(firstBefore + 50); // 期间头部确实丢了上百行
+      expect(await topLine()).toEqual(before);
+      await expect(lock).toHaveAttribute('aria-pressed', 'true');
+    } finally {
+      await closeDiscardingUnsaved(app);
+    }
+  });
+});

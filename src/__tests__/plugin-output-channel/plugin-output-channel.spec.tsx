@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // BDD: plugin-output-channel(见同目录 README)。
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/co-api', () => ({
@@ -18,6 +18,7 @@ import {
   OUTPUT_MAX_LINES,
   _resetOutputChannelsForTest,
   appendToOutputChannel,
+  clearOutputChannel,
   ensureOutputChannel,
   getActiveOutputChannelId,
   listOutputChannels,
@@ -62,6 +63,12 @@ describe('通道内容:按行追加、环形缓冲上限、清除', () => {
     expect(snap.lineCount).toBe(OUTPUT_MAX_LINES);
     expect(snap.text.startsWith('l5\n')).toBe(true);
     expect(snap.text.endsWith(`l${OUTPUT_MAX_LINES + 4}`)).toBe(true);
+    // 绝对行号:丢掉的行号不复用,firstLine = 累计丢弃的行数;清除后从下一个行号接着编
+    expect(snap.firstLine).toBe(5);
+    expect(snap.lines[0]).toBe('l5');
+    clearOutputChannel('c');
+    appendToOutputChannel('c', 'after\n');
+    expect(readOutputChannel('c').firstLine).toBe(OUTPUT_MAX_LINES + 5);
   });
 
   it('超过总字符上限 → 丢最早的行', () => {
@@ -279,5 +286,94 @@ describe('输出面板', () => {
     fireEvent.keyDown(body, { key: 'PageUp' });
     fireEvent.scroll(body);
     expect(view.getByRole('button', { name: 'Turn Auto Scrolling On' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  // 满 1 万行后每次写入都丢最早的行:锁定时正在看的行保持在视口里原位(VSCode 锁定后内容不动),按丢掉的行的实际高度补偿,
+  // 折行的长行也精确。jsdom 没有排版:按行号给行高(每 10 行有一行折成 3 行)模拟 offsetTop。
+  // jsdom 里渲染 1 万行约 1s,全量并发跑时给足时间。
+  describe('锁定滚动:头部丢行时视口内容不动', { timeout: 20_000 }, () => {
+    const PAD = 8;
+    // 行高:每 10 行有一行(n % 10 === 3)折成 3 行(48px),其余 16px。
+    let restore: (() => void) | null = null;
+    beforeEach(() => {
+      const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetTop')!;
+      Object.defineProperty(HTMLElement.prototype, 'offsetTop', {
+        configurable: true,
+        get(this: HTMLElement) {
+          const el = this.hasAttribute('data-line') ? this : this.querySelector<HTMLElement>('[data-line]');
+          const first = document.querySelector<HTMLElement>('[data-line]');
+          if (!el || !first) return 0;
+          // 行号连续:offsetTop = PAD + [first, n) 各行高之和(O(1) 闭式,免得每次读都遍历 1 万行)
+          const n = Number(el.dataset['line']);
+          const f = Number(first.dataset['line']);
+          const tall = (x: number) => Math.floor((x + 6) / 10); // [0, x) 里 k % 10 === 3 的个数
+          return PAD + 16 * (n - f) + 32 * (tall(n) - tall(f));
+        },
+      });
+      restore = () => Object.defineProperty(HTMLElement.prototype, 'offsetTop', desc);
+    });
+    afterEach(() => restore?.());
+
+    const setup = () => {
+      ensureOutputChannel('a', 'Alpha', null);
+      appendToOutputChannel('a', Array.from({ length: OUTPUT_MAX_LINES }, (_, i) => `l${i}\n`).join(''));
+      const view = render(<Output />);
+      const body = view.container.querySelector<HTMLElement>('[data-output-channel]')!;
+      Object.defineProperty(body, 'scrollHeight', { configurable: true, get: () => 10_000_000 });
+      Object.defineProperty(body, 'clientHeight', { configurable: true, get: () => 300 });
+      fireEvent.click(view.getByRole('button', { name: 'Turn Auto Scrolling Off' }));
+      const lineEl = (n: number) => body.querySelector<HTMLElement>(`[data-line="${n}"]`);
+      return { body, lineEl };
+    };
+
+    it('看着中间的行时写入(头部丢 37 行,含折行的长行)→ 同一行仍在视口顶部同一偏移', () => {
+      const { body, lineEl } = setup();
+      body.scrollTop = lineEl(5000)!.offsetTop + 5; // 用户滚到 l5000(scroll 事件尚未派发也成立)
+      act(() => appendToOutputChannel('a', Array.from({ length: 37 }, (_, i) => `n${i}\n`).join('')));
+      expect(lineEl(36)).toBeNull(); // 头部确实丢了
+      expect(lineEl(5000)!.textContent).toBe('l5000');
+      expect(body.scrollTop).toBe(lineEl(5000)!.offsetTop + 5);
+      // 再写一批仍不动
+      act(() => appendToOutputChannel('a', 'm\nm\n'));
+      expect(body.scrollTop).toBe(lineEl(5000)!.offsetTop + 5);
+    });
+
+    it('正看着的最早几行本身被丢了 → 停在剩下的最早一行', () => {
+      const { body, lineEl } = setup();
+      body.scrollTop = lineEl(2)!.offsetTop;
+      act(() => appendToOutputChannel('a', 'x\n'.repeat(5)));
+      act(() => appendToOutputChannel('a', 'y\n'.repeat(5)));
+      expect(lineEl(9)).toBeNull();
+      expect(body.scrollTop).toBe(0);
+    });
+
+    // 补偿要设 scrollTop,会打断滚轮 / 键盘的平滑滚动动画:高频写入时用户就再也滚不到底部解锁。
+    it('用户正在滚动(滚轮后 250ms 内)或已滚到底部 → 不补偿;停手后照常补偿', () => {
+      const { body, lineEl } = setup();
+      let now = 10_000;
+      vi.spyOn(performance, 'now').mockImplementation(() => now);
+      body.scrollTop = lineEl(5000)!.offsetTop;
+      fireEvent.wheel(body, { deltaY: 120 });
+      const top = body.scrollTop;
+      act(() => appendToOutputChannel('a', 'n\n'.repeat(10)));
+      expect(body.scrollTop).toBe(top); // 滚动中:不动 scrollTop
+      now += 300;
+      const at = lineEl(5000)!.offsetTop - body.scrollTop;
+      act(() => appendToOutputChannel('a', 'm\n'.repeat(10)));
+      expect(lineEl(5000)!.offsetTop - body.scrollTop).toBe(at); // 停手后:锚定当前视图
+      // 已在底部:不补偿(随后的 scroll 事件按位置解锁)
+      Object.defineProperty(body, 'scrollHeight', { configurable: true, get: () => body.scrollTop + 300 });
+      const bottom = body.scrollTop;
+      act(() => appendToOutputChannel('a', 'k\n'.repeat(10)));
+      expect(body.scrollTop).toBe(bottom);
+    });
+
+    it('未锁定:写入照常滚到底,不做补偿', () => {
+      const { body } = setup();
+      fireEvent.click(screen.getByRole('button', { name: 'Turn Auto Scrolling On' }));
+      Object.defineProperty(body, 'scrollHeight', { configurable: true, get: () => 123_456 });
+      act(() => appendToOutputChannel('a', 'z\n'));
+      expect(body.scrollTop).toBe(123_456);
+    });
   });
 });
