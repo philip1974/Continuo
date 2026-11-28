@@ -12,6 +12,7 @@ The Continuo plugin SDK. Plugins are external code (JavaScript / TypeScript comp
 | `manifest.ts` | Re-exports the manifest schema, `parseManifest` (returns `{ok, code, message}`, never throws) and the SemVer check from `electron/shared/plugin-manifest.ts`. |
 | `permissions.ts` | The 5 `PermissionKey`s, `PermissionStore` interface, `ensureAuthorized()` (supports partial grants). |
 | `co-app.ts` | The full `CoApp` facade (host-side view). |
+| `output/` | Output channels (`app.output`, the Output panel's data) and routing plugin errors into them. |
 | `scoped-app.ts` | Per-plugin scoped wrapper (wraps `fs` / `network` / `clipboard` / `shell` calls with permission gating). |
 | `sandbox-sweep.ts` | In production builds, removes `fetch`, `navigator.clipboard` and `window.api` from the page before plugins load (best-effort; see the note above). |
 | `PluginManager.ts` | Plugin lifecycle in the renderer: load manifest → ensure permissions → import main → activate (installing/cloning is done by the main process, `plugins.service.ts`). |
@@ -68,6 +69,30 @@ PluginManager.disable(id)
 
 Late `register()` calls (after deactivate) immediately dispose the passed `Disposable` so nothing leaks into a registry that would survive the plugin.
 
+## Packaging: one ESM file
+
+The entry (`main`, default `main.js`) is loaded as a **single ES module** from memory, so it cannot `import` other files or packages: `import './util.js'` / `import 'lodash'` fail with an "imports … must be bundled into a single ESM file" error. Bundle the plugin and its dependencies into one file, and keep the runtime from `globalThis.co` external (don't bundle React — use `co.React`):
+
+```sh
+# esbuild
+esbuild src/main.ts --bundle --format=esm --platform=browser --target=es2022 --sourcemap --outfile=dist/main.js
+```
+
+```js
+// vite.config.js (library mode)
+export default {
+  build: {
+    lib: { entry: 'src/main.ts', formats: ['es'], fileName: () => 'main.js' },
+    sourcemap: true,
+    rollupOptions: { output: { inlineDynamicImports: true } },
+  },
+};
+```
+
+Then point `"main": "dist/main.js"` at the output. A `//# sourceMappingURL=main.js.map` comment next to the bundle is supported (the map must live inside the plugin folder, ≤ 16 MiB; embed `sourcesContent`, which both tools do by default).
+
+Calling a capability whose permission is not in `manifest.json` `permissions` throws a `PermissionError` with `code: 'PERMISSION_NOT_DECLARED'` (the message says what to add); a declared permission the user denied throws `code: 'PERMISSION_DENIED'`.
+
 ## Hello-world plugin (~20 lines)
 
 Plugins get their runtime from `globalThis.co`: `Plugin`, `React`, `PermissionError`, and `z` — a **zod 3 API** (the app itself uses zod 4; `co.z` comes from zod's `zod/v3` entry so existing plugins keep working). Use `co.z` for MCP tool `inputSchema`s rather than bundling your own zod.
@@ -103,7 +128,15 @@ With this `manifest.json`:
 
 `minLMVersion` is the minimum Continuo app version the plugin needs (the field keeps the project's old working name).
 
-Drop both into `<userData>/plugins/com.example.hello/`, restart Continuo, and enable it in Settings → Plugins. `<userData>` is `continuo` (installed app; lowercase — it is the package name) or `Continuo Dev` (`pnpm dev`) under the OS app-data folder — e.g. `~/Library/Application Support/continuo/` / `~/Library/Application Support/Continuo Dev/` on macOS, `%APPDATA%\continuo\` on Windows, `~/.config/continuo/` on Linux.
+Drop both into `<userData>/plugins/com.example.hello/` (the folder name must equal the manifest `id`) and enable it in Settings → Plugins — no restart needed: Continuo watches the plugins folder and picks up new plugins, fixed manifests and edited entry files while it runs. A plugin that cannot be loaded (invalid `manifest.json`, `minLMVersion` too high, folder name ≠ `id`, missing entry file) shows up in Settings → Plugins as an **invalid** row with the field-level reason, plus a one-time notification. `<userData>` is `continuo` (installed app; lowercase — it is the package name) or `Continuo Dev` (`pnpm dev`) under the OS app-data folder — e.g. `~/Library/Application Support/continuo/` / `~/Library/Application Support/Continuo Dev/` on macOS, `%APPDATA%\continuo\` on Windows, `~/.config/continuo/` on Linux.
+
+## Debugging
+
+- **Plugin output.** Every plugin has an output channel named after the plugin. Continuo writes the plugin's activation failures, why it was not loaded (invalid manifest, missing entry, …) and its uncaught errors / unhandled rejections there; the plugin writes its own log with `this.app.output.appendLine('…')` (`append`, `clear`, `show()` to reveal it; `this.app.output.createOutputChannel(name)` for extra channels, removed when the plugin is disabled). Open it with the **Show Output** command (⇧⌘U / Ctrl+Shift+U) and pick the channel from the dropdown; the panel keeps the last 10,000 lines per channel, has **Clear Output** and an auto-scroll lock (scrolling up locks it, scrolling back to the bottom unlocks). `console.log` is not mirrored into the channel — plugins run in the window's renderer, so it goes straight to the DevTools console.
+- **DevTools.** **View › Toggle Developer Tools** opens Chromium DevTools for the window. The entry appears in the Sources tree as `continuo-plugin://<id>/<main>` (a stable name: stack traces show it, and breakpoints set there survive reloads). A `debugger;` statement pauses there while DevTools is open.
+- **Source maps.** Ship `//# sourceMappingURL=main.js.map` (a file next to the bundle, inside the plugin folder) or an inline `data:` map; Continuo inlines the file map when it loads the entry, so DevTools shows your original sources (embed `sourcesContent`).
+- **Errors with locations.** Load and activation errors in Settings → Plugins and in the notification carry `file:line:column` (syntax errors are located without running the code).
+- **Hot reload.** Saving the entry file (or `manifest.json`) reloads the plugin in every window: `onunload` runs, then the new code's `onload`. **Reload** on the plugin row does the same on demand. New plugin folders and fixed manifests are picked up without restarting.
 
 ## See also
 

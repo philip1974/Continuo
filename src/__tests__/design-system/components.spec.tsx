@@ -88,6 +88,15 @@ describe('Button data-attr 契约', () => {
   });
 });
 
+describe('Button ref', () => {
+  it('ref 转给原生 <button>(下拉菜单触发按钮聚焦还原用)', () => {
+    const ref = createRef<HTMLButtonElement>();
+    render(<Button ref={ref}>Pick</Button>);
+    expect(ref.current).toBeInstanceOf(HTMLButtonElement);
+    expect(ref.current?.textContent).toBe('Pick');
+  });
+});
+
 describe('IconButton', () => {
   it('size=xs 写入 data-size', () => {
     const { container } = render(<IconButton size="xs">×</IconButton>);

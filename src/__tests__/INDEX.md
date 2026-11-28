@@ -1653,6 +1653,12 @@
 
 - [`plugin-data-uninstall-zombie.spec.ts`](./plugin-data-uninstall-zombie/plugin-data-uninstall-zombie.spec.ts)
 
+## [plugin-dev-experience — 插件作者视角:无效插件可见、加载错误可定位、运行中修好即生效](./plugin-dev-experience/README.md)
+
+- [`main-side.spec.ts`](./plugin-dev-experience/main-side.spec.ts)
+- [`manager.spec.ts`](./plugin-dev-experience/manager.spec.ts)
+- [`texts-and-permissions.spec.tsx`](./plugin-dev-experience/texts-and-permissions.spec.tsx)
+
 ## [plugin-editor-open-verified(插件 `app.editor.openFile`:校验与读取在同一把锁内)](./plugin-editor-open-verified/README.md)
 
 - [`main-read-for-editor.spec.ts`](./plugin-editor-open-verified/main-read-for-editor.spec.ts)
@@ -1800,6 +1806,10 @@
 ## [plugin-mcp-upstream(PluginMcp 注册的 IPC 实装)](./plugin-mcp-upstream/README.md)
 
 - [`plugin-mcp-upstream.spec.ts`](./plugin-mcp-upstream/plugin-mcp-upstream.spec.ts)
+
+## [plugin-output-channel — 插件输出通道(`app.output`)与「输出」面板](./plugin-output-channel/README.md)
+
+- [`plugin-output-channel.spec.tsx`](./plugin-output-channel/plugin-output-channel.spec.tsx)
 
 ## [plugin-panel-props(第三方插件面板 factory 只拿到最小 props)](./plugin-panel-props/README.md)
 

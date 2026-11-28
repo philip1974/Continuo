@@ -4,12 +4,28 @@
 // main.js 文本 → Blob URL → dynamic import,绕过 file:// 跨进程加载限制。
 
 import type { ManagerHost, PluginDirInfo } from '@/plugins/PluginManager';
-import type { IpcPluginDirListing } from '../../electron/shared/plugins-channels';
+import {
+  isSkippedPluginDir,
+  type IpcPluginDirEntry,
+  type IpcPluginDirListing,
+} from '../../electron/shared/plugins-channels';
+import { DEFAULT_PLUGIN_MAIN } from '../../electron/shared/plugin-manifest';
 import { coApi } from './co-api';
 import { codedError } from '../../electron/shared/error-message';
+import { pluginSourceUrl, withPluginSourceUrl } from '@/plugins/plugin-source-url';
 
 // 列举项(含 manifest 版本令牌,拉 main 时回传校验)与 PluginManager 的目录信息:取各自的单一来源,不再逐字段手抄。
 type PluginDirMeta = IpcPluginDirListing;
+
+/** manifest 文本里的入口名(sourceURL 用;解析失败 / 非字符串 → 默认 main.js)。 */
+function mainNameOf(manifestText: string): string {
+  try {
+    const main = (JSON.parse(manifestText) as { main?: unknown } | null)?.main;
+    return typeof main === 'string' && main.length > 0 ? main : DEFAULT_PLUGIN_MAIN;
+  } catch {
+    return DEFAULT_PLUGIN_MAIN;
+  }
+}
 
 const EMPTY_PLUGIN_DIR_INFOS: PluginDirInfo[] = [];
 
@@ -30,6 +46,8 @@ const MAIN_REF_PREFIX = 'continuo-plugin-main:';
 interface MainRef {
   readonly dir: string;
   readonly manifestHash: string;
+  /** 追加到源码末尾的稳定 sourceURL(continuo-plugin://<id>/<main>,见 plugin-source-url)。 */
+  readonly sourceUrl: string;
   blobUrl: string | null;
   /** 在途拉取(预取或激活共享);结束即清。 */
   loading: Promise<string> | null;
@@ -61,6 +79,7 @@ function deferredPluginDirInfo(dir: PluginDirMeta): PluginDirInfo {
         mainRefs.set(ref, {
           dir: dir.id,
           manifestHash: dir.manifestHash,
+          sourceUrl: pluginSourceUrl(dir.id, mainNameOf(dir.manifestText)),
           blobUrl: null,
           loading: null,
           imported: false,
@@ -74,11 +93,15 @@ function deferredPluginDirInfo(dir: PluginDirMeta): PluginDirInfo {
   return info;
 }
 
-export function buildPluginDirInfos(dirs: readonly PluginDirMeta[]): PluginDirInfo[] {
+export function buildPluginDirInfos(dirs: readonly IpcPluginDirEntry[]): PluginDirInfo[] {
   if (dirs.length === 0) return EMPTY_PLUGIN_DIR_INFOS;
   const out = new Array<PluginDirInfo>(dirs.length);
   for (let i = 0; i < dirs.length; i++) {
-    out[i] = deferredPluginDirInfo(dirs[i]!);
+    const dir = dirs[i]!;
+    // main 跳过的目录不可激活:不建源码引用,只带原因(PluginManager 登记为无效插件行)。
+    out[i] = isSkippedPluginDir(dir)
+      ? { id: dir.id, manifestText: dir.manifestText, moduleUrl: '', skip: dir.skip }
+      : deferredPluginDirInfo(dir);
   }
   return out;
 }
@@ -93,7 +116,9 @@ function loadMainBlobUrl(ref: MainRef): Promise<string> {
     const r = await coApi.plugins.readMainByDir(ref.dir, ref.manifestHash);
     if (!r.ok) throw codedError(r.code, r.message);
     if (r.data === null) throw new Error(`plugin main is unavailable: ${ref.dir}`);
-    const url = URL.createObjectURL(new Blob([r.data], { type: 'application/javascript' }));
+    // 稳定 sourceURL:堆栈 / DevTools 源码树显示 continuo-plugin://<id>/<main>,断点跨重载保留(BDD: plugin-dev-experience)。
+    const source = withPluginSourceUrl(r.data, ref.sourceUrl);
+    const url = URL.createObjectURL(new Blob([source], { type: 'application/javascript' }));
     if (ref.gen !== gen) {
       URL.revokeObjectURL(url);
       throw new Error(`plugin main prefetch discarded: ${ref.dir}`);
@@ -181,6 +206,12 @@ export function createWindowApiHost(): ManagerHost {
       }
     },
     prefetchModule: prefetchMainSource,
+    diagnoseModuleSyntax: async (url) => {
+      const ref = mainRefs.get(url);
+      if (ref === undefined) return null;
+      const r = await coApi.plugins.checkMainSyntax(ref.dir, ref.manifestHash);
+      return r.ok ? r.data : null;
+    },
     releasePrefetchedModule: releasePrefetchedSource,
     importModule: async (url) => {
       const target = await resolveModuleUrl(url);

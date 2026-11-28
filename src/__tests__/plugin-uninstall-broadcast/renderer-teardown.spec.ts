@@ -183,7 +183,7 @@ describe('renderer 接线:wirePluginEvents 订阅 plugins:uninstalled', () => {
     const handleUninstalled = vi.fn().mockResolvedValue(undefined);
     let cb!: (id: string) => void;
     wirePluginEvents(
-      { reload: vi.fn(), handleUninstalled, handleEnabledChanged: vi.fn(), adoptInstalled: vi.fn() },
+      { handleDirChanged: vi.fn(), handleUninstalled, handleEnabledChanged: vi.fn(), adoptInstalled: vi.fn() },
       {
         onChanged: () => {},
         onInstalled: () => {},

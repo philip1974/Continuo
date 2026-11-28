@@ -59,7 +59,9 @@ export const ManifestSchema = z.object({
     .min(1)
     .max(PLUGIN_ID_MAX_LEN)
     .refine(isValidPluginId, {
-      message: 'id 仅允许小写字母数字与 . _ -,不能以 . 或 _ 开头、不能以 . 结尾,且不能是 Windows 保留设备名',
+      // 开发者面向的英文兜底;界面按 ManifestIssue.code(id_format)本地化(见 manifestIssueFrom)。
+      message:
+        'id may only contain lowercase letters, digits, ".", "_" and "-"; it must not start with "." or "_", end with ".", or be a Windows reserved device name',
     }),
   name: z.string().min(1).max(NAME_MAX),
   version: z.string().max(VERSION_MAX).regex(SEMVER_RE),
@@ -79,13 +81,101 @@ export const ManifestSchema = z.object({
 
 // ── 解析结果类型 ───────────────────────────────────────
 
+/**
+ * 字段级校验问题(插件页「无效插件」行逐条显示,按 code 本地化;message 是英文兜底 = 原 `path: message` 中的 message)。
+ * code 由 zod issue 归一化,只收录界面有专门文案的几类,其余 'other'(显示英文 message)。
+ */
+export type ManifestIssueCode =
+  | 'required'
+  | 'invalid_type'
+  | 'too_short'
+  | 'too_long'
+  | 'too_many'
+  | 'semver'
+  | 'url'
+  | 'enum'
+  | 'id_format'
+  | 'other';
+
+export interface ManifestIssue {
+  /** 字段路径(`permissions.1`);根(JSON 不是对象)为 `<root>`。 */
+  readonly path: string;
+  readonly code: ManifestIssueCode;
+  readonly params?: Readonly<Record<string, string | number>>;
+  readonly message: string;
+}
+
+/** 随结果携带的字段级问题条数上限(与 message 的 capJoinedMessagesFrom 同口径:够诊断,不放大)。 */
+export const MANIFEST_ISSUES_MAX = 20;
+
 export type ManifestParseResult =
   | { ok: true; data: PluginManifest }
   | {
       ok: false;
       code: 'INVALID_JSON' | 'SCHEMA_ERROR';
       message: string;
+      /** SCHEMA_ERROR 时的字段级问题(≤ MANIFEST_ISSUES_MAX)。 */
+      issues?: readonly ManifestIssue[];
     };
+
+interface ZodIssueLike {
+  readonly code: string;
+  readonly path: readonly PropertyKey[];
+  readonly message: string;
+  readonly origin?: string;
+  readonly format?: string;
+  readonly maximum?: number | bigint;
+  readonly minimum?: number | bigint;
+  readonly values?: readonly unknown[];
+  readonly expected?: string;
+}
+
+/** 按路径取原始 JSON 里的值(判定「缺失」= 必填项未给)。 */
+function valueAt(raw: unknown, path: readonly PropertyKey[]): unknown {
+  let cur: unknown = raw;
+  for (const key of path) {
+    if (cur === null || typeof cur !== 'object') return undefined;
+    cur = (cur as Record<PropertyKey, unknown>)[key];
+  }
+  return cur;
+}
+
+const ISSUE_PARAM_MAX = 256;
+
+function manifestIssueFrom(issue: ZodIssueLike, raw: unknown): ManifestIssue {
+  const path = issue.path.map(String).join('.') || '<root>';
+  const base = { path, message: issue.message };
+  switch (issue.code) {
+    case 'invalid_type':
+      if (issue.path.length > 0 && valueAt(raw, issue.path) === undefined) return { ...base, code: 'required' };
+      return { ...base, code: 'invalid_type', params: { expected: String(issue.expected ?? '').slice(0, ISSUE_PARAM_MAX) } };
+    case 'too_small':
+      return { ...base, code: 'too_short' };
+    case 'too_big':
+      return {
+        ...base,
+        code: issue.origin === 'array' ? 'too_many' : 'too_long',
+        params: { max: Number(issue.maximum ?? 0) },
+      };
+    case 'invalid_format':
+      if (issue.format === 'url') return { ...base, code: 'url' };
+      // 只有 version / minLMVersion 用正则(SEMVER_RE)。
+      if (issue.format === 'regex') return { ...base, code: 'semver' };
+      return { ...base, code: 'other' };
+    case 'invalid_value':
+      return {
+        ...base,
+        code: 'enum',
+        params: { options: (issue.values ?? []).map(String).join(', ').slice(0, ISSUE_PARAM_MAX) },
+      };
+    case 'custom':
+      // 唯一的 refine 是 id 的 isValidPluginId。
+      if (path === 'id') return { ...base, code: 'id_format' };
+      return { ...base, code: 'other' };
+    default:
+      return { ...base, code: 'other' };
+  }
+}
 
 export function parseManifest(jsonText: string): ManifestParseResult {
   let raw: unknown;
@@ -112,6 +202,9 @@ export function parseManifest(jsonText: string): ManifestParseResult {
         (i) => `${i.path.join('.') || '<root>'}: ${i.message}`,
         'more issues',
       ),
+      issues: parsed.error.issues
+        .slice(0, MANIFEST_ISSUES_MAX)
+        .map((i) => manifestIssueFrom(i as ZodIssueLike, raw)),
     };
   }
   return { ok: true, data: parsed.data };
@@ -189,6 +282,9 @@ export type ManifestAdmission =
       readonly ok: false;
       readonly code: 'INVALID_JSON' | 'SCHEMA_ERROR' | 'INCOMPATIBLE_VERSION';
       readonly message: string;
+      readonly issues?: readonly ManifestIssue[];
+      /** INCOMPATIBLE_VERSION:插件要求的最低版本与当前应用版本(界面本地化用)。 */
+      readonly params?: Readonly<Record<string, string>>;
     };
 
 /** 已解析 manifest 的版本兼容准入:minLMVersion(若声明)不高于应用版本 appVersion(由调用方传入)。 */
@@ -199,6 +295,7 @@ export function admitManifestVersion(manifest: PluginManifest, appVersion: strin
       ok: false,
       code: 'INCOMPATIBLE_VERSION',
       message: `minLMVersion ${minLMVersion} > app ${appVersion}`,
+      params: { required: minLMVersion, current: appVersion },
     };
   }
   return { ok: true, manifest };

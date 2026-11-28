@@ -35,6 +35,8 @@ import type {
   PluginFsApi,
   PluginMcpApi,
   PluginNetworkApi,
+  PluginOutputApi,
+  PluginOutputChannel,
   PluginPermissionApi,
   PluginShellApi,
 } from './types';
@@ -64,6 +66,16 @@ import { envBoundedError } from '../../electron/shared/validate-env-bounded';
 import { PLUGIN_FS_EDITOR_READ_SCOPE_DENIED } from '../../electron/shared/plugin-fs-contract';
 import { mapFsCodeToEditorCode } from './editor-open-codes';
 import { releasePluginOpenedPath } from './plugin-opened-tabs';
+import {
+  OUTPUT_NAME_MAX,
+  appendToOutputChannel,
+  clearOutputChannel,
+  ensureOutputChannel,
+  pluginNamedOutputChannelId,
+  pluginOutputChannelId,
+  removeOutputChannel,
+  setActiveOutputChannel,
+} from './output/output-channels';
 import {
   NETWORK_URL_MAX,
   NETWORK_HEADERS_MAX,
@@ -164,9 +176,11 @@ async function ensurePerm(
 ): Promise<void> {
   if (life) assertLive(pluginId, perm, life);
   if (store) {
+    // manifest 没声明 → 开发期错误,单独报(BDD: plugin-dev-experience),不与「用户拒绝」混成同一句。
+    if (store.declared && !store.declared.has(perm)) throw PermissionError.notDeclared(perm);
     const decisions = await store.get(pluginId);
     const granted = hasGrantedPermissionDecision(decisions, perm);
-    if (!granted) throw new PermissionError(perm);
+    if (!granted) throw PermissionError.deniedByUser(perm);
   }
   if (life) assertLive(pluginId, perm, life);
 }
@@ -769,6 +783,84 @@ function makeNotifications(
   };
 }
 
+/** 每个插件实例经 createOutputChannel 最多建的通道数。 */
+export const OUTPUT_CHANNELS_PER_PLUGIN_MAX = 16;
+
+/** 「输出」面板的显示命令(dock-panel-actions 注册;测试环境未注册 → 无操作)。 */
+const SHOW_OUTPUT_COMMAND = 'workbench.view.output';
+
+function assertOutputText(value: unknown): asserts value is string {
+  if (typeof value !== 'string') throw codedError('BAD_INPUT', 'output channel value must be a string');
+}
+
+/**
+ * app.output(BDD: plugin-output-channel):默认通道 `plugin:<id>`(插件名)首次写入 / show 时创建,跨重载保留
+ *(宿主写的失败日志与上一次运行的输出都在);createOutputChannel 建的通道 revoke 时移除。
+ * 吊销后 append / appendLine / clear 仍可用(onunload 记日志,无外部副作用),show / createOutputChannel 拒绝。
+ */
+function makeOutput(
+  pluginId: string,
+  displayName: string,
+  coApp: CoApp,
+  life: ScopedLifecycle,
+): { api: PluginOutputApi; disposeAll(): void } {
+  const created = new Set<string>();
+  const channel = (id: string, name: string, onShow: string): PluginOutputChannel => ({
+    name,
+    append(value) {
+      assertOutputText(value);
+      ensureOutputChannel(id, name, pluginId);
+      appendToOutputChannel(id, value);
+    },
+    appendLine(value) {
+      assertOutputText(value);
+      ensureOutputChannel(id, name, pluginId);
+      appendToOutputChannel(id, `${value}\n`);
+    },
+    clear() {
+      clearOutputChannel(id);
+    },
+    show() {
+      assertLiveUi(pluginId, onShow, life);
+      ensureOutputChannel(id, name, pluginId);
+      setActiveOutputChannel(id);
+      void Promise.resolve(coApp.commands.get(SHOW_OUTPUT_COMMAND)?.fn()).catch((err: unknown) =>
+        console.warn('[scoped-app] show output failed', err),
+      );
+    },
+  });
+  const base = channel(pluginOutputChannelId(pluginId), displayName, 'output.show');
+  const api: PluginOutputApi = Object.freeze({
+    ...base,
+    createOutputChannel(name: unknown) {
+      assertLiveUi(pluginId, 'output.createOutputChannel', life);
+      if (typeof name !== 'string' || name.trim().length === 0 || name.length > OUTPUT_NAME_MAX) {
+        throw codedError('BAD_INPUT', `output channel name must be a non-empty string of at most ${OUTPUT_NAME_MAX} characters`);
+      }
+      const id = pluginNamedOutputChannelId(pluginId, name);
+      if (!created.has(id) && created.size >= OUTPUT_CHANNELS_PER_PLUGIN_MAX) {
+        throw codedError('BAD_INPUT', `a plugin may create at most ${OUTPUT_CHANNELS_PER_PLUGIN_MAX} output channels`);
+      }
+      created.add(id);
+      ensureOutputChannel(id, name, pluginId);
+      return Object.freeze({
+        ...channel(id, name, 'output.show'),
+        dispose() {
+          created.delete(id);
+          removeOutputChannel(id);
+        },
+      });
+    },
+  });
+  return {
+    api,
+    disposeAll() {
+      for (const id of created) removeOutputChannel(id);
+      created.clear();
+    },
+  };
+}
+
 /** keyed 注册表对插件公开的共同成员(各表特有的 list / execute / getBySide / getByCategory 在构造处追加)。 */
 const KEYED_MEMBERS = ['register', 'get', 'getAll', 'subscribe'] as const;
 /** 注册 / 订阅类方法名:返回 Disposable(register / on)或退订函数(subscribe)。 */
@@ -1144,8 +1236,11 @@ function makePermission(
   };
 }
 
-/** scoped-app 只经 get 读授权(写决策是 PluginManager / 授权弹窗的事)。 */
-type ReadablePermissions = Pick<PermissionStore, 'get'>;
+/**
+ * scoped-app 只经 get 读授权(写决策是 PluginManager / 授权弹窗的事)。declared:当前 manifest 声明的权限
+ *(restrictToDeclared 设置;缺省 = 不区分「未声明」)。
+ */
+type ReadablePermissions = Pick<PermissionStore, 'get'> & { readonly declared?: ReadonlySet<PermissionKey> };
 
 /** 只读视图:get 仅返回 declared 内的决策。 */
 function restrictToDeclared(
@@ -1154,6 +1249,7 @@ function restrictToDeclared(
 ): ReadablePermissions {
   const allowed = new Set(declared);
   return {
+    declared: allowed,
     async get(pluginId) {
       const decisions = await store.get(pluginId);
       return decisions.filter((d) => allowed.has(d.permission));
@@ -1187,6 +1283,8 @@ export function createScopedAppController(
   rawStore: PermissionStore | null,
   token?: string,
   declared?: readonly PermissionKey[],
+  /** 默认输出通道的显示名(插件名);缺省用 id。 */
+  displayName?: string,
 ): ScopedAppController {
   // 有效权限 = 当前 manifest 声明 ∩ 用户已授权:插件升级删掉某权限声明后,持久化里的
   // 旧授权不得继续生效。传入 declared 时把 store.get 视图裁到声明集合,所有 ensurePerm /
@@ -1221,6 +1319,7 @@ export function createScopedAppController(
   // 只含公开方法的冻结外观(成员清单须与 types.ts 的 Plugin*Api 一致,少列一个 tsc 报错);mcp / editor / dock /
   // notifications / dataStore / workspace 是 per-plugin 闭包,同样不交出宿主单例对象。
   const mcp = makeMcp(pluginId, store, coApp.mcp, life);
+  const output = makeOutput(pluginId, displayName ?? pluginId, coApp, life);
   const app: CoPluginApp = {
     version: coApp.version,
     panels: track('panels', coApp.panels, [...KEYED_MEMBERS, 'list'], 'type'),
@@ -1261,6 +1360,7 @@ export function createScopedAppController(
     clipboard: makeClipboard(pluginId, store, life),
     permission: makePermission(pluginId, store),
     mcp: mcp.api,
+    output: output.api,
   };
   return {
     app,
@@ -1279,6 +1379,7 @@ export function createScopedAppController(
       }
       // 插件不保存 app.mcp.register 返回的 Disposable 时,工具与 main stub 会残留 → 再启用同名注册 TOOL_NAME_TAKEN。
       mcp.disposeAll();
+      output.disposeAll();
     },
     recheckMcpPermission: mcp.recheck,
   };
@@ -1291,6 +1392,7 @@ export function createScopedApp(
   rawStore: PermissionStore | null,
   token?: string,
   declared?: readonly PermissionKey[],
+  displayName?: string,
 ): CoPluginApp {
-  return createScopedAppController(coApp, pluginId, rawStore, token, declared).app;
+  return createScopedAppController(coApp, pluginId, rawStore, token, declared, displayName).app;
 }

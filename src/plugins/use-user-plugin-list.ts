@@ -1,7 +1,8 @@
 import { useMemo, useSyncExternalStore } from 'react';
-import { getUserPluginManager, type PluginListItem } from './PluginManager';
+import { getUserPluginManager, type InvalidPluginItem, type PluginListItem } from './PluginManager';
 
 const EMPTY_USER_PLUGIN_LIST: readonly PluginListItem[] = [];
+const EMPTY_INVALID_PLUGIN_LIST: readonly InvalidPluginItem[] = [];
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
 
 /** user plugin manager 的已发现插件列表;manager 不存在(popout 窗口 / 尚未初始化)时为稳定空列表。 */
@@ -17,6 +18,17 @@ function readUserPluginList(): readonly PluginListItem[] {
 export function useUserPluginList(): readonly PluginListItem[] {
   const m = getUserPluginManager();
   return useSyncExternalStore(m ? m.subscribe : NOOP_SUBSCRIBE, readUserPluginList);
+}
+
+function readInvalidPluginList(): readonly InvalidPluginItem[] {
+  const m = getUserPluginManager();
+  return m ? m.listInvalid() : EMPTY_INVALID_PLUGIN_LIST;
+}
+
+/** 无效插件行(准入失败的插件目录,BDD: plugin-dev-experience);与 useUserPluginList 同一订阅。 */
+export function useUserInvalidPluginList(): readonly InvalidPluginItem[] {
+  const m = getUserPluginManager();
+  return useSyncExternalStore(m ? m.subscribe : NOOP_SUBSCRIBE, readInvalidPluginList);
 }
 
 /**

@@ -8,7 +8,7 @@ import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { coApp } from '../co-app';
 import { useMultiRegistry } from '../registries/useRegistry';
 import { getUserPluginManager } from '../PluginManager';
-import { useUserPluginList } from '../use-user-plugin-list';
+import { useUserInvalidPluginList, useUserPluginList } from '../use-user-plugin-list';
 import { getUserPermissionStore } from '../permissions/co-permission-store';
 import { PermissionEditorModal } from '../permissions/PermissionEditorModal';
 import type { PluginListItem } from '../PluginManager';
@@ -254,6 +254,7 @@ export function hasPluginVersion(
 function UserPluginsSection() {
   const t = useT();
   const plugins = useUserPluginList();
+  const invalidPlugins = useUserInvalidPluginList();
   const mgr = getUserPluginManager();
   // a11y(A42):结果消息带严重度 → 渲染时按语义选 live region(成功 status/polite,失败 alert)。
   const [installMsg, setInstallMsg] = useState<ResultMsg | null>(null);
@@ -379,7 +380,7 @@ function UserPluginsSection() {
       );
       return false;
     }
-    // 已在列表(覆盖重装)→ watcher 热重载即生效、不记待重启;全新安装要等重启后的扫描(reload 对未知 id 抛错)。
+    // 已在列表(覆盖重装)→ watcher 热重载即生效、不记待重启;全新安装记待重启行,adoptInstalled 热激活落地即摘除。
     // 文案按此区分(判定读 manager 最新列表,见 recordPendingInstall)。
     const alreadyListed = !recordPendingInstall(r.data);
     const key = !alreadyListed
@@ -460,7 +461,7 @@ function UserPluginsSection() {
         {/* a11y(A42,A41 同族):异步安装/卸载结果须 live region 主动播报(焦点仍在按钮/对话框)。 */}
         <ResultMessage msg={installMsg} className="mt-2 text-xs text-fg-muted" />
       </div>
-      {plugins.length === 0 && pendingRows.length === 0 ? (
+      {plugins.length === 0 && pendingRows.length === 0 && invalidPlugins.length === 0 ? (
         // 空态给下一步(VSCode 扩展视图空态引导去市场):切到「插件市场」设置页签。
         <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim">
           <span>{t('plugins_tab.user.no_plugins')}</span>
@@ -502,8 +503,39 @@ function UserPluginsSection() {
               </Button>
             </div>
           ))}
+          {invalidPlugins.map((item, i) => (
+            // 无效插件(准入失败的目录,BDD: plugin-dev-experience):对齐 VSCode 扩展视图对无效扩展显示 validations 错误。
+            // 只读 —— 不能启用;修好后文件监视自动登记(无需重启),故只给原因与提示,不给操作按钮。
+            <div
+              key={`invalid:${item.dir}`}
+              data-plugin-invalid={item.dir}
+              className={pluginsTabRowClassName(i > 0 || pendingRows.length > 0)}
+            >
+              <div className="min-w-48 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className="text-sm font-medium text-fg">{item.name ?? item.dir}</span>
+                  {item.id !== undefined && (
+                    <Badge size="xs" className="min-w-0 max-w-full">
+                      <code className="truncate" title={item.id}>
+                        {item.id}
+                      </code>
+                    </Badge>
+                  )}
+                  {item.version !== undefined && <span className="text-2xs text-fg-dim">v{item.version}</span>}
+                  <Badge size="xs" variant="danger-soft">
+                    {t('plugins_tab.invalid.badge')}
+                  </Badge>
+                </div>
+                <div className="mt-1 text-2xs text-fg-dim">{t('plugins_tab.invalid.folder', { dir: item.dir })}</div>
+                <div role="alert" data-code={item.error.code} className="mt-1 text-2xs text-error">
+                  {localizePluginError(item.error)}
+                </div>
+                <div className="mt-1 text-2xs text-fg-muted">{t('plugins_tab.invalid.hint')}</div>
+              </div>
+            </div>
+          ))}
           {plugins.map((p, i) => (
-            <div key={p.id} className={pluginsTabRowClassName(i > 0 || pendingRows.length > 0)}>
+            <div key={p.id} className={pluginsTabRowClassName(i > 0 || pendingRows.length > 0 || invalidPlugins.length > 0)}>
               {/* min-w-48:窄宽时右侧操作按钮换到下一行,而不是把插件名 / 描述挤成一行一个词。 */}
               <div className="min-w-48 flex-1">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">

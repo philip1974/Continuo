@@ -27,6 +27,10 @@
 - manifest **内容**变化(哈希,同 LIST_DIRS 令牌)也 fire;只 touch、内容不变不 fire —— 激活时令牌不一致而失败的
   插件靠此广播重新加载
 - 已被记录的目录改声明新 id → 对新 id fire(旧 id 记录清理)
+- 首轮之后**新出现的 id** 一律 fire(运行中放入的新插件、无效目录修好;renderer 对未登记 id 重新扫描登记,
+  BDD: plugin-dev-experience)
+- 无效目录(manifest 不是合法 JSON → 按目录名;main 入口不可用 → 按 manifest.id)出现 / 签名变化 / 消失各 fire 一次;
+  同一轮同一 id 只 fire 一次
 
 ## perf:manifest 解析缓存 + 有界并发
 

@@ -77,7 +77,8 @@ import {
   type IpcPermissionMutation,
   type IpcPermissionsMap,
   type IpcPermissionRecord,
-  type IpcPluginDirListing,
+  type IpcPluginDirEntry,
+  type IpcPluginSyntaxError,
   type InstallFromGitResult,
 } from '../shared/plugins-channels';
 import {
@@ -472,7 +473,8 @@ const api = {
     },
   },
   plugins: {
-    listDirs: (): Promise<IpcResult<readonly IpcPluginDirListing[]>> =>
+    /** 列举项含 main 跳过的目录(带 skip 原因,不可激活;BDD: plugin-dev-experience)。 */
+    listDirs: (): Promise<IpcResult<readonly IpcPluginDirEntry[]>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.LIST_DIRS),
     /**
      * perf:激活时按目录名拉 main 源码(列举不再携带),不可用 → null。manifestHash 为列举项令牌,
@@ -480,6 +482,9 @@ const api = {
      */
     readMainByDir: (dir: string, manifestHash: string): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_MAIN_BY_DIR, { dir, manifestHash }),
+    /** 入口语法诊断(只编译不执行):SyntaxError 的 1 起行列号;无语法错误 / 不可读 → null。 */
+    checkMainSyntax: (dir: string, manifestHash: string): Promise<IpcResult<IpcPluginSyntaxError | null>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.CHECK_MAIN_SYNTAX, { dir, manifestHash }),
     readEnabled: (): Promise<IpcResult<readonly string[]>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_ENABLED),
     /** 数据安全:按单 plugin 启用/禁用 delta 写,防多窗口整表 RMW 互相覆盖. */

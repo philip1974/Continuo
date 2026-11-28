@@ -5,7 +5,7 @@ import { waitForTestHooks } from './app-ready';
 export const OUTPUT_PANEL = /^(输出|Output|출력)$/;
 export const OUTPUT_CLOSE =
   /^(关闭 (输出|Output)|Close (输出|Output)|(출력|Output) 닫기)$/;
-// Output 面板目前无写入方,只渲染空状态文案(panels.output.empty);其出现即表示面板内容已挂载。
+// 没有任何输出通道时 Output 面板只渲染空状态文案(panels.output.empty);其出现即表示面板内容已挂载。
 export const OUTPUT_EMPTY = /(暂无输出。|No output yet\.|아직 출력이 없습니다\.)/;
 
 export async function openOutputPanel(window: Page): Promise<void> {

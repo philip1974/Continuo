@@ -175,7 +175,8 @@ describe('扫描完成前到达的事件(R16)', () => {
     );
     onChanged('x');
     await flushMacrotasks(3);
-    expect(onError).toHaveBeenCalledWith('reload', expect.objectContaining({ message: expect.stringMatching(/not found/i) }));
+    // 未登记的 id → 重新扫描(plugin-dev-experience);扫描仍失败 → 交给 onError,不挂起。
+    expect(onError).toHaveBeenCalledWith('reload', expect.objectContaining({ message: expect.stringMatching(/scan boom/i) }));
   });
 });
 
@@ -252,8 +253,17 @@ describe('接线', () => {
   it('reload 失败 → onError(reload),不抛', async () => {
     const w = makeWindow({ dirs: [B] });
     await flushMacrotasks(3);
-    w.emitChanged('com.unknown');
+    w.gone.add(B); // 目录已不在:热重载抛 no longer exists
+    w.emitChanged(B);
     await flushMacrotasks(3);
     expect(w.onError).toHaveBeenCalledWith('reload', expect.any(Error));
+  });
+
+  it('未登记的 id(运行中新放入的插件)→ 重新扫描登记,不报错(plugin-dev-experience)', async () => {
+    const w = makeWindow({ dirs: [B] });
+    await flushMacrotasks(3);
+    w.emitChanged('com.unknown');
+    await flushMacrotasks(3);
+    expect(w.onError).not.toHaveBeenCalled();
   });
 });

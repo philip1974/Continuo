@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, Ref } from 'react';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outlined';
 export type ButtonSize = 'sm' | 'md' | 'lg';
@@ -14,6 +14,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   readonly variant?: ButtonVariant;
   /** Density preset. Defaults to `md`. */
   readonly size?: ButtonSize;
+  /** Forwarded to the native `<button>` (React 19 ref-as-prop), e.g. as a dropdown menu trigger. */
+  readonly ref?: Ref<HTMLButtonElement>;
 }
 
 export function Button({

@@ -251,17 +251,23 @@ describe('PluginManager.adoptInstalled', () => {
     }
   });
 
-  it('全新安装(无先前卸载)后的 reload 不跳过(开发时改 main 照常热重载)', async () => {
+  // plugin-dev-experience:文件监视对运行中新出现的 id 也广播一次(无需重载窗口即登记)→ 全新安装登记后同样跳过那次
+  // 内容未变的 reload;开发时改了 main(mtime 变)照常热重载。
+  it('全新安装后:内容未变的那次 reload 跳过;改了 main 照常热重载', async () => {
     const state: State = { dirs: [], enabled: new Set() };
     const mgr = new PluginManager(app, host(state));
     await mgr.init();
-    state.dirs.push(dir('x'));
+    state.dirs.push({ ...dir('x'), mainMtime: 1 });
     state.enabled.add('x');
     await mgr.adoptInstalled('x');
     Loaded.ids = [];
 
-    await mgr.reload('x');
+    await mgr.reload('x'); // 监视器就这次安装的广播:目录与登记时相同
+    expect(Loaded.unloads).toEqual([]);
+    expect(Loaded.ids).toEqual([]);
 
+    state.dirs = [{ ...dir('x'), mainMtime: 2 }];
+    await mgr.reload('x');
     expect(Loaded.unloads).toEqual(['x']);
     expect(Loaded.ids).toEqual(['x']);
   });

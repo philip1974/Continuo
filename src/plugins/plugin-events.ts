@@ -1,5 +1,6 @@
 // main 推送的插件事件 → 本窗口 PluginManager(main-app 接线,BDD: plugin-reload-gate)。
-// - plugins.onChanged(mtime watch)→ reload(M-Plugin v4.3.1 热重载)
+// - plugins.onChanged(mtime watch)→ handleDirChanged:已登记 → reload(M-Plugin v4.3.1 热重载);未登记 → 重新扫描
+//   登记新放入 / 修好的插件、刷新无效插件行(BDD: plugin-dev-experience)
 // - plugins.onUninstalled(终审 P1:跨窗口卸载)→ handleUninstalled
 // - plugins.onEnabledChanged(终审 P1:跨窗口启停)→ handleEnabledChanged
 // - plugins.onInstalled(别的窗口全新安装)→ adoptInstalled(id, { prompt: false }):不重启即进列表,授权弹窗只在发起窗口
@@ -20,12 +21,12 @@ export interface PluginEventSources {
 export type PluginEventKind = 'reload' | 'uninstalled' | 'enabled-changed' | 'installed';
 
 export function wirePluginEvents(
-  mgr: Pick<PluginManager, 'reload' | 'handleUninstalled' | 'handleEnabledChanged' | 'adoptInstalled'>,
+  mgr: Pick<PluginManager, 'handleDirChanged' | 'handleUninstalled' | 'handleEnabledChanged' | 'adoptInstalled'>,
   sources: PluginEventSources,
   onError: (where: PluginEventKind, err: unknown) => void,
 ): void {
   sources.onChanged((id) => {
-    void mgr.reload(id).catch((err) => onError('reload', err));
+    void mgr.handleDirChanged(id).catch((err) => onError('reload', err));
   });
   sources.onUninstalled((id) => {
     // 别的窗口卸载了本窗口记为「已安装、待重启」的插件(本窗口列表里没有它,handleUninstalled 不会通知列表订阅者,

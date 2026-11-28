@@ -158,7 +158,7 @@ describe('renderer 接线:wirePluginEvents 订阅 plugins:enabled-changed', () =
     const handleEnabledChanged = vi.fn().mockResolvedValue(undefined);
     let cb!: (id: string, enabled: boolean) => void;
     wirePluginEvents(
-      { reload: vi.fn(), handleUninstalled: vi.fn(), handleEnabledChanged, adoptInstalled: vi.fn() },
+      { handleDirChanged: vi.fn(), handleUninstalled: vi.fn(), handleEnabledChanged, adoptInstalled: vi.fn() },
       {
         onChanged: () => {},
         onInstalled: () => {},

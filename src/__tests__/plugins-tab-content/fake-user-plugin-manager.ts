@@ -7,6 +7,7 @@ interface ListSource {
 }
 
 const wrapped = new WeakMap<object, object>();
+const NO_INVALID: readonly unknown[] = [];
 const listeners = new Set<() => void>();
 let generation = 0;
 
@@ -17,6 +18,8 @@ export function asSubscribableManager<T extends ListSource>(raw: T | null | unde
   if (existing) return existing as T;
   let cachedGeneration = -1;
   let cached: readonly unknown[] = [];
+  let cachedInvalidGeneration = -1;
+  let cachedInvalid: readonly unknown[] = NO_INVALID;
   const manager = Object.create(raw, {
     listAll: {
       value: () => {
@@ -25,6 +28,16 @@ export function asSubscribableManager<T extends ListSource>(raw: T | null | unde
           cachedGeneration = generation;
         }
         return cached;
+      },
+    },
+    // 无效插件行(plugin-dev-experience):同 listAll 按代际缓存;假 manager 没给就是空(稳定引用)。
+    listInvalid: {
+      value: () => {
+        if (cachedInvalidGeneration !== generation) {
+          cachedInvalid = (raw as { listInvalid?: () => readonly unknown[] }).listInvalid?.() ?? NO_INVALID;
+          cachedInvalidGeneration = generation;
+        }
+        return cachedInvalid;
       },
     },
     subscribe: {

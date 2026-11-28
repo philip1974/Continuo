@@ -67,6 +67,34 @@ export function localizeErrorByCode(code: string, message?: string | null, param
  */
 export function localizeThrown(err: unknown): string {
   const message = errorMessage(err);
+  // 错误自带 catalog key(如 PermissionError 的「manifest 未声明」/「用户拒绝」,带 params)→ 按它本地化。
+  const i18nKey = (err as { i18nKey?: unknown } | null | undefined)?.i18nKey;
+  if (typeof i18nKey === 'string' && i18nKey.length > 0 && i18nKey.length <= 128) {
+    return tWithFallback(i18nKey, message, stringParamsOf(err));
+  }
   const code = (err as { code?: unknown } | null | undefined)?.code;
   return typeof code === 'string' ? localizeErrorByCode(code, message) : message;
+}
+
+/**
+ * 错误对象上的插值参数(`err.params`,只取字符串 / 有限数值字段),填 err.i18nKey 的模板(如 PermissionError 的
+ * plugin_permission.not_declared「…{permission}…」)。
+ */
+function stringParamsOf(err: unknown): TranslateParams | undefined {
+  const raw = (err as { params?: unknown } | null | undefined)?.params;
+  if (raw === null || typeof raw !== 'object') return undefined;
+  const out: Record<string, string | number> = {};
+  let n = 0;
+  let seen = 0;
+  // 有界迭代(错误对象可能来自插件):最多看 32 个键,不先物化全部键。
+  for (const k in raw) {
+    if (++seen > 32) break;
+    if (!Object.prototype.hasOwnProperty.call(raw, k)) continue;
+    const v: unknown = (raw as Record<string, unknown>)[k];
+    if (typeof v === 'string') out[k] = v.slice(0, 512);
+    else if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+    else continue;
+    n += 1;
+  }
+  return n > 0 ? out : undefined;
 }

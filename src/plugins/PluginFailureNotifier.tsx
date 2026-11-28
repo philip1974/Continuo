@@ -5,9 +5,9 @@
 import { useEffect, useRef } from 'react';
 import { t } from '@/i18n';
 import { notify } from '@/notifications/notify';
-import type { PluginListItem } from './PluginManager';
+import type { InvalidPluginItem, PluginListItem } from './PluginManager';
 import { localizePluginError } from './plugin-error-text';
-import { useUserPluginList } from './use-user-plugin-list';
+import { useUserInvalidPluginList, useUserPluginList } from './use-user-plugin-list';
 
 /** 被禁用 / 卸载中止的激活:不是失败(随后落 disabled / 移除)。 */
 const NOT_A_FAILURE = new Set(['ACTIVATION_ABORTED', 'NOT_INSTALLED']);
@@ -37,9 +37,32 @@ export function collectNewPluginFailures(
   return out;
 }
 
+/**
+ * 本次无效插件列表中需要新通知的(BDD: plugin-dev-experience):按目录 + 原因签名去重 —— 同一目录同一原因只通知一次,
+ * 原因变了(改了 manifest 仍有错)再通知;离开列表(修好 / 删除)后再出现再通知。notified 就地更新。
+ */
+export function collectNewInvalidPlugins(
+  list: readonly InvalidPluginItem[],
+  notified: Map<string, string>,
+): InvalidPluginItem[] {
+  const out: InvalidPluginItem[] = [];
+  const present = new Set<string>();
+  for (const item of list) {
+    present.add(item.dir);
+    const signature = `${item.error.code}\0${item.error.message}`;
+    if (notified.get(item.dir) === signature) continue;
+    notified.set(item.dir, signature);
+    out.push(item);
+  }
+  for (const dir of [...notified.keys()]) if (!present.has(dir)) notified.delete(dir);
+  return out;
+}
+
 export function PluginFailureNotifier(): null {
   const list = useUserPluginList();
+  const invalid = useUserInvalidPluginList();
   const notified = useRef(new Map<string, string>());
+  const notifiedInvalid = useRef(new Map<string, string>());
   useEffect(() => {
     for (const p of collectNewPluginFailures(list, notified.current)) {
       notify.error(t('plugins_tab.notify.failed', { name: p.manifest.name, reason: localizePluginError(p.error!) }), {
@@ -47,5 +70,12 @@ export function PluginFailureNotifier(): null {
       });
     }
   }, [list]);
+  useEffect(() => {
+    for (const item of collectNewInvalidPlugins(invalid, notifiedInvalid.current)) {
+      notify.error(t('plugins_tab.notify.invalid', { name: item.name ?? item.dir, reason: localizePluginError(item.error) }), {
+        code: item.error.code,
+      });
+    }
+  }, [invalid]);
   return null;
 }

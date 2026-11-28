@@ -11,15 +11,50 @@ import type { IpcPermissionDecision } from '../../electron/shared/plugins-channe
  * scoped-app 抛此错让 plugin 优雅 try/catch。runtime gating 启用见 Phase 3。
  */
 export class PermissionError extends Error {
-  readonly code = 'PERMISSION_DENIED' as const;
+  /**
+   * PERMISSION_NOT_DECLARED:manifest.json 的 permissions 没声明该权限(开发期错误,BDD: plugin-dev-experience);
+   * PERMISSION_DENIED:用户拒绝 / 插件已停用吊销。
+   */
+  readonly code: 'PERMISSION_DENIED' | 'PERMISSION_NOT_DECLARED';
+  /** 本地化用的 catalog key 与参数(localizeThrown);吊销等不带的,显示 message。 */
+  readonly i18nKey?: 'plugin_permission.not_declared' | 'plugin_permission.denied_by_user';
+  readonly params?: Readonly<{ permission: PermissionKey }>;
   constructor(
     readonly permission: PermissionKey,
     message?: string,
+    code: 'PERMISSION_DENIED' | 'PERMISSION_NOT_DECLARED' = 'PERMISSION_DENIED',
+    params?: Readonly<{ permission: PermissionKey }>,
+    i18nKey?: 'plugin_permission.not_declared' | 'plugin_permission.denied_by_user',
   ) {
     // i18n(I11):默认 message 改英文(SDK/开发者面向,且经 run-contributed-action 展示给
     // 用户时不泄漏中文到 en/ko)。含权限名;调用方可传 message 覆盖。
     super(message ?? `Permission denied: ${permission}`);
     this.name = 'PermissionError';
+    this.code = code;
+    if (params) this.params = params;
+    if (i18nKey) this.i18nKey = i18nKey;
+  }
+
+  /** manifest 未声明该权限:消息指明在 manifest.json 的 permissions 里加什么。 */
+  static notDeclared(permission: PermissionKey): PermissionError {
+    return new PermissionError(
+      permission,
+      `Permission "${permission}" is not declared: add "${permission}" to "permissions" in manifest.json`,
+      'PERMISSION_NOT_DECLARED',
+      { permission },
+      'plugin_permission.not_declared',
+    );
+  }
+
+  /** 已声明但用户未授权(拒绝)。 */
+  static deniedByUser(permission: PermissionKey): PermissionError {
+    return new PermissionError(
+      permission,
+      `Permission "${permission}" was denied by the user (it can be granted in Settings › Plugins)`,
+      'PERMISSION_DENIED',
+      { permission },
+      'plugin_permission.denied_by_user',
+    );
   }
 }
 

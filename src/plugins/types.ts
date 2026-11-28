@@ -303,6 +303,32 @@ export interface PluginPermissionApi {
   granted(): Promise<readonly import('./permissions').PermissionKey[]>;
 }
 
+/**
+ * 输出通道(BDD: src/__tests__/plugin-output-channel/)。照 VSCode `vscode.OutputChannel` 取最小子集:按行追加文本,
+ * 出现在「输出」面板的通道下拉里。append / appendLine 只接受字符串(其它类型抛 BAD_INPUT);插件停用后仍可写
+ *(onunload 里记日志),show 与 createOutputChannel 拒绝。
+ */
+export interface PluginOutputChannel {
+  /** 通道显示名。 */
+  readonly name: string;
+  /** 追加文本(不加换行)。 */
+  append(value: string): void;
+  /** 追加文本并换行。 */
+  appendLine(value: string): void;
+  /** 清空通道内容。 */
+  clear(): void;
+  /** 打开「输出」面板并切到本通道。 */
+  show(): void;
+}
+
+/**
+ * `app.output`:插件的默认输出通道(以插件名命名;宿主也把该插件的激活失败、加载跳过原因、未捕获错误写进来),
+ * 另可 createOutputChannel(name) 建额外通道(每实例最多 OUTPUT_CHANNELS_PER_PLUGIN_MAX 个,插件停用时移除;dispose 立即移除)。
+ */
+export interface PluginOutputApi extends PluginOutputChannel {
+  createOutputChannel(name: string): PluginOutputChannel & Disposable;
+}
+
 /** v5 Phase 4:plugin 注册 MCP tool 的 per-plugin scoped wrapper. */
 export interface PluginMcpApi {
   /**
@@ -386,6 +412,7 @@ export interface CoPluginApp
   readonly clipboard: PluginClipboardApi;
   readonly permission: PluginPermissionApi;
   readonly mcp: PluginMcpApi;
+  readonly output: PluginOutputApi;
 }
 
 /**

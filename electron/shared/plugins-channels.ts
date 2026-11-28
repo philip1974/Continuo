@@ -21,6 +21,11 @@ export const PLUGINS_CHANNELS = {
    * PLUGIN_MANIFEST_CHANGED,避免以旧 manifest(id / 权限 / 入口)执行新 main。
    */
   READ_MAIN_BY_DIR: 'plugins:read-main-by-dir',
+  /**
+   * 入口语法诊断(BDD: plugin-dev-experience):`{ dir, manifestHash }` → 只编译不执行(V8 语法检查)该插件 main,
+   * 返回 IpcPluginSyntaxError | null。renderer 在 import 报 SyntaxError 时调用,给出行列号(import 的报错不带位置)。
+   */
+  CHECK_MAIN_SYNTAX: 'plugins:check-main-syntax',
   /** 读取 enabled.json(string[] of plugin ids). */
   READ_ENABLED: 'plugins:read-enabled',
   /**
@@ -123,6 +128,43 @@ export interface IpcPluginDirListing extends IpcPluginDirMeta {
   readonly manifestHash: string;
   /** main 入口文件 mtime(ms,与 main 文件监视同一信号);renderer 据此判断 main 是否改过(列举不带 main 源码). */
   readonly mainMtime: number;
+}
+
+/**
+ * main 列举时跳过的插件目录(BDD: plugin-dev-experience):不再静默消失,随 LIST_DIRS 带回原因,renderer 登记为「无效插件」
+ * 行并通知。code 稳定(renderer 按 code 本地化),params 只含短字段。
+ * - PLUGIN_DIR_NAME_MISMATCH:目录名 ≠ manifest.id(params.dir 目录名、params.declaredId)
+ * - PLUGIN_MAIN_UNAVAILABLE:main 入口不可用(params.main 入口名,params.reason:bad-name / unreachable / not-file /
+ *   too-large / open-failed)
+ */
+export const PLUGIN_SKIP_CODES = {
+  DIR_NAME_MISMATCH: 'PLUGIN_DIR_NAME_MISMATCH',
+  MAIN_UNAVAILABLE: 'PLUGIN_MAIN_UNAVAILABLE',
+} as const;
+export type IpcPluginSkipCode = (typeof PLUGIN_SKIP_CODES)[keyof typeof PLUGIN_SKIP_CODES];
+
+export interface IpcPluginDirSkip {
+  readonly code: IpcPluginSkipCode;
+  readonly params: Readonly<Record<string, string>>;
+}
+
+/** LIST_DIRS 里被跳过的目录(不可激活:无 manifestHash / mainMtime)。 */
+export interface IpcSkippedPluginDir extends IpcPluginDirMeta {
+  readonly skip: IpcPluginDirSkip;
+}
+
+/** LIST_DIRS 的列举项:可激活的目录,或带跳过原因的目录。 */
+export type IpcPluginDirEntry = IpcPluginDirListing | IpcSkippedPluginDir;
+
+export function isSkippedPluginDir(d: IpcPluginDirEntry): d is IpcSkippedPluginDir {
+  return 'skip' in d && d.skip !== undefined;
+}
+
+/** CHECK_MAIN_SYNTAX 的结果:1 起的行列号 + V8 的语法错误消息。 */
+export interface IpcPluginSyntaxError {
+  readonly line: number;
+  readonly column: number;
+  readonly message: string;
 }
 
 /** INSTALL_FROM_GIT 的返回:新装插件的 manifest 元信息. */

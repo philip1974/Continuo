@@ -102,6 +102,25 @@ export function ExcludeIcon({ size }: IconProps) {
   );
 }
 
+/** 清除全部(VSCode codicon clear-all:三行列表 + 叉):清空输出。 */
+export function ClearAllIcon({ size }: IconProps) {
+  return (
+    <StrokeIcon size={size}>
+      <path d="M2.5 4.5h8M2.5 8h5M2.5 11.5h4M10 9.5l3 3M13 9.5l-3 3" />
+    </StrokeIcon>
+  );
+}
+
+/** 锁(VSCode codicon lock / unlock):输出视图「自动滚动」开关 —— 锁上 = 不自动滚动。 */
+export function LockIcon({ size, locked }: IconProps & { readonly locked: boolean }) {
+  return (
+    <StrokeIcon size={size}>
+      <rect x="3.5" y="7.5" width="9" height="6" rx="1" />
+      <path d={locked ? 'M5.5 7.5V5.5a2.5 2.5 0 0 1 5 0v2' : 'M5.5 7.5V5.5a2.5 2.5 0 0 1 4.8-1'} />
+    </StrokeIcon>
+  );
+}
+
 /**
  * 严重级别图标(VSCode 通知 / 问题的 codicon error / warning / info,success 用 pass 的圆圈对勾):靠形状区分等级,不只靠颜色
  *(色觉差异 / 强制颜色下仍可辨,WCAG 1.4.1)。描边 currentColor,颜色由调用方给。

@@ -16,6 +16,7 @@ import { wirePluginDataInvalidation } from './plugins/PluginDataStore';
 import { startPluginMcpInvokeBridge } from './plugins/plugin-mcp-invoke-bridge';
 import { Plugin } from './plugins/Plugin';
 import { PluginManager, setUserPluginManager } from './plugins/PluginManager';
+import { installPluginErrorCapture } from './plugins/output/plugin-error-capture';
 import { wirePluginEvents } from './plugins/plugin-events';
 import { initPluginsThenCheckUpdates } from './marketplace/startup-update-check';
 import { wireProtocolUrl } from './plugins/protocol/wire-protocol-url';
@@ -204,6 +205,8 @@ export async function init(): Promise<void> {
       usePermissionPromptStore.getState().cancel(pid, reason),
   });
   setUserPluginManager(userPluginManager);
+  // 插件的未捕获错误 / 未处理拒绝按堆栈里的 sourceURL 归属,写进它的输出通道(BDD: plugin-output-channel)。
+  installPluginErrorCapture();
   // 别的窗口写入某插件 data.json → main 广播,本窗口失效该插件数据缓存(下次 loadData 从盘重读),
   // 防陈旧缓存的整份读-改-写抹掉别窗改动。
   wirePluginDataInvalidation(coApp.dataStore);

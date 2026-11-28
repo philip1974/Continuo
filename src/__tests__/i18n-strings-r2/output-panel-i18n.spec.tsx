@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// i18n(I15):Output 面板文案走 panels.output.* catalog + useT(zh / ko 不显英文)。面板目前没有任何写入方,
+// i18n(I15):Output 面板文案走 panels.output.* catalog + useT(zh / ko 不显英文)。没有任何输出通道时(plugin-output-channel),
 // 只显示空状态 —— 不再写死「Continuo 就绪 / 已恢复停靠布局」两行假日志(首启默认布局时「已恢复」也不实)。
 
 import { afterEach, describe, expect, it } from 'vitest';

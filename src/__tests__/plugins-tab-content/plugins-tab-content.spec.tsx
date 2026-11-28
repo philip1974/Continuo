@@ -43,7 +43,7 @@ import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDeco
 import { SettingItemRegistry } from '../../plugins/registries/SettingItemRegistry';
 import { ExplorerContextMenuRegistry } from '../../plugins/registries/ExplorerContextMenuRegistry';
 import { getUserPermissionStore } from '../../plugins/permissions/co-permission-store';
-import type { PluginListItem } from '../../plugins/PluginManager';
+import type { InvalidPluginItem, PluginListItem } from '../../plugins/PluginManager';
 import { _resetPendingInstallsForTest } from '../../plugins/pending-installs-store';
 import { useSettingsStore } from '../../plugins/settings/store';
 
@@ -51,6 +51,7 @@ const getPerm = getUserPermissionStore as unknown as ReturnType<typeof vi.fn>;
 
 interface FakeManager {
   listAll: () => readonly PluginListItem[];
+  listInvalid?: () => readonly InvalidPluginItem[];
   enable?: ReturnType<typeof vi.fn>;
   disable?: ReturnType<typeof vi.fn>;
   reload?: ReturnType<typeof vi.fn>;
@@ -355,6 +356,38 @@ describe('PluginsTabContent — 第三方插件:空态', () => {
     const { container } = render(<PluginsTabContent />);
     const order = [...container.querySelectorAll('[data-plugins-section]')].map((el) => el.getAttribute('data-plugins-section'));
     expect(order).toEqual(['user', 'contributions', 'builtin']);
+  });
+});
+
+describe('PluginsTabContent — 无效插件行(BDD: plugin-dev-experience)', () => {
+  it('准入失败的目录显示为只读行:名称 / id / 「无效」标记 / 文件夹 / 本地化原因(role=alert,data-code)/ 修好即生效的提示', () => {
+    installPluginsApi(vi.fn());
+    getMgr.mockReturnValue({
+      listAll: () => [],
+      listInvalid: () => [
+        {
+          dir: 'com.bad',
+          id: 'com.bad',
+          name: 'Bad Plugin',
+          version: '0.1.0',
+          error: { code: 'INCOMPATIBLE_VERSION', message: 'raw', params: { required: '9.0.0', current: '1.0.0' } },
+        },
+      ],
+    });
+    const { container } = render(<PluginsTabContent />);
+    const row = container.querySelector('[data-plugin-invalid="com.bad"]')!;
+    expect(row).not.toBeNull();
+    const text = row.textContent ?? '';
+    expect(text).toContain('Bad Plugin');
+    expect(text).toContain('com.bad');
+    expect(text).toContain('无效');
+    expect(text).toContain('文件夹：plugins/com.bad/');
+    expect(text).toContain('无需重启');
+    const alert = row.querySelector('[role=alert]')!;
+    expect(alert.getAttribute('data-code')).toBe('INCOMPATIBLE_VERSION');
+    expect(alert.textContent).toBe('需要 Continuo 9.0.0 或更高版本（当前：1.0.0）');
+    expect(row.querySelector('button')).toBeNull(); // 只读:修好后自动登记
+    expect(container.textContent).not.toContain('暂无第三方插件'); // 有无效行时不是空态
   });
 });
 

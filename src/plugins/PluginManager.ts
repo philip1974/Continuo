@@ -3,7 +3,12 @@
 
 import { Plugin } from './Plugin';
 import { loadPluginModule } from './loader';
-import { admitManifest } from './manifest';
+import { admitManifest, type ManifestAdmission, type ManifestIssue } from './manifest';
+import { pluginLocationFromStack } from './plugin-source-url';
+import { appendPluginHostLog, removePluginOutputChannels } from './output/output-channels';
+import { localizePluginError } from './plugin-error-text';
+import { t } from '@/i18n';
+import type { IpcPluginDirSkip, IpcPluginSyntaxError } from '../../electron/shared/plugins-channels';
 import {
   ensureAuthorized,
   type PermissionKey,
@@ -28,6 +33,11 @@ export interface PluginDirInfo {
   readonly moduleUrl: string;
   /** main 入口文件的 mtime(ms,与 main 文件监视同一变化信号);列举不读 main 源码,据此判断 main 是否改过。 */
   readonly mainMtime?: number;
+  /**
+   * main 列举时判定不可激活的原因(目录名 ≠ manifest.id、main 入口不可用;BDD: plugin-dev-experience)。有它的目录
+   * 准入必然失败(admitPluginDir),登记为无效插件行而非静默消失。
+   */
+  readonly skip?: IpcPluginDirSkip;
 }
 
 export interface ManagerHost {
@@ -42,6 +52,11 @@ export interface ManagerHost {
   mutateEnabledId(id: string, enabled: boolean): void | Promise<void>;
   /** 动态 import,可注入 mock. */
   importModule(url: string): Promise<unknown>;
+  /**
+   * 可选:入口 import 报 SyntaxError 时取语法错误的行列号(只编译不执行插件代码;生产走 main 的语法检查)。
+   * 不可诊断 → null。
+   */
+  diagnoseModuleSyntax?(url: string): Promise<IpcPluginSyntaxError | null>;
   /**
    * 预取模块源码(可选,perf:启动并行读源码):只读取并准备好 importModule(url) 所需资源,**不 import、不执行
    * 插件代码**(故可在权限门之前)。不得 reject;失败不缓存,importModule 照常走原路径。
@@ -143,6 +158,27 @@ export interface PluginWarning {
 export interface PluginError {
   readonly code: string;
   readonly message: string;
+  /** 按 code 本地化用的插值参数(如 IMPORT_UNBUNDLED 的 specifier、INCOMPATIBLE_VERSION 的版本)。 */
+  readonly params?: Readonly<Record<string, string>>;
+  /** 出错位置 `<相对插件目录的文件>:<行>:<列>`(堆栈 / 语法诊断;BDD: plugin-dev-experience)。 */
+  readonly location?: string;
+  /** manifest SCHEMA_ERROR 的字段级问题(逐条按 code 本地化)。 */
+  readonly issues?: readonly ManifestIssue[];
+}
+
+/**
+ * 准入失败的插件目录(BDD: plugin-dev-experience):manifest 无效 / 版本不兼容 / 目录名与 id 不一致 / 入口不可用。
+ * 对齐 VSCode 扩展视图对无效扩展的展示(ExtensionStatusAction:`!local.isValid` → 显示 validations 里的错误):
+ * 不再从插件页静默消失,登记为只读的「无效插件」行、通知一次;修好后由文件监视自动登记,无需重载窗口。
+ */
+export interface InvalidPluginItem {
+  /** 目录名(plugins/<dir>/)。 */
+  readonly dir: string;
+  /** manifest 声明的 id / 名称 / 版本(JSON 里是字符串时;显示用)。 */
+  readonly id?: string;
+  readonly name?: string;
+  readonly version?: string;
+  readonly error: PluginError;
 }
 
 export interface PluginListItem {
@@ -162,6 +198,9 @@ export interface PluginListItem {
 }
 
 const EMPTY_PLUGIN_LIST: readonly PluginListItem[] = [];
+const EMPTY_INVALID_LIST: readonly InvalidPluginItem[] = [];
+/** rescanUnregistered 的串行键(含 NUL,不会与插件 id 冲突)。 */
+const RESCAN_LOCK_KEY = '\0rescan';
 const EMPTY_PLUGIN_PERMISSIONS: readonly PermissionKey[] = [];
 /** 重装后跳过 tombstone 那次 reload 的时限(main 文件监视 2s 一轮,广播在此之内到达)。 */
 const ADOPT_RELOAD_SKIP_MS = 10_000;
@@ -184,6 +223,70 @@ export interface SelectedPluginDir {
   readonly manifest: PluginManifest;
 }
 
+const SKIP_MESSAGES: Readonly<Record<IpcPluginDirSkip['code'], (p: Readonly<Record<string, string>>) => string>> = {
+  PLUGIN_DIR_NAME_MISMATCH: (p) => `directory name does not match manifest id "${p.declaredId ?? ''}"`,
+  PLUGIN_MAIN_UNAVAILABLE: (p) => `main entry "${p.main ?? ''}" is unavailable (${p.reason ?? ''})`,
+};
+
+type DirRejection =
+  | Exclude<ManifestAdmission, { ok: true }>
+  | {
+      readonly ok: false;
+      readonly code: IpcPluginDirSkip['code'];
+      readonly message: string;
+      readonly params: Readonly<Record<string, string>>;
+    };
+
+/** 目录准入:main 判定的跳过原因优先,其次 manifest schema + minLMVersion(admitManifest)。 */
+export function admitPluginDir(dir: PluginDirInfo, appVersion: string): ManifestAdmission | DirRejection {
+  if (dir.skip) {
+    return { ok: false, code: dir.skip.code, message: SKIP_MESSAGES[dir.skip.code](dir.skip.params), params: dir.skip.params };
+  }
+  return admitManifest(dir.manifestText, appVersion);
+}
+
+/** 准入失败 → 结构化 PluginError(界面按 code / params / issues 本地化)。 */
+function admissionError(rejection: DirRejection): PluginError {
+  return {
+    code: rejection.code,
+    message: rejection.message,
+    ...(rejection.params ? { params: rejection.params } : {}),
+    ...('issues' in rejection && rejection.issues ? { issues: rejection.issues } : {}),
+  };
+}
+
+function rawManifestField(manifestText: string, key: 'id' | 'name' | 'version'): string | undefined {
+  try {
+    const v = (JSON.parse(manifestText) as Record<string, unknown> | null)?.[key];
+    return typeof v === 'string' ? v.slice(0, 256) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 准入失败的目录 → 无效插件行(重复 id 的落选者准入是通过的,不在其中)。 */
+export function collectInvalidPluginDirs(
+  dirs: readonly PluginDirInfo[],
+  appVersion: string,
+): readonly InvalidPluginItem[] {
+  const out: InvalidPluginItem[] = [];
+  for (const dir of dirs) {
+    const admission = admitPluginDir(dir, appVersion);
+    if (admission.ok) continue;
+    const id = rawManifestField(dir.manifestText, 'id');
+    const name = rawManifestField(dir.manifestText, 'name');
+    const version = rawManifestField(dir.manifestText, 'version');
+    out.push({
+      dir: dir.id,
+      ...(id !== undefined ? { id } : {}),
+      ...(name !== undefined ? { name } : {}),
+      ...(version !== undefined ? { version } : {}),
+      error: admissionError(admission),
+    });
+  }
+  return out.length === 0 ? EMPTY_INVALID_LIST : out;
+}
+
 /**
  * 启动与热重载共用的「准入 + 选目录」(单一来源,保证两者对同一份磁盘状态选同一目录):不合格的目录跳过并 warn;
  * 同一 manifest.id 只在合格目录中按 preferPluginDir 留一个。返回 id → 选中目录,Map 插入序 = 选中目录的列举序
@@ -196,8 +299,9 @@ export function selectPluginDirs(
   // id → 合格目录(按列举序,带下标)
   const admitted = new Map<string, { dir: PluginDirInfo; manifest: PluginManifest; index: number }[]>();
   for (const [index, dir] of dirs.entries()) {
-    const admission = admitManifest(dir.manifestText, appVersion);
+    const admission = admitPluginDir(dir, appVersion);
     if (!admission.ok) {
+      // 原因同时登记为无效插件行(collectInvalidPluginDirs),这里只留开发者日志。
       console.warn(`[plugin-manager] skip ${dir.id}: ${admission.code} ${admission.message}`);
       continue;
     }
@@ -229,6 +333,12 @@ function rawManifestId(manifestText: string): unknown {
   }
 }
 
+/** 插件代码(构造 / onload)抛出的错误 → PluginError,带插件帧位置(sourceURL,见 plugin-source-url)。 */
+function thrownPluginError(err: unknown, id: string): PluginError {
+  const location = pluginLocationFromStack((err as { stack?: unknown } | null)?.stack, id);
+  return { code: errorCodeOf(err), message: errorMessage(err), ...(location ? { location } : {}) };
+}
+
 function activationAbortedError(id: string): Error {
   return codedError('ACTIVATION_ABORTED', `plugin ${id} activation aborted (disabled / uninstalled)`);
 }
@@ -242,6 +352,11 @@ function uninstalledError(id: string): Error {
 export class PluginManager {
   private entries = new Map<string, PluginEntry>();
   private cachedList: readonly PluginListItem[] | null = null;
+  /** 上次扫描(init / rescanUnregistered)的准入失败目录;listInvalid 再滤掉已登记的(见 listInvalid)。 */
+  private invalidDirs: readonly InvalidPluginItem[] = EMPTY_INVALID_LIST;
+  /** 已写进输出通道的无效目录原因签名(目录 → code\0message),同一原因只记一次。 */
+  private readonly loggedInvalid = new Map<string, string>();
+  private cachedInvalid: readonly InvalidPluginItem[] | null = null;
   private readonly listListeners = new Set<() => void>();
   /**
    * Per-id 生命周期串行锁。enable/disable/reload/uninstall 含多个 await 让权点
@@ -341,6 +456,7 @@ export class PluginManager {
     // 准入(manifest schema + minLMVersion)与重复 manifest.id 取舍:与 reload 同一函数。重复 id 两个都激活的话,
     // 后一个 entries.set 覆盖前一个却不停用它 → 孤儿实例(disable/uninstall 都够不着)。
     const selected = selectPluginDirs(dirs, this.app.version);
+    this.setInvalidDirs(collectInvalidPluginDirs(dirs, this.app.version));
 
     // 两阶段:先登记全部 entry(扫描完成 → whenScanned),再按同一顺序逐个激活。
     const registered: PluginEntry[] = [];
@@ -441,7 +557,15 @@ export class PluginManager {
     const scanning = this.untilScanned();
     if (scanning) await scanning;
     return this.withLifecycleLock(id, async () => {
-      if (this.entries.has(id)) return true;
+      const existing = this.entries.get(id);
+      if (existing) {
+        // 文件监视先于本窗口的安装完成登记(prompt:false,因需授权只登记为禁用、等待「别处」授权)→ 本窗口发起的
+        // 安装(prompt:true)接着按盘上启用状态激活并弹授权,不因条目已在而丢掉激活。
+        if (prompt && existing.awaitingGrantElsewhere && existing.status === 'disabled') {
+          await this.followGrantHereLocked(existing);
+        }
+        return true;
+      }
       const own = (await this.host.listPluginDirs()).filter((d) => rawManifestId(d.manifestText) === id);
       const selected = selectPluginDirs(own, this.app.version).get(id);
       if (!selected) return false;
@@ -462,20 +586,80 @@ export class PluginManager {
         status: activate ? 'enabled' : 'disabled',
         enabledIntent: activate,
         ...(intended && !activate ? { awaitingGrantElsewhere: true } : {}),
-        ...(reinstall
-          ? {
-              adoptedSnapshot: {
-                manifestText: selected.dir.manifestText,
-                mainMtime: selected.dir.mainMtime,
-                until: Date.now() + ADOPT_RELOAD_SKIP_MS,
-              },
-            }
-          : {}),
+        // 登记后 main 文件监视会就这次安装 / 放入广播一次(新出现的 id、重装的 tombstone)→ 跳过那次 reload。
+        adoptedSnapshot: {
+          manifestText: selected.dir.manifestText,
+          mainMtime: selected.dir.mainMtime,
+          until: Date.now() + ADOPT_RELOAD_SKIP_MS,
+        },
       };
       this.entries.set(id, entry);
       this.invalidateListCache();
       if (activate) await this.activateEntry(entry);
       return true;
+    });
+  }
+
+  /**
+   * 换上新一轮扫描的无效目录;新出现 / 原因变了的写进该目录的输出通道(BDD: plugin-output-channel),
+   * 同一原因不重复记。
+   */
+  private setInvalidDirs(list: readonly InvalidPluginItem[]): void {
+    this.invalidDirs = list;
+    const present = new Set<string>();
+    for (const item of list) {
+      present.add(item.dir);
+      const signature = `${item.error.code}\0${item.error.message}`;
+      if (this.loggedInvalid.get(item.dir) === signature) continue;
+      this.loggedInvalid.set(item.dir, signature);
+      appendPluginHostLog(
+        item.dir,
+        item.name ?? item.dir,
+        'error',
+        t('plugin_output.not_loaded', { reason: localizePluginError(item.error) }),
+      );
+    }
+    for (const dir of [...this.loggedInvalid.keys()]) if (!present.has(dir)) this.loggedInvalid.delete(dir);
+  }
+
+  /** 只登记为「等待别处授权」的条目改由本窗口激活(弹授权):盘上仍启用且无停用意图时。 */
+  private async followGrantHereLocked(entry: PluginEntry): Promise<void> {
+    if (this.deactivationIntents.has(entry.id)) return;
+    let enabledIds: ReadonlySet<string>;
+    try {
+      enabledIds = await this.host.readEnabledIds();
+    } catch (err) {
+      console.warn(`[PluginManager] readEnabledIds failed adopting ${entry.id}`, err);
+      return;
+    }
+    if (!enabledIds.has(entry.id)) return;
+    await this.activateEntry(entry);
+    if (this.activated(entry)) this.setEnabledIntent(entry, true); // 同 enableLocked:以激活成功为准
+  }
+
+  /**
+   * 插件目录有变化(main 文件监视广播 plugins:changed,BDD: plugin-dev-experience):已登记的 id → 热重载(reload);
+   * 未登记的(运行中新放入的插件、无效插件的目录被修改 / 修好 / 删除)→ 重新扫描:登记新出现的合格插件(adoptInstalled
+   * prompt:false,同别的窗口装的),刷新无效插件行 —— 无需重载窗口。
+   */
+  async handleDirChanged(id: string): Promise<void> {
+    const scanning = this.untilScanned();
+    if (scanning) await scanning;
+    if (this.entries.has(id)) return this.reload(id);
+    return this.rescanUnregistered();
+  }
+
+  /** 重新扫描:登记未登记的合格插件 + 刷新无效插件行。串行(同一时刻只跑一次)。 */
+  private rescanUnregistered(): Promise<void> {
+    return this.withLifecycleLock(RESCAN_LOCK_KEY, async () => {
+      const dirs = await this.host.listPluginDirs();
+      for (const id of selectPluginDirs(dirs, this.app.version).keys()) {
+        // 卸载进行中(目录尚未删)的不重新登记;同会话卸载后再手动放回的,经别的窗口的安装广播或下次启动登记。
+        if (this.entries.has(id) || this.deactivationIntents.get(id) === 'uninstalled') continue;
+        await this.adoptInstalled(id, { prompt: false });
+      }
+      this.setInvalidDirs(collectInvalidPluginDirs(dirs, this.app.version));
+      this.invalidateListCache();
     });
   }
 
@@ -651,13 +835,18 @@ export class PluginManager {
     // 重新列举后用与启动同一个准入 + 选目录函数取目标 id(manifest.id 是真源;main 列举已保证目录名 = id):两者对同一份
     // 磁盘状态总选同一目录、同样拒绝不兼容版本。没有合格目录 → 仍有目录声明该 id 时标 failed(下方),否则不存在。
     // 只看声明了该 id 的目录(其它目录不可能被选为该 id,也免得为无关插件告警)。
-    const own = (await this.host.listPluginDirs()).filter((d) => rawManifestId(d.manifestText) === id);
+    // 声明了该 id 的目录,加上 plugins/<id>/ 本身而 manifest 不再声明字符串 id 的(JSON 损坏 / 缺 id):后者按目录名契约
+    // 仍属该插件 —— 报 manifest 错误(failed),不当成「插件已不存在」。
+    const own = (await this.host.listPluginDirs()).filter((d) => {
+      const declared = rawManifestId(d.manifestText);
+      return declared === id || (d.id === id && typeof declared !== 'string');
+    });
     if (own.length === 0) throw new Error(`Plugin ${id} no longer exists in plugins dir`);
     const selected = selectPluginDirs(own, this.app.version).get(id);
     // 没有合格目录 → 取按同一偏好排第一的声明目录的准入失败原因(它声明了该 id 却没被选中,准入必然失败)。
     const rejection = selected
       ? null
-      : admitManifest(own.reduce((best, d) => (preferPluginDir(d, best, id) ? d : best)).manifestText, this.app.version);
+      : admitPluginDir(own.reduce((best, d) => (preferPluginDir(d, best, id) ? d : best)), this.app.version);
     // 重装后 tombstone 引发的那次广播:目录仍是 adopt 时那份 manifest、main 未改、未过时限 → 已按它登记并激活,
     // 不再停用再激活(一次性)。
     const adopted = entry.adoptedSnapshot;
@@ -686,7 +875,7 @@ export class PluginManager {
         entry,
         'failed',
         rejection && !rejection.ok
-          ? { code: rejection.code, message: rejection.message }
+          ? admissionError(rejection)
           : // 类型兜底:own 中的目录都声明了该 id,没被选中即准入失败,走不到这里。
             { code: 'SCHEMA_ERROR', message: `no admissible directory for ${id}` },
       );
@@ -754,6 +943,7 @@ export class PluginManager {
     }
     await this.host.removePluginDir(id);
     this.entries.delete(id);
+    removePluginOutputChannels(id);
     this.invalidateListCache();
     // perf(#2):data.json 已随目录删除,淘汰本窗口内存里的插件数据缓存(禁用不淘汰:重新启用仍要用)。
     this.app.dataStore.forget?.(id);
@@ -780,6 +970,7 @@ export class PluginManager {
         // 已停用但残留未回收的 token 再试一次;仍失败只记录(目录已删,不能像本地卸载那样中止)。
         await this.revokePluginFsToken(entry);
         this.entries.delete(id);
+        removePluginOutputChannels(id);
         this.invalidateListCache();
       }
       this.host.permissionStore?.forget?.(id);
@@ -892,6 +1083,17 @@ export class PluginManager {
     return list;
   }
 
+  /**
+   * 无效插件行(BDD: plugin-dev-experience):上次扫描准入失败的目录,滤掉目录名已登记为插件的(其失败显示在插件自己的
+   * 行上)。同一份列表在下次变化前返回同一引用;变化经 subscribe 通知(与 listAll 同一订阅)。
+   */
+  listInvalid(): readonly InvalidPluginItem[] {
+    if (this.cachedInvalid !== null) return this.cachedInvalid;
+    const list = this.invalidDirs.filter((d) => !this.entries.has(d.dir));
+    this.cachedInvalid = list.length === 0 ? EMPTY_INVALID_LIST : list;
+    return this.cachedInvalid;
+  }
+
   // ── 内部 ────────────────────────────────────────────
 
   /**
@@ -910,7 +1112,7 @@ export class PluginManager {
     } catch (err) {
       console.warn(`[plugin-manager] activate ${entry.id} failed`, err);
       entry.instance = undefined;
-      this.setStatus(entry, 'failed', { code: errorCodeOf(err), message: errorMessage(err) });
+      this.setStatus(entry, 'failed', thrownPluginError(err, entry.id));
       await this.revokePluginFsToken(entry);
     } finally {
       entry.activating = false;
@@ -1003,6 +1205,9 @@ export class PluginManager {
         moduleUrl: entry.dirInfo.moduleUrl,
         manifest: entry.manifest,
         importer: (url) => this.host.importModule(url),
+        ...(this.host.diagnoseModuleSyntax
+          ? { diagnoseSyntax: (url: string) => this.host.diagnoseModuleSyntax!(url) }
+          : {}),
       }),
       aborted,
     ]);
@@ -1010,7 +1215,12 @@ export class PluginManager {
       console.warn(
         `[plugin-manager] load ${entry.id} failed: ${loaded.code} ${loaded.message}`,
       );
-      this.setStatus(entry, 'failed', { code: loaded.code, message: loaded.message });
+      this.setStatus(entry, 'failed', {
+        code: loaded.code,
+        message: loaded.message,
+        ...(loaded.params ? { params: loaded.params } : {}),
+        ...(loaded.location ? { location: loaded.location } : {}),
+      });
       return;
     }
 
@@ -1029,6 +1239,7 @@ export class PluginManager {
       pluginFsToken,
       // 有效权限 = 当前 manifest 声明 ∩ 已授权(升级删声明后旧授权失效)
       entry.manifest.permissions ?? EMPTY_PLUGIN_PERMISSIONS,
+      entry.manifest.name,
     );
     // 构造器必须和 _activate 同在 try/catch 内:token 已在上面注册并设 active,
     // 若 `new PluginClass()` 同步抛错(插件构造函数 throw)而它在 try 之外,就会跳出
@@ -1053,7 +1264,7 @@ export class PluginManager {
       // 终审 P1:失败实例已排程的延迟回调不能再使用能力 —— 先吊销 scoped app。
       scoped.revoke();
       entry.scoped = undefined;
-      this.setStatus(entry, 'failed', { code: errorCodeOf(err), message: errorMessage(err) });
+      this.setStatus(entry, 'failed', thrownPluginError(err, entry.id));
       await this.revokePluginFsToken(entry);
       // 终审 P1:构造函数 / onload 抛错前可能已 exec / execStream 启动 shell 进程;失败实例不挂
       // entry.instance,之后禁用 / 卸载都走不到 deactivateEntry → 此处同样终止。
@@ -1078,6 +1289,10 @@ export class PluginManager {
   private setStatus(entry: PluginEntry, status: 'failed', error: PluginError): void;
   private setStatus(entry: PluginEntry, status: 'enabled' | 'disabled'): void;
   private setStatus(entry: PluginEntry, status: Status, error?: PluginError): void {
+    // 失败原因写进该插件的输出通道(BDD: plugin-output-channel);被禁用 / 卸载中止的激活不是失败。
+    if (status === 'failed' && error && error.code !== 'ACTIVATION_ABORTED' && error.code !== 'NOT_INSTALLED') {
+      appendPluginHostLog(entry.id, entry.manifest.name, 'error', localizePluginError(error));
+    }
     entry.status = status;
     if (status !== 'enabled') {
       entry.error = error;
@@ -1095,6 +1310,7 @@ export class PluginManager {
 
   private invalidateListCache(): void {
     this.cachedList = null;
+    this.cachedInvalid = null;
     for (const listener of [...this.listListeners]) listener();
   }
 

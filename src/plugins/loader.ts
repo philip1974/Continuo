@@ -4,6 +4,8 @@
 import { Plugin } from './Plugin';
 import type { CoPluginApp, PluginManifest } from './types';
 import { errorMessage } from '../../electron/shared/error-message';
+import type { IpcPluginSyntaxError } from '../../electron/shared/plugins-channels';
+import { pluginLocationFromStack } from './plugin-source-url';
 
 // 可维护性 M3:动态 import 的 default export 是 Plugin **子类**(可实例化),但
 // `typeof Plugin` 是 abstract 类型(不可 new)。用一个可构造的构造器类型表达「Plugin
@@ -20,8 +22,16 @@ export type PluginModuleResult =
   | { ok: true; PluginClass: PluginConstructor }
   | {
       ok: false;
-      code: 'IMPORT_FAILED' | 'NO_DEFAULT_EXPORT' | 'NOT_PLUGIN_CLASS';
+      /**
+       * IMPORT_SYNTAX_ERROR:入口有语法错误(location 由 diagnose 给出,不执行代码);IMPORT_UNBUNDLED:入口 import 了
+       * 相对 / 裸模块(params.specifier、params.kind = relative | bare)—— 插件须打包成单文件 ESM;其余 import 失败(含模块
+       * 顶层代码抛错)为 IMPORT_FAILED(location 取自堆栈)。BDD: plugin-dev-experience。
+       */
+      code: 'IMPORT_FAILED' | 'IMPORT_SYNTAX_ERROR' | 'IMPORT_UNBUNDLED' | 'NO_DEFAULT_EXPORT' | 'NOT_PLUGIN_CLASS';
       message: string;
+      params?: Readonly<Record<string, string>>;
+      /** 出错位置 `<相对插件目录的文件>:<行>:<列>`。 */
+      location?: string;
     };
 
 export interface LoadPluginModuleOpts {
@@ -29,6 +39,49 @@ export interface LoadPluginModuleOpts {
   readonly manifest: PluginManifest;
   /** 生产传 host.importModule(负责 Blob URL 解析与 revoke);测试注入 mock。 */
   readonly importer: (url: string) => Promise<unknown>;
+  /** 可选:import 报 SyntaxError 时取行列号(只编译不执行;生产走 main 的 CHECK_MAIN_SYNTAX)。 */
+  readonly diagnoseSyntax?: (url: string) => Promise<IpcPluginSyntaxError | null>;
+}
+
+// Chromium 的模块解析失败:`Failed to resolve module specifier "./util.js". …`
+const UNRESOLVED_SPECIFIER_RE = /Failed to resolve module specifier ["']([^"']{1,512})["']/;
+
+/** manifest.main → 位置里的文件名(去掉开头 ./、统一 /)。 */
+function mainFileName(main: string | undefined): string {
+  return (main ?? 'main.js').replace(/\\/g, '/').replace(/^(\.\/)+/, '');
+}
+
+async function importFailure(opts: LoadPluginModuleOpts, err: unknown): Promise<PluginModuleResult> {
+  const message = errorMessage(err);
+  const unresolved = UNRESOLVED_SPECIFIER_RE.exec(message);
+  if (unresolved) {
+    const specifier = unresolved[1]!;
+    const relative = specifier.startsWith('./') || specifier.startsWith('../') || specifier.startsWith('/');
+    return {
+      ok: false,
+      code: 'IMPORT_UNBUNDLED',
+      message,
+      params: { specifier, kind: relative ? 'relative' : 'bare' },
+    };
+  }
+  if ((err as { name?: unknown } | null)?.name === 'SyntaxError' && opts.diagnoseSyntax) {
+    let diag: IpcPluginSyntaxError | null = null;
+    try {
+      diag = await opts.diagnoseSyntax(opts.moduleUrl);
+    } catch {
+      diag = null;
+    }
+    if (diag) {
+      return {
+        ok: false,
+        code: 'IMPORT_SYNTAX_ERROR',
+        message: diag.message,
+        location: `${mainFileName(opts.manifest.main)}:${diag.line}:${diag.column}`,
+      };
+    }
+  }
+  const location = pluginLocationFromStack((err as { stack?: unknown } | null)?.stack, opts.manifest.id);
+  return { ok: false, code: 'IMPORT_FAILED', message, ...(location ? { location } : {}) };
 }
 
 export async function loadPluginModule(
@@ -38,11 +91,7 @@ export async function loadPluginModule(
   try {
     mod = await opts.importer(opts.moduleUrl);
   } catch (err) {
-    return {
-      ok: false,
-      code: 'IMPORT_FAILED',
-      message: errorMessage(err),
-    };
+    return importFailure(opts, err);
   }
 
   const def = (mod as { default?: unknown } | null)?.default;

@@ -10,6 +10,7 @@
 import { notify } from '@/notifications/notify';
 import { localizeThrown } from '@/lib/localize-error';
 import { t } from '@/i18n';
+import { logPluginErrorFromStack } from '@/plugins/output/plugin-error-capture';
 
 /**
  * 运行贡献回调,失败时弹 error toast(标签 + 错误信息)。回调的返回值忽略;返回 Promise
@@ -28,6 +29,8 @@ export function runContributedAction(label: string, fn: () => unknown): Promise<
     // 原 message。注:PERMISSION_DENIED code 被多处复用(PluginManager 权限列表),故不在
     // catalog 收录该 key —— PermissionError 已在源头改英文 message,这里回退即英文。
     notify.error(t('common.label_detail', { label, detail: localizeThrown(err) }));
+    // 插件代码抛的(堆栈有插件帧)同时写进该插件的输出通道(BDD: plugin-output-channel)。
+    logPluginErrorFromStack(err, 'command', label);
   };
   try {
     return Promise.resolve(fn()).then(() => undefined, fail);

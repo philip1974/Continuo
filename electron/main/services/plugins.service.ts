@@ -14,10 +14,14 @@ import type {
   IpcPermissionMutation,
   IpcPermissionRecord,
   IpcPermissionsMap,
+  IpcPluginDirEntry,
   IpcPluginDirListing,
+  IpcPluginDirSkip,
+  IpcPluginSyntaxError,
+  IpcSkippedPluginDir,
   InstallFromGitResult,
 } from '../../shared/plugins-channels';
-import { PLUGIN_DIR_NAME_MAX_LEN } from '../../shared/plugins-channels';
+import { PLUGIN_DIR_NAME_MAX_LEN, PLUGIN_SKIP_CODES } from '../../shared/plugins-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError, errorCodeOf, errorMessage } from '../../shared/error-message';
 import { isSafePluginId } from '../../shared/plugin-id';
@@ -377,10 +381,19 @@ function assertPluginKeyCountWithinLimit(count: number, file: string): void {
  * IPC 传给每个窗口,而 PluginManager 只对 enabled 插件使用。插件目录里的 styles.css 不读取:renderer
  * 从未注入过它(样式由插件在 onload 里自行处理)。
  *
- * 子目录读 fail / 缺 manifest / 缺 main 都跳过该目录(不抛),由 renderer 端
- * PluginManager 决定是否报告。
+ * 子目录读 fail / 缺 manifest 跳过该目录(不抛)。目录名 ≠ manifest.id、main 入口不可用的目录默认也跳过;
+ * `includeSkipped`(LIST_DIRS 用,BDD: plugin-dev-experience)时改为带结构化原因(skip)返回 —— renderer 登记为
+ * 「无效插件」行并通知,不再只在主进程 stdout 告警、在界面上静默消失。
  */
-export async function listPluginDirs(baseDir: string): Promise<IpcPluginDirListing[]> {
+export async function listPluginDirs(baseDir: string): Promise<IpcPluginDirListing[]>;
+export async function listPluginDirs(
+  baseDir: string,
+  opts: { readonly includeSkipped: true },
+): Promise<IpcPluginDirEntry[]>;
+export async function listPluginDirs(
+  baseDir: string,
+  opts?: { readonly includeSkipped?: boolean },
+): Promise<IpcPluginDirEntry[]> {
   // 边界(E82):有界枚举(缺目录 → [] → 返回空列表,等价旧版)。
   const entries = await readPluginDirEntriesCapped(baseDir);
   // perf:per-dir 读取(stat + manifest + main 可用性)有界并发(PLUGIN_DIR_IO_CONCURRENCY),
@@ -389,10 +402,12 @@ export async function listPluginDirs(baseDir: string): Promise<IpcPluginDirListi
     readOnePluginDirMeta(baseDir, name),
   );
 
-  const out = new Array<IpcPluginDirListing>(results.length);
+  const includeSkipped = opts?.includeSkipped === true;
+  const out = new Array<IpcPluginDirEntry>(results.length);
   let outCount = 0;
   for (const r of results) {
     if (r === null) continue;
+    if (!includeSkipped && 'skip' in r) continue;
     out[outCount] = r;
     outCount += 1;
   }
@@ -485,11 +500,59 @@ function mainNameFromManifestText(manifestText: string): string {
 }
 
 /** 按 manifest.main 读 main 文本;不可用(见 resolveContainedPluginMain)/ 读失败 → null。 */
-async function readPluginMainText(dir: string, manifestText: string): Promise<string | null> {
+async function readPluginMainText(
+  dir: string,
+  manifestText: string,
+): Promise<{ readonly text: string; readonly mainPath: string } | null> {
   const main = await resolveContainedPluginMain(dir, mainNameFromManifestText(manifestText));
   if (!main.ok) return null;
   // 边界(E24):仍走有界读 —— 判定与读取之间文件可能被换大。
-  return readFileCapped(main.mainPath, MAIN_MAX_BYTES);
+  const text = await readFileCapped(main.mainPath, MAIN_MAX_BYTES);
+  return text === null ? null : { text, mainPath: main.mainPath };
+}
+
+/** 内联进入口源码的 source map 文件大小上限(打包产物的 map 通常是源码的数倍)。 */
+export const PLUGIN_SOURCE_MAP_MAX_BYTES = 16 * 1024 * 1024;
+const SOURCE_MAPPING_URL_MARK = 'sourceMappingURL=';
+
+/**
+ * 入口末尾的 `//# sourceMappingURL=<相对路径>` 换成内联 data URL(BDD: plugin-dev-experience)。入口以 Blob URL 加载、
+ * sourceURL 是 continuo-plugin://(不可访问的地址),相对 map 地址 DevTools 解析不到 → source map 失效。安全:只读插件
+ * 目录内(realpath 包含校验)的普通文件、≤ PLUGIN_SOURCE_MAP_MAX_BYTES;data: / 带 scheme / 绝对路径 / 越界 / 超限 /
+ * 读失败一律原样返回(不读目录外文件,不放大 IPC)。只认最后一行的注释(打包器写在文件末尾)。
+ */
+export async function inlinePluginSourceMap(dir: string, mainPath: string, text: string): Promise<string> {
+  const end = text.trimEnd().length;
+  const lineStart = text.lastIndexOf('\n', end - 1) + 1;
+  const line = text.slice(lineStart, end).trim();
+  const markAt = line.indexOf(SOURCE_MAPPING_URL_MARK);
+  if (markAt < 0) return text;
+  const prefix = line.slice(0, markAt).replace(/\s+/g, '');
+  if (prefix !== '//#' && prefix !== '//@') return text;
+  const rawUrl = line.slice(markAt + SOURCE_MAPPING_URL_MARK.length);
+  if (rawUrl.length === 0 || rawUrl.length > MANIFEST_MAIN_MAX || /\s/.test(rawUrl)) return text;
+  // data:(已内联)/ 任何 scheme / 绝对路径 / 盘符:不改写(只处理插件目录内的相对文件)。
+  if (/^[a-z][a-z0-9+.-]*:/i.test(rawUrl) || rawUrl.startsWith('/') || rawUrl.startsWith('\\')) return text;
+  let relative: string;
+  try {
+    relative = decodeURIComponent(rawUrl.split(/[?#]/)[0]!);
+  } catch {
+    return text;
+  }
+  if (relative.length === 0 || relative.includes('\0') || path.isAbsolute(relative)) return text;
+  const mapPath = path.resolve(path.dirname(mainPath), relative);
+  if (!(await staysInsidePluginDir(dir, mapPath))) return text;
+  let stat: Stats;
+  try {
+    stat = await fs.stat(mapPath);
+  } catch {
+    return text;
+  }
+  if (!stat.isFile() || stat.size > PLUGIN_SOURCE_MAP_MAX_BYTES) return text;
+  const mapText = await readFileCapped(mapPath, PLUGIN_SOURCE_MAP_MAX_BYTES);
+  if (mapText === null || !mapText.trimStart().startsWith('{')) return text;
+  const dataUrl = `data:application/json;charset=utf-8;base64,${Buffer.from(mapText, 'utf8').toString('base64')}`;
+  return `${text.slice(0, lineStart)}//# ${SOURCE_MAPPING_URL_MARK}${dataUrl}\n`;
 }
 
 // 插件因 main 入口不可用被跳过的告警:按 dir+reason 只记一次(列举 / watcher 周期会反复判定,不刷屏)。上限防
@@ -505,25 +568,31 @@ function warnSkippedMain(dir: string, reason: string): void {
 }
 
 /**
- * main 入口是否可用(可用 → 返回其 mtime,供 renderer 判断 main 是否改过;不可用 → null):resolveContainedPluginMain
- * 判定 + 可打开(读权限),不读全文。不可用时插件从列表里整个消失
- *(到不了 renderer,manifest 报错路径也走不到),故每种原因都记一次告警(此前只记超大),便于排障:例如
- * manifest 写了 `dist/main.js` 却尚未构建、main 是指向插件目录外的链接。
+ * main 入口是否可用(可用 → 返回其 mtime,供 renderer 判断 main 是否改过;不可用 → 跳过原因):resolveContainedPluginMain
+ * 判定 + 可打开(读权限),不读全文。不可用的插件不可激活:原因随列举带回 renderer(无效插件行),并记一次告警,
+ * 便于排障:例如 manifest 写了 `dist/main.js` 却尚未构建、main 是指向插件目录外的链接。
  */
-async function availablePluginMainMtime(dir: string, manifestText: string): Promise<number | null> {
-  const main = await resolveContainedPluginMain(dir, mainNameFromManifestText(manifestText));
+async function availablePluginMainMtime(
+  dir: string,
+  manifestText: string,
+): Promise<{ readonly mtime: number } | { readonly skip: IpcPluginDirSkip }> {
+  const mainName = mainNameFromManifestText(manifestText);
+  const unavailable = (reason: string) => ({
+    skip: { code: PLUGIN_SKIP_CODES.MAIN_UNAVAILABLE, params: { main: mainName.slice(0, MANIFEST_MAIN_MAX), reason } },
+  });
+  const main = await resolveContainedPluginMain(dir, mainName);
   if (!main.ok) {
     warnSkippedMain(dir, `main 入口不可用:${main.reason === 'too-large' ? `too-large(> ${MAIN_MAX_BYTES})` : main.reason}`);
-    return null;
+    return unavailable(main.reason);
   }
   try {
     // O_NONBLOCK:判定后被换成 FIFO 时,阻塞 open 会永久占住 libuv 线程池线程。
     const fh = await openForReadNonBlocking(main.mainPath);
     await fh.close().catch(() => {});
-    return main.stat.mtimeMs;
+    return { mtime: main.stat.mtimeMs };
   } catch (err) {
     warnSkippedMain(dir, `main 入口不可用:open-failed(${errorCodeOf(err)})`);
-    return null;
+    return unavailable('open-failed');
   }
 }
 
@@ -535,21 +604,33 @@ export function pluginManifestHash(manifestText: string): string {
 async function readOnePluginDirMeta(
   baseDir: string,
   name: string,
-): Promise<IpcPluginDirListing | null> {
+): Promise<IpcPluginDirListing | IpcSkippedPluginDir | null> {
   const m = await readPluginManifestText(baseDir, name);
   if (m === null) return null;
   // 「插件目录 = plugins/<manifest.id>/」是 main 与 renderer 的唯一契约:main 的卸载 / 授权写入 / saveData / scope 持久化
   // 都按 manifest.id 定位目录,renderer 却按 manifest.id 认插件、按目录名读 main。目录名 ≠ id(手动 git clone 成
   // `hello-plugin/`)时插件照常激活,而授权报 NOT_INSTALLED、无法卸载、saveData 总失败,市场更新再建出第二份。
-  // 列举时跳过并告警(manifest 解析失败不在此判,交 renderer 报 manifest 错误)。
+  // 列举时不可激活、带原因返回并告警(manifest 解析失败不在此判,交 renderer 报 manifest 错误)。
   const declaredId = manifestIdFromText(m.manifestText);
   if (declaredId !== null && declaredId !== name) {
     warnSkippedMain(m.dir, `目录名与 manifest.id 不一致:dir-name-mismatch(manifest id "${declaredId.slice(0, 128)}")`);
-    return null;
+    return {
+      id: name,
+      manifestText: m.manifestText,
+      skip: {
+        code: PLUGIN_SKIP_CODES.DIR_NAME_MISMATCH,
+        params: { dir: name, declaredId: declaredId.slice(0, PLUGIN_DIR_NAME_MAX_LEN) },
+      },
+    };
   }
-  const mainMtime = await availablePluginMainMtime(m.dir, m.manifestText);
-  if (mainMtime === null) return null;
-  return { id: name, manifestText: m.manifestText, manifestHash: pluginManifestHash(m.manifestText), mainMtime };
+  const main = await availablePluginMainMtime(m.dir, m.manifestText);
+  if ('skip' in main) return { id: name, manifestText: m.manifestText, skip: main.skip };
+  return {
+    id: name,
+    manifestText: m.manifestText,
+    manifestHash: pluginManifestHash(m.manifestText),
+    mainMtime: main.mtime,
+  };
 }
 
 /**
@@ -565,6 +646,7 @@ export async function readPluginMainByDir(
   baseDir: string,
   name: string,
   manifestHash: string,
+  opts?: { readonly inlineSourceMap?: boolean },
 ): Promise<string | null> {
   if (
     name.length === 0 ||
@@ -581,13 +663,107 @@ export async function readPluginMainByDir(
   const m = await readPluginManifestText(baseDir, name);
   if (m === null) return null;
   assertManifestUnchanged(m.manifestText, manifestHash, name);
-  const mainText = await readPluginMainText(m.dir, m.manifestText);
-  if (mainText === null) return null;
+  const main = await readPluginMainText(m.dir, m.manifestText);
+  if (main === null) return null;
+  const mainText = opts?.inlineSourceMap === true ? await inlinePluginSourceMap(m.dir, main.mainPath, main.text) : main.text;
   // 读 main 期间 manifest 可能被替换(原子更新整目录):复核,确保返回的 main 与令牌对应的 manifest 同期。
   const after = await readPluginManifestText(baseDir, name);
   if (after === null) return null;
   assertManifestUnchanged(after.manifestText, manifestHash, name);
   return mainText;
+}
+
+/** 语法检查子进程的时限与 stderr 收集上限。 */
+const SYNTAX_CHECK_TIMEOUT_MS = 10_000;
+const SYNTAX_CHECK_STDERR_MAX = 64 * 1024;
+const SYNTAX_MESSAGE_MAX = 512;
+
+/**
+ * 按 ESM 语法检查源码,**不执行**(BDD: plugin-dev-experience):以 Node 模式起一个 Electron 子进程跑
+ * `--input-type=module --check`(V8 只编译不求值,与 renderer 加载入口同一引擎),源码经 stdin 传入。
+ * renderer 的 import() 对语法错误只给「Unexpected token '='」不带位置,这里补行列号。环境变量只给
+ * ELECTRON_RUN_AS_NODE(不继承 NODE_OPTIONS 等,免注入 --require)。无语法错误 / 检查失败 / 超时 → null。
+ */
+export function checkModuleSyntax(
+  source: string,
+  opts: { readonly execPath?: string; readonly timeoutMs?: number } = {},
+): Promise<IpcPluginSyntaxError | null> {
+  return new Promise((resolve) => {
+    const env: Record<string, string> = { ELECTRON_RUN_AS_NODE: '1' };
+    if (process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot; // Windows 进程启动需要
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(opts.execPath ?? process.execPath, ['--input-type=module', '--check'], {
+        env,
+        stdio: ['pipe', 'ignore', 'pipe'],
+        windowsHide: true,
+      });
+    } catch {
+      resolve(null);
+      return;
+    }
+    let stderr = '';
+    let settled = false;
+    const finish = (value: IpcPluginSyntaxError | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => {
+      killWithGrace(child);
+      finish(null);
+    }, opts.timeoutMs ?? SYNTAX_CHECK_TIMEOUT_MS);
+    timer.unref?.();
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk: string) => {
+      if (stderr.length < SYNTAX_CHECK_STDERR_MAX) stderr += chunk.slice(0, SYNTAX_CHECK_STDERR_MAX - stderr.length);
+    });
+    child.on('error', () => finish(null));
+    child.on('close', (code) => finish(code === 0 ? null : parseSyntaxCheckOutput(stderr)));
+    child.stdin?.on('error', () => {});
+    child.stdin?.end(source);
+  });
+}
+
+/**
+ * `node --check` 的 stderr:`[stdin]:<行>` / 出错行原文 / `^^^` 指示列 / 空行 / `SyntaxError: <消息>`。
+ * 解析不出行号或 SyntaxError → null。
+ */
+export function parseSyntaxCheckOutput(stderr: string): IpcPluginSyntaxError | null {
+  const lines = stderr.split(/\r?\n/);
+  const at = lines.findIndex((l) => /^\[stdin\]:\d+$/.test(l));
+  const messageLine = lines.find((l) => l.startsWith('SyntaxError: '));
+  if (at < 0 || messageLine === undefined) return null;
+  const line = Number(lines[at]!.slice('[stdin]:'.length));
+  const caret = lines[at + 2] ?? '';
+  const caretAt = caret.indexOf('^');
+  if (!Number.isSafeInteger(line) || line < 1) return null;
+  return {
+    line,
+    column: caretAt >= 0 && /^\s*\^+\s*$/.test(caret) ? caretAt + 1 : 1,
+    message: messageLine.slice('SyntaxError: '.length).slice(0, SYNTAX_MESSAGE_MAX),
+  };
+}
+
+/** 同时进行的语法检查子进程上限(超出 → 不诊断,返回 null;只在入口 import 报 SyntaxError 时才调用)。 */
+const SYNTAX_CHECK_CONCURRENCY = 2;
+let syntaxChecksInFlight = 0;
+
+/** CHECK_MAIN_SYNTAX:按目录名 + manifest 令牌读入口(同 readPluginMainByDir 的全部校验)后做语法检查。 */
+export async function checkPluginMainSyntax(
+  baseDir: string,
+  name: string,
+  manifestHash: string,
+): Promise<IpcPluginSyntaxError | null> {
+  if (syntaxChecksInFlight >= SYNTAX_CHECK_CONCURRENCY) return null;
+  syntaxChecksInFlight += 1;
+  try {
+    const text = await readPluginMainByDir(baseDir, name, manifestHash);
+    return text === null ? null : await checkModuleSyntax(text);
+  } finally {
+    syntaxChecksInFlight -= 1;
+  }
 }
 
 function assertManifestUnchanged(manifestText: string, manifestHash: string, name: string): void {
@@ -1686,7 +1862,7 @@ export function createPluginsWatcher(
   opts: { missingRecordCap?: number } = {},
 ): PluginsWatcher {
   const recordCap = opts.missingRecordCap ?? WATCHER_RECORD_CAP;
-  // pluginId → { dirs: 全部候选目录名(陈旧键 / tombstone / knownDirs 记账), sig: 全部候选目录的合并签名 }。
+  // pluginId → { dirs: 全部候选目录名(陈旧键 / tombstone 记账), sig: 全部候选目录的合并签名 }。
   // watcher 只决定是否广播,不选目录:重复 manifest.id 时选哪个目录由 renderer PluginManager.selectPluginDirs 统一决定
   //(它还看 manifest schema 与 minLMVersion,main 判断不了),所以任一候选目录变化都要广播。签名按目录名排序拼接
   // (目录名 + main mtime + manifest 内容哈希),多轮无变化时稳定 —— 此前以 id 为键、多个目录轮流写同一键 → 每轮都
@@ -1699,7 +1875,7 @@ export function createPluginsWatcher(
   const active = new Map<string, WatchRecord>();
   const missing = new Map<string, WatchRecord>();
   const missingByDir = new Map<string, Set<string>>();
-  // tombstone 按其**全部**候选目录建索引(任一候选目录本轮出现都要参与陈旧判定 / knownDirs)。
+  // tombstone 按其**全部**候选目录建索引(任一候选目录本轮出现都要参与陈旧判定)。
   const addMissing = (pluginId: string, rec: WatchRecord): void => {
     missing.set(pluginId, rec);
     for (const dir of rec.dirs) {
@@ -1753,15 +1929,26 @@ export function createPluginsWatcher(
   // 原地改写(ctime 必变,即便 mtime 被还原)、删除(stat 失败 → 跳过并清缓存)、新增(无缓存)都会重读。
   // 先 stat 再读:读到的内容不会比签名旧,期间若又被改,下轮签名不同会再读。
   // info=null 表示 manifest 不是合法 JSON 或超过大小上限(与旧版同:跳过该目录)。条目只保留本轮枚举到的目录名。
+  // invalidJson:manifest 读到了但不是合法 JSON(列举会把它报成无效插件,见 invalidDirs)。
   const manifestCache = new Map<
     string,
-    { sig: string; info: { mainName: string; pluginId: string; manifestHash: string } | null }
+    {
+      sig: string;
+      info: { mainName: string; pluginId: string; manifestHash: string } | null;
+      invalidJson?: true;
+    }
   >();
+  // 上一轮的无效插件目录(BDD: plugin-dev-experience):manifest 不是合法 JSON、或 main 入口不可用的目录 —— 列举把它们
+  // 报给 renderer 显示为无效插件行。目录名 → { 签名, 广播用 id }(JSON 无效 → 目录名;main 不可用 → manifest.id)。
+  // 出现 / 签名变化 / 消失都广播一次,renderer 据此刷新无效行、已登记的插件转 failed / 修好后重新加载。
+  let invalidDirs = new Map<string, { sig: string; fireId: string }>();
 
-  /** 单目录探测:返回 { name, pluginId, mtime }(main 文件 mtime),不可监控 → null。可并发执行。 */
-  const probeEntry = async (
-    dirent: import('node:fs').Dirent,
-  ): Promise<{ name: string; pluginId: string; mtime: number; manifestHash: string } | null> => {
+  type Probe =
+    | { readonly name: string; readonly pluginId: string; readonly mtime: number; readonly manifestHash: string }
+    | { readonly name: string; readonly invalid: { readonly sig: string; readonly fireId: string } };
+
+  /** 单目录探测:返回 { name, pluginId, mtime }(main 文件 mtime)或无效目录记录,不可监控 → null。可并发执行。 */
+  const probeEntry = async (dirent: import('node:fs').Dirent): Promise<Probe | null> => {
     const name = dirent.name;
     if (name.startsWith('.') || name.startsWith('_')) return null;
     const dir = path.join(baseDir, name);
@@ -1835,17 +2022,24 @@ export function createPluginsWatcher(
       } catch {
         info = null;
       }
-      cached = { sig, info };
+      cached = info === null ? { sig, info, invalidJson: true } : { sig, info };
       manifestCache.set(name, cached);
     }
-    if (cached.info === null) return null;
+    if (cached.info === null) {
+      return cached.invalidJson ? { name, invalid: { sig: `json\0${cached.sig}`, fireId: name } } : null;
+    }
 
     // 与列举同一判定(resolveContainedPluginMain:包含校验 + 普通文件且 ≤ MAIN_MAX_BYTES),否则重复 id 时列举
     // 跳过的无效目录(含 main 链到目录外)会被算作候选、进签名与记账。包含校验每轮都做(每插件 2 次 realpath):
     // main / 中间目录换成外链不改 manifest 签名,按签名缓存会漏判。不为每插件每轮 open;「可打开(读权限)」
     // 无法从 stat 廉价等价判断,取舍:不校验(插件目录归用户所有,main 有 stat 无读权限极罕见)。
     const main = await resolveContainedPluginMain(dir, cached.info.mainName);
-    if (!main.ok) return null;
+    if (!main.ok) {
+      return {
+        name,
+        invalid: { sig: `main\0${cached.info.manifestHash}\0${main.reason}`, fireId: cached.info.pluginId },
+      };
+    }
     return {
       name,
       pluginId: cached.info.pluginId,
@@ -1873,8 +2067,13 @@ export function createPluginsWatcher(
     }
     // 每个 id 归集全部候选目录(Map 插入序 = 各 id 首次出现的枚举序,onChange 顺序与旧版一致)。
     const groups = new Map<string, { name: string; mtime: number; manifestHash: string }[]>();
+    const nextInvalid = new Map<string, { sig: string; fireId: string }>();
     for (const probe of probes) {
       if (probe === null) continue;
+      if ('invalid' in probe) {
+        nextInvalid.set(probe.name, probe.invalid);
+        continue;
+      }
       const group = groups.get(probe.pluginId);
       if (group) group.push(probe);
       else groups.set(probe.pluginId, [probe]);
@@ -1885,13 +2084,17 @@ export function createPluginsWatcher(
       const sig = group.map((g) => `${g.name}\0${g.mtime}\0${g.manifestHash}`).join('\n');
       chosen.set(pluginId, { dirs: group.map((g) => g.name), sig });
     }
-    // 本轮之前被记录过的目录:某 id 首次出现在其中 = 该目录改声明了新 id(更新换了 id),也算变化。
-    // 须在本轮增删记录前取(含 tombstone 的目录);只需判定本轮被选中的目录。
-    const knownDirs = new Set<string>();
-    for (const prev of active.values()) for (const d of prev.dirs) knownDirs.add(d);
-    for (const group of groups.values()) {
-      for (const { name } of group) if (missingByDir.has(name)) knownDirs.add(name);
-    }
+    // 同一轮里同一 id 只广播一次(有效记录变化与无效目录变化可能同时指向同一插件)。
+    const fired = new Set<string>();
+    const fire = (pluginId: string): void => {
+      if (firstRun || fired.has(pluginId)) return;
+      fired.add(pluginId);
+      try {
+        onChange(pluginId);
+      } catch {
+        // 同旧版 per-entry catch:通知失败不影响后续条目
+      }
+    };
     // 清理陈旧键:记录所属目录现在(manifest 可解析)声明的是别的 id → 该记录不再代表任何目录。
     // 目录暂时消失 / manifest 缺失或损坏 / main 暂不可 stat 时转为 tombstone 保留:重建后 main 已变仍要触发
     // 热重载(rm -rf 后重新部署、编辑器 unlink+write 保存),与旧版同口径。
@@ -1922,19 +2125,17 @@ export function createPluginsWatcher(
       // 一旦确认即记录 mtime,通知(onChange)成败不影响 mtime 推进:坏窗口由 onChange 内部
       // per-window try/catch 兜底(R67-A),不再回灌脏状态。
       active.set(pluginId, record);
-      // 候选目录增减、任一候选的 main / manifest 变化都改变签名。新出现的 id:其候选目录之前被记录过 = 目录改声明了新 id。
-      const changed =
-        prev === undefined
-          ? groups.get(pluginId)!.some(({ name }) => knownDirs.has(name))
-          : prev.sig !== record.sig;
-      if (!firstRun && changed) {
-        try {
-          onChange(pluginId);
-        } catch {
-          // 同旧版 per-entry catch:通知失败不影响后续条目
-        }
-      }
+      // 候选目录增减、任一候选的 main / manifest 变化都改变签名。新出现的 id(运行中放入的新插件、目录改声明了新 id、
+      // 无效目录修好)也广播:renderer 对未登记的 id 重新扫描并登记(BDD: plugin-dev-experience),无需重载窗口。
+      if (prev === undefined || prev.sig !== record.sig) fire(pluginId);
     }
+    for (const [name, rec] of nextInvalid) {
+      if (invalidDirs.get(name)?.sig !== rec.sig) fire(rec.fireId);
+    }
+    for (const [name, rec] of invalidDirs) {
+      if (!nextInvalid.has(name)) fire(rec.fireId);
+    }
+    invalidDirs = nextInvalid;
     // 按容量淘汰:记录总数超上限时淘汰最早缺失的 tombstone(Map 插入序 = 缺失先后;均摊 O(1))。
     while (active.size + missing.size > recordCap && missing.size > 0) {
       const oldest = missing.keys().next().value as string;

@@ -478,13 +478,14 @@ describe('createPluginsWatcher', () => {
       await w.tick();
       rmSync(join(tmp, 'a.dir', 'main.js'));
       rmSync(join(tmp, 'b.dir', 'main.js'));
-      await w.tick(); // x.id 转 tombstone(候选 a.dir、b.dir)
-      expect(fn).not.toHaveBeenCalled();
+      await w.tick(); // x.id 转 tombstone(候选 a.dir、b.dir);两个目录都成了 main 不可用的无效目录 → x.id fire 一次
+      expect(fn.mock.calls).toEqual([['x.id']]);
       writeFileSync(join(tmp, 'b.dir', 'manifest.json'), JSON.stringify({ id: 'yy.id', name: 'Y', version: '0.1.0' }));
       writeFileSync(join(tmp, 'b.dir', 'main.js'), '');
       await w.tick();
       await w.tick();
-      expect(fn.mock.calls).toEqual([['yy.id']]);
+      // b.dir 改声明 yy.id:新 id fire;它不再是 x.id 的无效候选 → x.id 再 fire 一次(候选集合变了),之后稳定。
+      expect(fn.mock.calls).toEqual([['x.id'], ['yy.id'], ['x.id']]);
     });
 
     it('代表目录改声明别的 id、同时另一候选 main 暂时缺失 → 记录转 tombstone,main 恢复后 fire', async () => {
@@ -582,9 +583,10 @@ describe('createPluginsWatcher', () => {
       touch(id, 'main.js', Date.now() + 5000);
     }
     await w.tick();
-    // m1 记录已被淘汰 → 视为首次出现不 fire;m2/m3 仍在容量内 → fire。
+    // m1 记录已被淘汰 → 视为首次出现;m2/m3 仍在容量内 → main 变化。首次出现的 id 也 fire(运行中新放入的插件
+    // 无需重载窗口即登记,plugin-dev-experience)→ 三个都 fire,淘汰只限记录内存。
     // 同一次 tick 里多个目录的回调顺序跟随目录枚举顺序(Linux 上不固定),只比集合。
-    expect([...fn.mock.calls].sort()).toEqual([['m2'], ['m3']]);
+    expect([...fn.mock.calls].sort()).toEqual([['m1'], ['m2'], ['m3']]);
   });
 
   it('缺失记录所属目录重建后改声明别的 id → 该缺失记录被清理(之后旧 id 出现在新目录视为首次出现)', async () => {
@@ -597,8 +599,8 @@ describe('createPluginsWatcher', () => {
     makeDir('d', { id: 'new.id', name: 'D', version: '0.1.0' });
     await w.tick(); // 目录 d 改声明 new.id:fire new.id,old.id 缺失记录陈旧 → 清理
     makeDir('e', { id: 'old.id', name: 'E', version: '0.1.0' });
-    await w.tick();
-    expect(fn.mock.calls).toEqual([['new.id']]);
+    await w.tick(); // old.id 记录已清理 → 在新目录首次出现:同样 fire(新出现的 id 一律广播)
+    expect(fn.mock.calls).toEqual([['new.id'], ['old.id']]);
   });
 
   // 安全:旧安装的插件目录可能带符号链接。watcher 读 manifest(算 hash、取 id)前与列举同口径校验

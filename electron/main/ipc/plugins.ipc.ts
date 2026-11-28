@@ -15,6 +15,7 @@ import {
 import {
   createPluginsWatcher,
   installFromGit,
+  checkPluginMainSyntax,
   listPluginDirs,
   readPluginMainByDir,
   recoverInterruptedInstalls,
@@ -152,7 +153,8 @@ export function registerPluginsIpc(): void {
       // 基线须在列举前建立(串行,不可并发):否则基线可能吞掉「列举之后、基线之前」的插件修改 →
       // renderer 拿到旧内容而永不收到 CHANGED。列举在基线之后读盘 → 此后的修改必被后续 tick 发现。
       await watcher.ensureBaseline();
-      return listPluginDirs(pluginsDir);
+      // 跳过的目录(目录名 ≠ id、main 不可用)带原因返回,renderer 显示为无效插件(BDD: plugin-dev-experience)。
+      return listPluginDirs(pluginsDir, { includeSkipped: true });
     },
   );
 
@@ -162,7 +164,18 @@ export function registerPluginsIpc(): void {
     ReadMainByDirInput,
     async ({ dir, manifestHash }) => {
       await installRecovery;
-      return readPluginMainByDir(pluginsDir, dir, manifestHash);
+      // 入口末尾的相对 sourceMappingURL 内联为 data URL(Blob 加载下相对地址不可解析;BDD: plugin-dev-experience)。
+      return readPluginMainByDir(pluginsDir, dir, manifestHash, { inlineSourceMap: true });
+    },
+  );
+
+  // 入口 import 报 SyntaxError 时补行列号:只编译不执行(BDD: plugin-dev-experience)。
+  safeHandle(
+    PLUGINS_CHANNELS.CHECK_MAIN_SYNTAX,
+    ReadMainByDirInput,
+    async ({ dir, manifestHash }) => {
+      await installRecovery;
+      return checkPluginMainSyntax(pluginsDir, dir, manifestHash);
     },
   );
 

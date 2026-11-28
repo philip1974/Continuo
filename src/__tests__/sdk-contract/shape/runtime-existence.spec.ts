@@ -60,4 +60,11 @@ describe('sdk-contract shape: runtime SDK object existence', () => {
     const scoped = createScopedApp(coApp, 'sdk-contract.runtime', null, 'token');
     expect(typeof scoped.notifications?.show).toBe('function');
   });
+
+  it('T_E5 exposes scoped app.output (append / appendLine / clear / show / createOutputChannel) to plugins', () => {
+    const scoped = createScopedApp(coApp, 'sdk-contract.runtime', null, 'token');
+    for (const m of ['append', 'appendLine', 'clear', 'show', 'createOutputChannel'] as const) {
+      expect(typeof scoped.output?.[m]).toBe('function');
+    }
+  });
 });
