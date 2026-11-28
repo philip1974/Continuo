@@ -134,8 +134,15 @@ export function SettingItemRow({
   const setValueRaw = useSettingsValuesStore((s) => s.setValue);
   const resetRaw = useSettingsValuesStore((s) => s.reset);
   // race(R58):所有写入经此包装,写前复查 setting 仍注册;已移除则跳过(不写不报)。
+  // 改回默认值 = 重置(VSCode settingsEditor2.updateChangedSetting:新值 === 默认值时写 undefined):不留「等于默认值的
+  // override」,否则竖条 / 读屏「已修改」/ 重置按钮 / `@modified` 都还在。只在设置页这条写入路径做(同 VSCode 在设置编辑器层
+  // 而非 configurationService 做),store.setValue 供插件 / 其它调用方的语义不变。经 resetRaw 走:删 localStorage 键(跨窗同步
+  // 同重置)+ 本窗重置通知(语言项据此把默认语言推给 main —— 删键后 LanguageFromSettings 不再从存储值推送)。
+  // 按写端同一 coerceSettingValue 规整后比较(number clamp 后 === 默认 number,不拿字符串比)。
   const setValue = (id: string, v: SettingItemValue): void => {
-    if (isStillRegistered(id)) setValueRaw(id, v);
+    if (!isStillRegistered(id)) return;
+    if (coerceSettingValue(spec, v) === spec.default) resetRaw(id);
+    else setValueRaw(id, v);
   };
   // 重置后按钮立刻 disabled + invisible,焦点会掉到 body → 提交后把焦点移到同行编辑控件(select 须等重渲后
   // 新选中项才是 tabindex=0,故在 layout effect 里聚焦)。

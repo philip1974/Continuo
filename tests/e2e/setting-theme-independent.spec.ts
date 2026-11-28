@@ -6,6 +6,7 @@ import {
   LIGHT_THEME,
   SETTINGS,
   SETTINGS_NAV,
+  settingNumberInput,
 } from './helpers/settings';
 
 test('改 fontSize=18 + 切 light → fontSize 仍 18', async ({ window }) => {
@@ -14,7 +15,7 @@ test('改 fontSize=18 + 切 light → fontSize 仍 18', async ({ window }) => {
   await expect(nav).toBeVisible({ timeout: 10_000 });
   await nav.getByRole('button', { name: EDITOR_TAB }).click();
 
-  await window.locator('input[type=number]').first().fill('18');
+  await settingNumberInput(window, 'editor.fontSize').fill('18');
 
   // 切 light
   await nav.getByRole('button', { name: GENERAL_TAB }).click();
@@ -27,5 +28,5 @@ test('改 fontSize=18 + 切 light → fontSize 仍 18', async ({ window }) => {
 
   // 回编辑器 tab → fontSize 仍 18
   await nav.getByRole('button', { name: EDITOR_TAB }).click();
-  await expect(window.locator('input[type=number]').first()).toHaveValue('18');
+  await expect(settingNumberInput(window, 'editor.fontSize')).toHaveValue('18');
 });

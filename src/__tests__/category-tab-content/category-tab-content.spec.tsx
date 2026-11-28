@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { useLayoutEffect } from 'react';
 import { render, cleanup, act } from '@testing-library/react';
 import {
   CategoryTabContent,
@@ -180,5 +181,35 @@ describe('CategoryTabContent', () => {
     rerender(<CategoryTabContent category="editor" registry={reg} />);
     expect(container.textContent).toContain('EdB');
     expect(container.textContent).not.toContain('GenA');
+  });
+
+  // 四个分类页共用本组件、只换 category prop:不得先提交一帧「导航已是新分类、内容还是旧分类的项」(此前 useRegistry 在
+  // effect 里才 setSnap,中间帧 5–8ms,e2e 点「编辑器」后立刻取到通用页的 window.zoomLevel 输入框)。
+  it('category prop 切换 → 同一次提交即渲染新分类的项(无旧分类内容的中间帧)', () => {
+    const reg = new SettingItemRegistry();
+    reg.register(spec({ id: 'a', category: 'general', title: 'GenA' }));
+    reg.register(spec({ id: 'b', category: 'editor', title: 'EdB' }));
+    const commits: string[] = [];
+    function Probe({ category }: { readonly category: string }) {
+      useLayoutEffect(() => {
+        commits.push(`${category}:${document.body.textContent?.includes('GenA') ? 'GenA' : ''}${document.body.textContent?.includes('EdB') ? 'EdB' : ''}`);
+      });
+      return null;
+    }
+    const { rerender } = render(
+      <>
+        <CategoryTabContent category="general" registry={reg} />
+        <Probe category="general" />
+      </>,
+    );
+    commits.length = 0;
+    rerender(
+      <>
+        <CategoryTabContent category="editor" registry={reg} />
+        <Probe category="editor" />
+      </>,
+    );
+    expect(commits.length).toBeGreaterThan(0);
+    expect(commits.every((c) => c === 'editor:EdB')).toBe(true);
   });
 });

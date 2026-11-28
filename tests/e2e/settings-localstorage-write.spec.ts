@@ -5,6 +5,7 @@ import {
   EDITOR_TAB,
   SETTINGS,
   SETTINGS_NAV,
+  settingNumberInput,
 } from './helpers/settings';
 
 test('改 fontSize=20 → localStorage 写入 editor.fontSize=20', async ({
@@ -19,7 +20,7 @@ test('改 fontSize=20 → localStorage 写入 editor.fontSize=20', async ({
     .getByRole('button', { name: EDITOR_TAB })
     .click();
 
-  await window.locator('input[type=number]').first().fill('20');
+  await settingNumberInput(window, 'editor.fontSize').fill('20');
   // 等 store 写盘(同步)
   await window.waitForTimeout(100);
 
@@ -39,7 +40,7 @@ test('reset fontSize → localStorage 删 key', async ({ window }) => {
     .click();
 
   // 改 + 验证写入(否则下面「reset 后 key 不在」可能是因为根本没写进去)
-  await window.locator('input[type=number]').first().fill('22');
+  await settingNumberInput(window, 'editor.fontSize').fill('22');
   await expect
     .poll(() =>
       window.evaluate(() => {

@@ -5,6 +5,7 @@ import {
   EDITOR_TAB,
   SETTINGS,
   SETTINGS_NAV,
+  settingNumberInput,
 } from './helpers/settings';
 
 test('改 fontSize=22 → reset → input value=13', async ({ window }) => {
@@ -17,7 +18,7 @@ test('改 fontSize=22 → reset → input value=13', async ({ window }) => {
     .getByRole('button', { name: EDITOR_TAB })
     .click();
 
-  const fontInput = window.locator('input[type=number]').first();
+  const fontInput = settingNumberInput(window, 'editor.fontSize');
   await fontInput.fill('22');
   await expect(fontInput).toHaveValue('22');
 

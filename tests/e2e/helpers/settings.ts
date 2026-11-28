@@ -92,6 +92,14 @@ export async function openSettingsTab(
     .click();
 }
 
+/**
+ * 按设置 id 定位数字输入框(SettingItemRow 的 data-setting-row)。不要「切页签后取第一个 input」:四个分类页共用一个
+ * 组件,取到的第一个输入框属于哪一页取决于时序;按 id 定位与页签内的项顺序 / 时序都无关。
+ */
+export function settingNumberInput(window: Page, id: string) {
+  return window.locator(`[data-setting-row="${id}"] input[type=number]`);
+}
+
 export function resetDefaultButtons(window: Page) {
   return window.locator(RESET_DEFAULT_SELECTOR);
 }

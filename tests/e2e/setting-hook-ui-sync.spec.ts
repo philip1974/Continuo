@@ -1,6 +1,6 @@
 // SettingsPanel 打开时 setSettingValue → input value 同步.
 import { test, expect } from './fixtures/electron-app';
-import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { EDITOR_TAB, SETTINGS, SETTINGS_NAV, settingNumberInput } from './helpers/settings';
 import { waitForTestHooks } from './helpers/app-ready';
 
 test('SettingsPanel 显 + hook setValue → input 同步', async ({ window }) => {
@@ -13,7 +13,7 @@ test('SettingsPanel 显 + hook setValue → input 同步', async ({ window }) =>
     .getByRole('button', { name: EDITOR_TAB })
     .click();
 
-  const fontInput = window.locator('input[type=number]').first();
+  const fontInput = settingNumberInput(window, 'editor.fontSize');
   await expect(fontInput).toHaveValue('13');
 
   await waitForTestHooks(window);

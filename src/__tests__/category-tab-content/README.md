@@ -30,3 +30,4 @@ items 空 → 显示「本类暂无设置项」。**
 
 - registry.subscribe 触发 setSnap → 新增 item 立即出现
 - category prop 切换 → 重读 getByCategory(避免 React 复用实例残留前一 category)
+- category 切换在**同一次提交**里就渲染新分类的项(`useRegistry` deps 变化时渲染期同步重算快照),不提交「新分类导航 + 旧分类内容」的中间帧

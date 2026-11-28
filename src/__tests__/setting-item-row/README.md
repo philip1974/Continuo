@@ -63,3 +63,10 @@
 
 - store.values 没该 id → reset 按钮 invisible(布局占位但不响应)
 - 有 → 可见,点击 store.reset(id),删 override
+
+### 改回默认值即重置
+
+- 对齐 VSCode `settingsEditor2.updateChangedSetting`:在设置行里把值改回默认值(按写端同一 `coerceSettingValue`
+  规整后 `=== spec.default`)→ 等同「恢复默认」:删除 override(localStorage 键一并删除、跨窗同步、本窗重置通知),
+  已修改竖条 / 读屏「已修改」/ 重置按钮消失
+- 只在设置行写入路径生效;`store.setValue` 供插件 / 其它调用方,写默认值仍保存 override(语义不变)

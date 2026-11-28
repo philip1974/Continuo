@@ -3,7 +3,7 @@
 // Backspace=清空(用户可保存空 = unbind),无修饰 Enter=保存已录组合(VSCode 录键框同款,故 Enter 单键不可录),
 // 其它键 = 当前组合。打开时焦点落在录制区(data-autofocus)。
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button, KeyCap, Modal } from '@/design';
 import {
   canonicalHotkey,
@@ -186,9 +186,14 @@ function KeybindingCaptureModalBody({
   const statusRef = useRef<HTMLDivElement>(null);
   // keydown 监听只挂一次:Enter 保存经 ref 读最新的 captured / 保留键 / 冲突(赋值见下方 reserved 之后)。
   const acceptFromEnterRef = useRef<() => void>(() => {});
+  const captureAreaRef = useRef<HTMLDivElement>(null);
+  // 录到组合 / 清空那一刻的焦点元素:提交后若它已卸载 / 变 disabled / 在冲突列表内,焦点交回录制区(见下方 layout effect)。
+  const focusBeforeCaptureRef = useRef<Element | null>(null);
 
   // Body 只在弹窗可见时挂载(外层 visible=false 直接不渲染)→ 每次打开都是全新 state,无需手动复位。
   useEffect(() => {
+    // 弹窗所在文档(popout 子窗时是子窗 document,见下方 addEventListener 注释)。
+    const doc = statusRef.current?.ownerDocument ?? document;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         // 让 Modal 自己的 Esc 关闭逻辑接(我们传 onClose 给 Modal)
@@ -228,6 +233,7 @@ function KeybindingCaptureModalBody({
       if (e.key === 'Backspace') {
         e.preventDefault();
         e.stopPropagation();
+        focusBeforeCaptureRef.current = doc.activeElement;
         setCaptured('');
         return;
       }
@@ -235,15 +241,28 @@ function KeybindingCaptureModalBody({
       if (combo !== null) {
         e.preventDefault();
         e.stopPropagation();
+        focusBeforeCaptureRef.current = doc.activeElement;
         setCaptured(combo);
       }
     };
     // capture 阶段拦截,避免 useCommandHotkeys 抢先 dispatch。挂在弹窗所在文档:Settings 面板弹出到
     // dockview popout 子窗时弹窗在子窗 DOM,按键只派发到子窗 document(全局 document 是主窗)。
-    const doc = statusRef.current?.ownerDocument ?? document;
     doc.addEventListener('keydown', handler, true);
     return () => doc.removeEventListener('keydown', handler, true);
   }, []);
+
+  // VSCode DefineKeybindingWidget 焦点始终在录键输入框(冲突提示不可获焦)。这里冲突项是可 Tab 到的按钮:录到新组合后
+  // 冲突列表重渲染(原按钮卸载)或「保存」/「重置」变 disabled,焦点会掉到 body → 之后按键 / Enter 不再在弹窗里。
+  // 提交后焦点若在冲突列表内(内容已换成新组合的冲突)、已卸载或已 disabled,交回录制区;仍可用的「取消」等保持不动。
+  useLayoutEffect(() => {
+    const prev = focusBeforeCaptureRef.current;
+    focusBeforeCaptureRef.current = null;
+    const area = captureAreaRef.current;
+    if (prev === null || area === null || prev === area) return;
+    const lost =
+      !prev.isConnected || prev.matches(':disabled') || prev.closest('[data-keybinding-conflicts]') !== null;
+    if (lost) area.focus();
+  }, [captured]);
 
   const display = captured ?? currentHotkey ?? '';
   const isUnbind = captured === '';
@@ -307,6 +326,7 @@ function KeybindingCaptureModalBody({
       {/* 录制区可获焦并是初始焦点(data-autofocus):否则 Modal 把初始焦点给第一个按钮「取消」,用户按 Enter
           想确认却等于点了取消。焦点在这里时无修饰 Enter = 保存(VSCode 录键框的输入框同款)。 */}
       <div
+        ref={captureAreaRef}
         data-testid="keybinding-capture-area"
         role="group"
         aria-label={t('keybindings.modal.press_combo')}
@@ -364,7 +384,7 @@ function KeybindingCaptureModalBody({
                 aria-hidden 单独渲染,不混进 role=status 播报。 */}
             <span aria-hidden="true">⚠️</span> {t('keybindings.modal.conflict_title')}
           </div>
-          <ul className="mt-1 space-y-0.5">
+          <ul data-keybinding-conflicts className="mt-1 space-y-0.5">
             {conflicts.map((c) => (
               <li key={c.id}>
                 {/* 点击:关弹窗并按该快捷键过滤列表(VSCode「显示相同的键绑定」)。行内链接式紧凑按钮,design Button 的

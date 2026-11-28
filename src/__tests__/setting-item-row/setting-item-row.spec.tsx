@@ -9,6 +9,7 @@ import {
   type SettingItemSpec,
 } from '../../plugins/registries/SettingItemRegistry';
 import { useSettingsValuesStore } from '../../plugins/settings/values-store';
+import { SETTINGS_VALUES_STORAGE_KEY } from '../../plugins/settings/storage-key';
 import {
   EDITOR_LINE_HEIGHT,
   TERMINAL_LINE_HEIGHT,
@@ -629,5 +630,73 @@ describe('SettingItemRow — number 步长', () => {
       expect(container.querySelector('input')!.getAttribute('step')).toBe('any');
       unmount();
     }
+  });
+});
+
+// VSCode settingsEditor2.updateChangedSetting:在设置编辑器里把值改回默认值 = 重置(写 undefined),
+// 不留下「等于默认值的 override」—— 否则竖条 / 读屏「已修改」/ 重置按钮 / `@modified` 都还在。
+describe('SettingItemRow — 改回默认值即重置', () => {
+  // setValue / reset 基于 live localStorage 读-改-写:清掉前面用例留下的持久化值。
+  beforeEach(() => localStorage.clear());
+
+  it('number:↑ 14 再改回默认 13 → 删除 override(localStorage 键一并删除),已修改指示消失', () => {
+    const s = spec({ id: 'editor.fontSize', title: '字号', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const row = container.querySelector('[data-setting-row="editor.fontSize"]')!;
+    const input = row.querySelector('input[type=number]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '14' } });
+    expect(useSettingsValuesStore.getState().values['editor.fontSize']).toBe(14);
+    expect(row.getAttribute('data-modified')).toBe('true');
+
+    fireEvent.change(input, { target: { value: '13' } });
+    expect(Object.hasOwn(useSettingsValuesStore.getState().values, 'editor.fontSize')).toBe(false);
+    const persisted = JSON.parse(localStorage.getItem(SETTINGS_VALUES_STORAGE_KEY) ?? '{}') as Record<string, unknown>;
+    expect(Object.hasOwn(persisted, 'editor.fontSize')).toBe(false);
+    expect(row.hasAttribute('data-modified')).toBe(false);
+    expect(row.querySelector('[data-testid="setting-modified-indicator"]')).toBeNull();
+    expect(input.value).toBe('13');
+  });
+
+  it('boolean / select / text 改回默认值同样删除 override', () => {
+    useSettingsValuesStore.setState({ values: { 'a.bool': true, 'a.sel': 'y', 'a.txt': 'hi' } });
+    const { container } = render(
+      <>
+        <SettingItemRow spec={spec({ id: 'a.bool', title: 'B' })} />
+        <SettingItemRow
+          spec={spec({
+            id: 'a.sel',
+            title: 'S',
+            type: 'select',
+            default: 'x',
+            enum: [
+              { value: 'x', label: 'X' },
+              { value: 'y', label: 'Y' },
+            ],
+          })}
+        />
+        <SettingItemRow spec={spec({ id: 'a.txt', title: 'T', type: 'text', default: '' })} />
+      </>,
+    );
+    fireEvent.click(container.querySelector('[data-setting-row="a.bool"] [role="switch"]')!);
+    fireEvent.click(
+      Array.from(container.querySelectorAll('[data-setting-row="a.sel"] [role="radio"]')).find(
+        (el) => el.textContent === 'X',
+      )!,
+    );
+    fireEvent.change(container.querySelector('[data-setting-row="a.txt"] input')!, { target: { value: '' } });
+    expect(useSettingsValuesStore.getState().values).toEqual({});
+  });
+
+  it('写入值与默认值不同 → 照常保存 override(对照)', () => {
+    const s = spec({ id: 'editor.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    fireEvent.change(container.querySelector('input[type=number]')!, { target: { value: '15' } });
+    expect(useSettingsValuesStore.getState().values['editor.fontSize']).toBe(15);
+  });
+
+  it('store.setValue(插件 / 其它调用方)语义不变:写默认值仍保存 override', () => {
+    act(() => useSettingsValuesStore.getState().setValue('editor.fontSize', 13));
+    expect(useSettingsValuesStore.getState().values['editor.fontSize']).toBe(13);
   });
 });

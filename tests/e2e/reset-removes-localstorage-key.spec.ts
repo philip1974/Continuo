@@ -5,6 +5,7 @@ import {
   EDITOR_TAB,
   SETTINGS,
   SETTINGS_NAV,
+  settingNumberInput,
 } from './helpers/settings';
 
 test('改 fontSize=20 → reset → values 不含 editor.fontSize', async ({
@@ -16,7 +17,7 @@ test('改 fontSize=20 → reset → values 不含 editor.fontSize', async ({
     .getByRole('button', { name: EDITOR_TAB })
     .click();
 
-  const fontInput = window.locator('input[type=number]').first();
+  const fontInput = settingNumberInput(window, 'editor.fontSize');
   await fontInput.fill('20');
   await window.waitForTimeout(200);
 

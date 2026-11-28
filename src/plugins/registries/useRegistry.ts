@@ -25,17 +25,38 @@ export function useRegistry<T>(
   selector?: () => readonly T[],
   deps: React.DependencyList = [],
 ): readonly T[] {
-  const [snap, setSnap] = useState<readonly T[]>(() =>
-    selector ? selector() : reg.getAll(),
-  );
+  const get = (): readonly T[] => (selector ? selector() : reg.getAll());
+  const key: React.DependencyList = [reg, ...deps];
+  const [state, setState] = useState<{ readonly key: React.DependencyList; readonly snap: readonly T[] }>(() => ({
+    key,
+    snap: get(),
+  }));
+  // deps(或 reg)变化:渲染期同步重算快照(React「根据上次渲染调整 state」:渲染期 setState 自身 state,React 丢弃本次输出
+  // 立刻重渲,不提交中间帧)。此前只在 effect 里 setSnap → 先提交一帧「新 deps + 旧快照」(设置页切分类:导航已是「编辑器」、
+  // 内容仍是「通用」的项,5–8ms)。
+  let current = state;
+  if (!depsEqual(state.key, key)) {
+    current = { key, snap: get() };
+    setState(current);
+  }
   useEffect(() => {
-    const get = (): readonly T[] => (selector ? selector() : reg.getAll());
-    setSnap(get());
-    return reg.subscribe(() => setSnap(get()));
+    // 订阅建立前 registry 可能已变(渲染 → effect 之间):先补读一次;快照未变(同一引用)不触发重渲。
+    const refresh = (): void => {
+      const snap = get();
+      setState((prev) => (prev.snap === snap ? prev : { key, snap }));
+    };
+    refresh();
+    return reg.subscribe(refresh);
     // selector 由 caller 控制闭包稳定性;deps 显式声明
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reg, ...deps]);
-  return snap;
+  }, key);
+  return current.snap;
+}
+
+function depsEqual(a: React.DependencyList, b: React.DependencyList): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i])) return false;
+  return true;
 }
 
 /**

@@ -638,6 +638,61 @@ describe('KeybindingCaptureModal — 录制区焦点 + Enter 保存(VSCode 录�
   });
 });
 
+// VSCode DefineKeybindingWidget:焦点始终在录键输入框(冲突提示「N 个现有命令…」不可获焦,mousedown preventDefault)。
+// 这里冲突项是可 Tab 到的按钮(键盘可达「显示相同的键绑定」),录到新组合时冲突列表重渲染 / 按钮卸载或变 disabled →
+// 焦点不得掉到 body,交回录制区。
+describe('KeybindingCaptureModal — 录到新组合时焦点不丢', () => {
+  function captureArea(): HTMLElement {
+    return document.querySelector<HTMLElement>('[data-testid="keybinding-capture-area"]')!;
+  }
+  const all: CommandSpec[] = [
+    { id: 'cmd.b', title: 'Other B', hotkey: 'ctrl+tab', fn: () => {} },
+    { id: 'cmd.c', title: 'Other C', hotkey: 'mod+y', fn: () => {} },
+  ];
+  function conflictButton(title: string): HTMLButtonElement {
+    const b = Array.from(document.querySelectorAll<HTMLButtonElement>('.wm-modal-content li button')).find((el) =>
+      el.textContent?.includes(title),
+    );
+    expect(b).toBeDefined();
+    return b!;
+  }
+
+  it('焦点在冲突命令按钮上,再录到无冲突组合(按钮卸载)→ 焦点回录制区', () => {
+    render(<KeybindingCaptureModal {...defaultProps({ allCommands: all })} />);
+    dispatchKey({ key: 'Tab', ctrlKey: true });
+    act(() => conflictButton('Other B').focus());
+    expect(document.activeElement).toBe(conflictButton('Other B'));
+    dispatchKey({ key: 'k', ctrlKey: true });
+    expect(document.querySelector('.wm-modal-content li button')).toBeNull();
+    expect(document.activeElement).toBe(captureArea());
+  });
+
+  it('焦点在冲突命令按钮上,再录到与另一命令冲突的组合 → 焦点同样交回录制区', () => {
+    render(<KeybindingCaptureModal {...defaultProps({ allCommands: all })} />);
+    dispatchKey({ key: 'Tab', ctrlKey: true });
+    act(() => conflictButton('Other B').focus());
+    dispatchKey({ key: 'y', ctrlKey: true });
+    expect(conflictButton('Other C')).toBeDefined();
+    expect(document.activeElement).toBe(captureArea());
+  });
+
+  it('焦点在「保存」上录到保留键(保存变 disabled)→ 焦点回录制区', () => {
+    render(<KeybindingCaptureModal {...defaultProps()} />);
+    dispatchKey({ key: 'k', ctrlKey: true });
+    act(() => getButton('保存').focus());
+    dispatchKey({ key: 'p', ctrlKey: true });
+    expect(getButton('保存').disabled).toBe(true);
+    expect(document.activeElement).toBe(captureArea());
+  });
+
+  it('焦点在仍可用的「取消」上录到组合 → 焦点留在「取消」(对照)', () => {
+    render(<KeybindingCaptureModal {...defaultProps()} />);
+    act(() => getButton('取消').focus());
+    dispatchKey({ key: 'k', ctrlKey: true });
+    expect(document.activeElement).toBe(getButton('取消'));
+  });
+});
+
 describe('KeybindingCaptureModal — visible 切换 → captured 复位', () => {
   it('false → true 时新一轮捕获从 null 开始', () => {
     const props = defaultProps({ visible: true });

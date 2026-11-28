@@ -7,6 +7,7 @@ import {
   SETTINGS,
   SETTINGS_NAV,
   visibleResetDefaultCount,
+  settingNumberInput,
 } from './helpers/settings';
 
 test('字号设置改后 reset 按钮出现 + 点击恢复 default', async ({ window }) => {
@@ -21,7 +22,7 @@ test('字号设置改后 reset 按钮出现 + 点击恢复 default', async ({ wi
     .click();
 
   // 找 number input(editor.fontSize 默认 13)
-  const fontSizeInput = window.locator('input[type=number]').first();
+  const fontSizeInput = settingNumberInput(window, 'editor.fontSize');
   await expect(fontSizeInput).toBeVisible();
   await expect(fontSizeInput).toHaveValue('13');
 

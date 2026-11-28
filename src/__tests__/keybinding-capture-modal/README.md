@@ -72,3 +72,10 @@ Backspace=unbind('');无修饰 Enter=保存已录组合;其它键 → 完整组�
 
 - defaultHotkey 缺 + captured!=='' → disabled
 - 否则 → onResetToDefault() + onClose
+
+### 录到新组合时焦点不丢
+
+- 对齐 VSCode `DefineKeybindingWidget`(焦点始终在录键输入框,冲突提示不可获焦):录到组合 / Backspace 清空后,
+  若按键前的焦点在冲突列表内(列表已换成新组合的冲突)、或该元素已卸载 / 变 disabled(如录到保留键时的「保存」),
+  焦点交回录制区,不掉到 body
+- 焦点在仍可用的按钮(如「取消」)上 → 保持不动

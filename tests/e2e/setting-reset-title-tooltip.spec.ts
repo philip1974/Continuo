@@ -6,6 +6,7 @@ import {
   resetDefaultButtons,
   SETTINGS,
   SETTINGS_NAV,
+  settingNumberInput,
 } from './helpers/settings';
 
 test('改 fontSize → reset 按钮 title 含 default 值', async ({ window }) => {
@@ -19,7 +20,7 @@ test('改 fontSize → reset 按钮 title 含 default 值', async ({ window }) =
     .click();
 
   // 改 fontSize 触发 override
-  const fontInput = window.locator('input[type=number]').first();
+  const fontInput = settingNumberInput(window, 'editor.fontSize');
   await fontInput.fill('15');
 
   // reset 按钮 title 含 'editor.fontSize 默认值 13'(默认值会出现在 title)

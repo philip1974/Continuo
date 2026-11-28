@@ -8,6 +8,7 @@ import {
   EDITOR_TAB,
   SETTINGS,
   SETTINGS_NAV,
+  settingNumberInput,
 } from './helpers/settings';
 import { launchContinuo } from './helpers/launch';
 import { waitForTestHooks } from './helpers/app-ready';
@@ -29,7 +30,7 @@ test('改 → reset → 重启同 ud → fontSize input 仍 13', async () => {
       .getByRole('button', { name: EDITOR_TAB })
       .dispatchEvent('click');
 
-    const fi1 = win1.locator('input[type=number]').first();
+    const fi1 = settingNumberInput(win1, 'editor.fontSize');
     await fi1.fill('20');
     await win1.waitForTimeout(150);
     await clickFirstVisibleResetDefault(win1);
@@ -59,7 +60,7 @@ test('改 → reset → 重启同 ud → fontSize input 仍 13', async () => {
       .getByRole('navigation', { name: SETTINGS_NAV })
       .getByRole('button', { name: EDITOR_TAB })
       .dispatchEvent('click');
-    await expect(win2.locator('input[type=number]').first()).toHaveValue('13');
+    await expect(settingNumberInput(win2, 'editor.fontSize')).toHaveValue('13');
     await app2.close();
   } finally {
     rmSync(ud, { recursive: true, force: true });

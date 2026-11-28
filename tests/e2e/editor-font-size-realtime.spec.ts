@@ -1,4 +1,4 @@
-import { CLOSE_SETTINGS, EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { CLOSE_SETTINGS, EDITOR_TAB, SETTINGS, SETTINGS_NAV, settingNumberInput } from './helpers/settings';
 // 编辑器字号 setting 改 → CodeMirror 容器 inline style.fontSize 实时同步.
 import { test, expect } from './fixtures/with-workspace';
 
@@ -23,7 +23,7 @@ test('editor.fontSize 改 → CodeMirror 容器 fontSize 同步', async ({
     .getByRole('button', { name: EDITOR_TAB })
     .click();
 
-  const fontInput = window.locator('input[type=number]').first();
+  const fontInput = settingNumberInput(window, 'editor.fontSize');
   await fontInput.fill('20');
   // 等 store 写入 + 重渲
   await window.waitForTimeout(200);
