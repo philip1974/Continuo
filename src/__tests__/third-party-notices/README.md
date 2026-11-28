@@ -9,10 +9,12 @@ Continuo 有若干代码与数据直接移植 / 复制自 Visual Studio Code(mic
   涉及的文件清单、MIT 全文(VSCode `LICENSE.txt`,「Copyright (c) 2015 - present Microsoft Corporation」)
 - 清单里的每个文件都存在
 - 源码文件头写了「Ported from microsoft/vscode」或「原样取自 VSCode」的文件都必须列在清单里(新增移植时不会漏登记)
-- 通用规则:源码文件头(开头的注释块)写了「Ported from <owner>/<repo>」→ 必须列在标题带「(<owner>/<repo>)」的那一节里
-  (旧写法「原样取自 VSCode」= microsoft/vscode)
-- 「CodeMirror (codemirror/search) · MIT License」一节:`src/panels/Editor/codemirror-find.ts` 里照抄的 `announceMatch` 与替换文本
-  处理(`unquote` + 正则 `getReplacement`,上游未导出),版权「Marijn Haverbeke and others」与 MIT 全文
+- 通用规则:源码注释(文件头,或文件中段某一段上方的段注释;`//` 与块注释,含 CSS)写了「Ported from <owner>/<repo>」→ 必须列在
+  标题带「(<owner>/<repo>)」的那一节里(旧写法「原样取自 VSCode」= microsoft/vscode);字符串里的同样文字不算
+- 高对比度色板:`src/styles/design-tokens.css` 的 `.hc-black` / `.hc-light`(colorRegistry hcDark / hcLight 默认)与 `src/styles/theme.css`
+  的 HC 值(hc_black.json / hc_light.json 语法色、gitDecoration / debug 的 hcDark / hcLight 默认)已登记
+- 「CodeMirror (codemirror/search) · MIT License」一节:`src/panels/Editor/codemirror-find.ts` 里照抄的 `announceMatch`、替换文本
+  处理(`unquote` + 正则 `getReplacement`)与移植自 `prevMatchInRange` 的 `lastMatchIn`(上游均未导出),版权「Marijn Haverbeke and others」与 MIT 全文
 - 打包配置把 `LICENSE-3RD-PARTY.md` 放进 `extraResources`
 
 ## 收录标准

@@ -160,7 +160,9 @@
   --md-contrast-active-border: transparent;
 }
 
-/* ── Continuo 自有槽位的高对比度值(VSCode hcDark / hcLight 默认;MD3 色板本体在 design-tokens.css .hc-black / .hc-light)──
+/* Ported from microsoft/vscode (MIT, © Microsoft Corporation; see LICENSE-3RD-PARTY.md):以下 .hc-black / .hc-light 的色值取自
+ * colorRegistry / debug / gitDecoration 的 hcDark / hcLight 默认值与 extensions/theme-defaults/themes/hc_black.json / hc_light.json。
+ * ── Continuo 自有槽位的高对比度值(VSCode hcDark / hcLight 默认;MD3 色板本体在 design-tokens.css .hc-black / .hc-light)──
  * 文字类对 HC 承载面(含调试执行行底、编辑器选区底)≥ 7:1,UI 类 ≥ 3:1。BDD:src/__tests__/high-contrast-theme/ */
 .hc-black {
   --md-contrast-border: #6fc3df;

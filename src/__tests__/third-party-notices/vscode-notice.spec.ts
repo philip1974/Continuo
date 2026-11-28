@@ -28,13 +28,14 @@ function listedFiles(): string[] {
 }
 
 /**
- * 源码文件头(开头的注释块)里的来源标记 → 上游仓库(owner/repo):「Ported from <owner>/<repo>」;旧写法「原样取自 VSCode」= microsoft/vscode。
+ * 源码注释里的来源标记 → 上游仓库(owner/repo):「Ported from <owner>/<repo>」;旧写法「原样取自 VSCode」= microsoft/vscode。
+ * 文件头与文件中段的段注释(`//` 与块注释,含 CSS)都算:只有一段移植的文件把标记写在那一段上方。
  * 声明在哪个仓库,就必须登记在标题带「(<owner>/<repo>)」的那一节。
  */
 function markedRepos(source: string): string[] {
-  const header = /^(?:\s*\/\/[^\n]*\n|\s*\/\*[\s\S]*?\*\/)*/.exec(source)?.[0] ?? '';
-  const repos = [...header.matchAll(/Ported from ([\w.-]+\/[\w.-]+)/g)].map((m) => m[1]!);
-  if (/原样取自 VSCode/.test(header)) repos.push('microsoft/vscode');
+  const comments = (source.match(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g) ?? []).join('\n');
+  const repos = [...comments.matchAll(/Ported from ([\w.-]+\/[\w.-]+)/g)].map((m) => m[1]!);
+  if (/原样取自 VSCode/.test(comments)) repos.push('microsoft/vscode');
   return [...new Set(repos)];
 }
 
@@ -79,6 +80,15 @@ describe('LICENSE-3RD-PARTY.md:Visual Studio Code', () => {
     expect(marked.filter((f) => !listed.has(f))).toEqual([]);
   });
 
+  it('段注释(文件中段、CSS 块注释)里的标记也识别:高对比度色板与 theme.css 的 HC 值', () => {
+    expect(markedRepos('a {}\n/* x\n * Ported from microsoft/vscode (MIT)\n */\n.b {}')).toEqual(['microsoft/vscode']);
+    expect(markedRepos('const a = 1;\n// Ported from codemirror/search\nfunction f() {}')).toEqual(['codemirror/search']);
+    expect(markedRepos("const s = 'Ported from microsoft/vscode';")).toEqual([]);
+    for (const f of ['src/styles/design-tokens.css', 'src/styles/theme.css']) {
+      expect(markedRepos(readFileSync(path.join(ROOT, f), 'utf8')), f).toContain('microsoft/vscode');
+    }
+  });
+
   it('打包:LICENSE-3RD-PARTY.md 进 extraResources(安装包 resources/licenses/)', () => {
     const yml = readFileSync(path.join(ROOT, 'electron-builder.yml'), 'utf8');
     const extra = yml.slice(yml.indexOf('\nextraResources:'), yml.indexOf('\nextraMetadata:'));
@@ -104,6 +114,8 @@ describe('LICENSE-3RD-PARTY.md:文件头来源标记(通用)', () => {
     const cm = section('CodeMirror (codemirror/search) · MIT License');
     expect(cm).toContain('https://github.com/codemirror/search');
     expect(listedFilesIn(cm)).toContain('src/panels/Editor/codemirror-find.ts');
+    expect(cm).toContain('lastMatchIn');
+    expect(cm).toContain('prevMatchInRange');
     const text = notice.slice(notice.indexOf('## MIT License text (CodeMirror)'));
     expect(text).toContain('Copyright (C) 2018-2021 by Marijn Haverbeke');
     expect(text).toContain('Permission is hereby granted, free of charge');

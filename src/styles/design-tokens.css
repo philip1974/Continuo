@@ -154,7 +154,10 @@
   --wm-shadow-popover: 0 14px 40px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.35);
 }
 
-/* 高对比度深色(VSCode「Dark High Contrast」,workbench class hc-black;<html> 同时带 .dark —— 本块排在 .dark 之后,
+/* Ported from microsoft/vscode (MIT, © Microsoft Corporation; see LICENSE-3RD-PARTY.md):.hc-black / .hc-light 的色值取自
+ * src/vs/platform/theme/common/colors/*.ts(colorRegistry)的 hcDark / hcLight 默认值(部分为满足对比度提亮 / 加深)。
+ *
+ * 高对比度深色(VSCode「Dark High Contrast」,workbench class hc-black;<html> 同时带 .dark —— 本块排在 .dark 之后,
  * 同特异性后者胜)。取值照 VSCode colorRegistry 的 hcDark 默认:画布 / 面板 / 侧栏全黑(editor / sideBar / panel
  * .background),前景白;分隔线 / 控件边框 = contrastBorder #6fc3df(--md-outline-variant,全部 border-line 随之);焦点 =
  * focusBorder #f38518。主色(选中 / 活动指示、文字强调)取 contrastActiveBorder 同色相、提亮到对悬停底 ≥ 7:1。

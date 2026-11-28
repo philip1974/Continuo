@@ -53,14 +53,15 @@ Code and data ported or copied from <https://github.com/microsoft/vscode> (© Mi
 - `electron/shared/host-color-scheme.ts` — `hostColorSchemeFromNativeTheme` ported from `getColorScheme` in `src/vs/platform/theme/electron-main/themeMainServiceImpl.ts`.
 - `electron/shared/text-encoding.ts` — encoding ids, labels and order from `SUPPORTED_ENCODINGS` (`src/vs/workbench/services/textfile/common/encoding.ts`); subset.
 - `src/panels/Terminal/useTerminal.ts` — high-contrast terminal palettes from the `hcDark` / `hcLight` defaults in `src/vs/workbench/contrib/terminal/common/terminalColorRegistry.ts`.
-- `src/styles/theme.css` — high-contrast light syntax colors from `extensions/theme-defaults/themes/hc_light.json` (some darkened for contrast).
+- `src/styles/theme.css` — high-contrast (`.hc-black` / `.hc-light`) values of Continuo's own slots: syntax colors from `extensions/theme-defaults/themes/hc_black.json` / `hc_light.json`, and the `hcDark` / `hcLight` defaults of `contrastBorder` / `contrastActiveBorder`, debug breakpoint / stack-frame colors, `list.highlightForeground`, `textLink.foreground` and `gitDecoration.*` (some lightened / darkened for contrast).
+- `src/styles/design-tokens.css` — the `.hc-black` / `.hc-light` palettes from the `hcDark` / `hcLight` defaults in `src/vs/platform/theme/common/colors/*.ts` (color registry; some lightened / darkened for contrast).
 - `src/panels/Editor/copy-html.ts` — copy-with-syntax-highlighting HTML: `tokenizeLineToHTML` ported from `src/vs/editor/common/languages/textToHtmlTokenizer.ts`, outer wrapper from `getRichTextToCopy` (`src/vs/editor/common/viewModel/viewModelImpl.ts`).
 
 ## CodeMirror (codemirror/search) · MIT License
 
 Code copied from <https://github.com/codemirror/search> (`@codemirror/search`, © Marijn Haverbeke and others) where the package does not export it. Full license text: [MIT License text (CodeMirror)](#mit-license-text-codemirror).
 
-- `src/panels/Editor/codemirror-find.ts` — `announceMatch` and the replacement-string handling (`unquote` + regexp `getReplacement`) copied from `src/search.ts`.
+- `src/panels/Editor/codemirror-find.ts` — `announceMatch` and the replacement-string handling (`unquote` + regexp `getReplacement`) copied from `src/search.ts`; `lastMatchIn` ported from `RegExpQuery.prevMatchInRange` in the same file.
 
 ## vscode-js-debug · MIT License
 

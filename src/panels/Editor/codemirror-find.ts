@@ -9,8 +9,8 @@
 // CodeEditor(代码文件 + Markdown 源码)与 Markdown 代码块(经 markdownCodeBlockTheme)共用。
 // BDD: src/__tests__/editor-find-widget/
 //
-// Ported from codemirror/search (MIT, © Marijn Haverbeke and others; see LICENSE-3RD-PARTY.md):announceMatch 与
-// replacementFor(unquote + getReplacement)两段照抄自 @codemirror/search src/search.ts(其未导出)。
+// Ported from codemirror/search (MIT, © Marijn Haverbeke and others; see LICENSE-3RD-PARTY.md):announceMatch、
+// replacementFor(unquote + getReplacement)与 lastMatchIn(prevMatchInRange)照抄 / 移植自 @codemirror/search src/search.ts(其未导出)。
 
 import { EditorSelection, Prec, type ChangeDesc, type EditorState, type Extension } from '@codemirror/state';
 import { EditorView, ViewPlugin, keymap, type Command, type ViewUpdate } from '@codemirror/view';
@@ -151,6 +151,7 @@ function searchFrom(state: EditorState, q: SearchQuery, pos: number): Match | nu
 /** 向前找的块大小(同 @codemirror/search 的 FindPrev.ChunkSize)。 */
 const PREV_CHUNK = 10000;
 
+// Ported from codemirror/search(RegExpQuery.prevMatchInRange,见文件头)。
 /**
  * [from, to] 内最后一个匹配(跳过恰在 skip 处的空匹配)。同 @codemirror/search 正则查询的 prevMatchInRange:从 to 往前按块逐步
  * 扩大范围正向扫;匹配离块起点太近可能是被截断的更长匹配,继续扩大。
