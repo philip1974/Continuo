@@ -19,6 +19,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
 import { loadSettings } from './services/settings.service';
+import { loadUserSettings } from './services/user-settings.service';
+import { registerUserSettingsSnapshotIpc } from './ipc/user-settings.ipc';
 import { loadWindowTheme } from './services/window-theme.service';
 import { loadWindowZoom, trackWindowZoom } from './services/window-zoom.service';
 import { getMainT, type MainT } from './i18n';
@@ -285,6 +287,9 @@ ipcMain.on(WINDOW_ID_CHANNEL, (event: IpcMainEvent) => {
   // file:// / 同源 dev URL → 受信。
   event.returnValue = trustedSenderWindow(event)?.id ?? 0;
 });
+
+// 用户设置值 / 快捷键覆盖的同步快照(renderer 首帧前读;见 ipc/user-settings.ipc)。
+registerUserSettingsSnapshotIpc();
 
 ipcMain.on(
   LAYOUT_CHANNELS.FLUSH_ACK,
@@ -1510,6 +1515,8 @@ app.whenReady().then(async () => {
     loadWindowTheme(),
     // 窗口缩放级别(设置项 window.zoomLevel 的上次值)同理:首窗加载即按它缩放。
     loadWindowZoom(),
+    // 用户设置值 / 快捷键覆盖:renderer 首帧前经同步快照读取(永不抛)。
+    loadUserSettings(),
   ]);
   // 启动时的 explorer.json(迁移 / 收敛之后):首窗几何在建窗前取用,启动多窗恢复复用同一份读取。读与下方菜单 / MCP host
   // 启动并行。

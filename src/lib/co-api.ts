@@ -57,6 +57,8 @@ function readLiveApi(): ContinuoApi | undefined {
 export function captureLmApi(): void {
   const api = readLiveApi();
   if (!api) {
+    // 入口模块(main.tsx 定首帧主题时读设置快照)已先领取并缓存:bootstrap 只给一次,这里拿到 null 属正常。
+    if (_cached) return;
     console.warn('[lm-api] window.__lmApi/api 未注入,LM UI 后续调用会抛');
     return;
   }

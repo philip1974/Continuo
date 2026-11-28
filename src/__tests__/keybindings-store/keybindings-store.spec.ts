@@ -1,9 +1,26 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   useKeybindingsStore,
   getEffectiveHotkey,
 } from '../../plugins/keybindings/keybindings-store';
 import type { CommandSpec } from '../../plugins/registries/CommandRegistry';
+import {
+  createFakeUserSettingsMain,
+  flushUserSettings,
+  uninstallUserSettingsHost,
+  type FakeUserSettingsMain,
+} from '../_helpers/fake-user-settings-main';
+
+type KeybindingsStoreModule = typeof import('../../plugins/keybindings/keybindings-store');
+
+/** 一个「窗口」:装上该窗口的 host 后重新加载 keybindings-store(store 创建时读 main 快照)。 */
+async function openWindow(main: FakeUserSettingsMain): Promise<KeybindingsStoreModule> {
+  vi.resetModules();
+  main.install();
+  return import('../../plugins/keybindings/keybindings-store');
+}
+
+afterEach(() => uninstallUserSettingsHost());
 
 const open: CommandSpec = {
   id: 'settings.open',
@@ -65,60 +82,43 @@ describe('keybindings-store', () => {
     expect(useKeybindingsStore.getState().overrides['settings.open']).toBe('');
   });
 
-  it('setHotkey 持久化 localStorage', () => {
-    useKeybindingsStore.getState().setHotkey('foo.bar', 'mod+x');
-    const raw = globalThis.localStorage.getItem(
-      'continuo.keybindings.overrides',
-    );
-    expect(raw).not.toBeNull();
-    expect(JSON.parse(raw!)).toEqual({ 'foo.bar': 'mod+x' });
+  it('setHotkey 立即生效,并以增量发给 main(main 写盘后两边一致)', async () => {
+    const main = createFakeUserSettingsMain();
+    const w = await openWindow(main);
+    w.useKeybindingsStore.getState().setHotkey('foo.bar', 'mod+x');
+    expect(w.useKeybindingsStore.getState().overrides).toEqual({ 'foo.bar': 'mod+x' });
+    expect(main.calls).toEqual([{ kind: 'update', scope: 'keybindings', set: { 'foo.bar': 'mod+x' }, remove: [] }]);
+    await flushUserSettings();
+    expect(main.record('keybindings')).toEqual({ 'foo.bar': 'mod+x' });
+    expect(main.record('settings')).toEqual({}); // 两类记录分开存
   });
 
-  it('setHotkey 写入相同值且内存已同步时不通知订阅者且不重复写 localStorage', () => {
-    const overrides = { 'foo.bar': 'mod+x' };
-    globalThis.localStorage.setItem(
-      'continuo.keybindings.overrides',
-      JSON.stringify(overrides),
-    );
-    useKeybindingsStore.setState({ overrides });
-    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-    const objectKeysSpy = vi.spyOn(Object, 'keys');
+  it('setHotkey 写入相同值时不通知订阅者且不发给 main', async () => {
+    const main = createFakeUserSettingsMain({ keybindings: { record: { 'foo.bar': 'mod+x' } } });
+    const w = await openWindow(main);
+    const overrides = w.useKeybindingsStore.getState().overrides;
     const listener = vi.fn();
-    const unsubscribe = useKeybindingsStore.subscribe(listener);
-
+    const unsubscribe = w.useKeybindingsStore.subscribe(listener);
     try {
-      useKeybindingsStore.getState().setHotkey('foo.bar', 'mod+x');
-      const objectKeysCalls = objectKeysSpy.mock.calls.length;
-
-      expect(useKeybindingsStore.getState().overrides).toBe(overrides);
-      expect(setItemSpy).not.toHaveBeenCalled();
-      expect(objectKeysCalls).toBe(0);
+      w.useKeybindingsStore.getState().setHotkey('foo.bar', 'mod+x');
+      await flushUserSettings();
+      expect(w.useKeybindingsStore.getState().overrides).toBe(overrides);
+      expect(main.calls).toEqual([]);
       expect(listener).not.toHaveBeenCalled();
     } finally {
       unsubscribe();
-      objectKeysSpy.mockRestore();
-      setItemSpy.mockRestore();
     }
   });
 
-  it('storage 同步读到相同 overrides 内容时不通知订阅者', () => {
-    const overrides = { 'foo.bar': 'mod+x' };
-    globalThis.localStorage.setItem(
-      'continuo.keybindings.overrides',
-      JSON.stringify(overrides),
-    );
-    useKeybindingsStore.setState({ overrides });
+  it('main 广播内容相同的 overrides 时不通知订阅者', async () => {
+    const main = createFakeUserSettingsMain({ keybindings: { record: { 'foo.bar': 'mod+x' } } });
+    const w = await openWindow(main);
+    const overrides = w.useKeybindingsStore.getState().overrides;
     const listener = vi.fn();
-    const unsubscribe = useKeybindingsStore.subscribe(listener);
-
+    const unsubscribe = w.useKeybindingsStore.subscribe(listener);
     try {
-      window.dispatchEvent(
-        new StorageEvent('storage', {
-          key: 'continuo.keybindings.overrides',
-        }),
-      );
-
-      expect(useKeybindingsStore.getState().overrides).toBe(overrides);
+      main.rebroadcast('keybindings');
+      expect(w.useKeybindingsStore.getState().overrides).toBe(overrides);
       expect(listener).not.toHaveBeenCalled();
     } finally {
       unsubscribe();
@@ -143,24 +143,21 @@ describe('keybindings-store', () => {
   });
 });
 
-describe('keybindings-store · localStorage 错误兜底', () => {
-  beforeEach(() => {
-    globalThis.localStorage.clear();
-    useKeybindingsStore.setState({ overrides: {} });
-  });
-
-  it('writeStored 抛(quota)→ 静默,in-memory 仍写入', () => {
-    const original = globalThis.localStorage.setItem;
-    globalThis.localStorage.setItem = () => {
-      throw new Error('QuotaExceededError');
-    };
+describe('keybindings-store · 写盘失败', () => {
+  it('main 写盘失败 → 回滚到上次有效状态,不抛', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
-      expect(() =>
-        useKeybindingsStore.getState().setHotkey('a', 'mod+a'),
-      ).not.toThrow();
-      expect(useKeybindingsStore.getState().overrides.a).toBe('mod+a');
+      const main = createFakeUserSettingsMain({ keybindings: { record: { b: 'mod+b' } } });
+      const w = await openWindow(main);
+      main.failNextUpdate('HANDLER_ERROR');
+      expect(() => w.useKeybindingsStore.getState().setHotkey('a', 'mod+a')).not.toThrow();
+      await flushUserSettings();
+      expect(w.useKeybindingsStore.getState().overrides).toEqual({ b: 'mod+b' });
+      expect(error).toHaveBeenCalled();
     } finally {
-      globalThis.localStorage.setItem = original;
+      error.mockRestore();
+      warn.mockRestore();
     }
   });
 });
@@ -204,61 +201,52 @@ describe('keybindings-store · readStored 防御', () => {
   });
 });
 
-// race(R6,values-store 同型):多窗口 lost update —— 基于 live localStorage merge 单 key,不整表覆盖别窗 key。
+// race(R6/R113,values-store 同型):多窗口 lost update —— 只发增量、由 main 串行读-改-写,不整表覆盖别窗 key。
 describe('keybindings-store · R6 多窗口 lost update', () => {
-  it('setHotkey 基于 live localStorage merge:不丢别窗已写的 override', () => {
-    globalThis.localStorage.setItem(
-      'continuo.keybindings.overrides',
-      JSON.stringify({ 'cmd.a': 'mod+a', 'cmd.b': 'mod+b' }),
-    );
-    useKeybindingsStore.setState({ overrides: { 'cmd.a': 'mod+a' } }); // 陈旧快照只有 a
-    useKeybindingsStore.getState().setHotkey('cmd.a', 'mod+shift+a');
-    const persisted = JSON.parse(
-      globalThis.localStorage.getItem('continuo.keybindings.overrides')!,
-    );
-    expect(persisted).toEqual({ 'cmd.a': 'mod+shift+a', 'cmd.b': 'mod+b' });
+  it('两个窗口同时改不同命令 → 两个都保留,两窗收敛', async () => {
+    const main = createFakeUserSettingsMain({ keybindings: { record: { 'cmd.a': 'mod+a' } } });
+    const a = await openWindow(main);
+    const b = await openWindow(main);
+    a.useKeybindingsStore.getState().setHotkey('cmd.a', 'mod+shift+a');
+    b.useKeybindingsStore.getState().setHotkey('cmd.b', 'mod+b');
+    await flushUserSettings();
+    const merged = { 'cmd.a': 'mod+shift+a', 'cmd.b': 'mod+b' };
+    expect(main.record('keybindings')).toEqual(merged);
+    expect(a.useKeybindingsStore.getState().overrides).toEqual(merged);
+    expect(b.useKeybindingsStore.getState().overrides).toEqual(merged);
   });
 
-  it('reset 基于 live localStorage:删自己 override 不丢别窗 override', () => {
-    globalThis.localStorage.setItem(
-      'continuo.keybindings.overrides',
-      JSON.stringify({ 'cmd.a': 'mod+a', 'cmd.b': 'mod+b' }),
-    );
-    useKeybindingsStore.setState({ overrides: { 'cmd.a': 'mod+a' } });
-    useKeybindingsStore.getState().reset('cmd.a');
-    const persisted = JSON.parse(
-      globalThis.localStorage.getItem('continuo.keybindings.overrides')!,
-    );
-    expect(persisted).toEqual({ 'cmd.b': 'mod+b' });
+  it('reset 删自己 override 不丢别窗 override', async () => {
+    const main = createFakeUserSettingsMain({ keybindings: { record: { 'cmd.a': 'mod+a' } } });
+    const a = await openWindow(main);
+    const b = await openWindow(main);
+    b.useKeybindingsStore.getState().setHotkey('cmd.b', 'mod+b');
+    a.useKeybindingsStore.getState().reset('cmd.a');
+    await flushUserSettings();
+    expect(main.record('keybindings')).toEqual({ 'cmd.b': 'mod+b' });
   });
 
-  // 边界(E240,E145 写端对偶):读端 valueGuard 复用写端 HOTKEY_SHAPE_RE。篡改/旧版本残留的畸形
-  // localStorage override(mod++s 空段等)被读端放行会让 compileCombo 当成 mod+s 参与全局快捷键匹配 →
-  // 意外触发命令。读端只接受 '' 或形态合法值,其余丢弃(降级默认),与写端语义一致。
-  it('E240 读回畸形 override(mod++s 空段)→ 丢弃,不混入有效快捷键', () => {
-    // 直接写畸形 localStorage(模拟篡改/旧版本残留),含一个合法 + 一个畸形 + 一个空(unbind)。
-    globalThis.localStorage.setItem(
-      'continuo.keybindings.overrides',
-      JSON.stringify({
-        'cmd.good': 'mod+shift+x', // 合法 → 保留
-        'cmd.bad': 'mod++s', // 空段畸形 → 丢弃
-        'cmd.unbind': '', // 空串 unbind → 保留
-        'cmd.space': 'mod+ s', // 含空白畸形 → 丢弃
-      }),
-    );
-    // 经 storage 事件触发读端重读(同跨窗同步路径)。
-    window.dispatchEvent(
-      new StorageEvent('storage', {
-        key: 'continuo.keybindings.overrides',
-        newValue: globalThis.localStorage.getItem(
-          'continuo.keybindings.overrides',
-        ),
-      }),
-    );
-    const ov = useKeybindingsStore.getState().overrides;
-    expect(ov['cmd.good']).toBe('mod+shift+x'); // 合法保留
-    expect(ov['cmd.unbind']).toBe(''); // unbind 保留
-    expect('cmd.bad' in ov).toBe(false); // 畸形丢弃
-    expect('cmd.space' in ov).toBe(false); // 畸形丢弃
+  // 边界(E240,E145 写端对偶):读端 valueGuard 复用写端 isValidHotkeyShape。main 只校验「字符串 + 长度」,
+  // 篡改 / 旧版本残留的畸形 override(mod++s 空段等)被放行会让 compileCombo 当成 mod+s 参与全局快捷键匹配 →
+  // 意外触发命令。快照与广播都经读端守卫:只接受 '' 或形态合法值,其余丢弃(降级默认)。
+  it('E240 快照 / 广播里的畸形 override(mod++s 空段)→ 丢弃,不混入有效快捷键', async () => {
+    const bad = {
+      'cmd.good': 'mod+shift+x', // 合法 → 保留
+      'cmd.bad': 'mod++s', // 空段畸形 → 丢弃
+      'cmd.unbind': '', // 空串 unbind → 保留
+      'cmd.space': 'mod+ s', // 含空白畸形 → 丢弃
+    };
+    const main = createFakeUserSettingsMain({ keybindings: { record: bad } });
+    const w = await openWindow(main);
+    const check = (ov: Record<string, string>): void => {
+      expect(ov['cmd.good']).toBe('mod+shift+x');
+      expect(ov['cmd.unbind']).toBe('');
+      expect('cmd.bad' in ov).toBe(false);
+      expect('cmd.space' in ov).toBe(false);
+    };
+    check(w.useKeybindingsStore.getState().overrides);
+    main.externalUpdate('keybindings', { 'cmd.bad2': 'shift++' });
+    check(w.useKeybindingsStore.getState().overrides);
+    expect('cmd.bad2' in w.useKeybindingsStore.getState().overrides).toBe(false);
   });
 });

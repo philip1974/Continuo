@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
@@ -9,13 +9,21 @@ import {
   type SettingItemSpec,
 } from '../../plugins/registries/SettingItemRegistry';
 import { useSettingsValuesStore } from '../../plugins/settings/values-store';
-import { SETTINGS_VALUES_STORAGE_KEY } from '../../plugins/settings/storage-key';
+import { flushUserSettings } from '../_helpers/fake-user-settings-main';
 import {
   EDITOR_LINE_HEIGHT,
   TERMINAL_LINE_HEIGHT,
   WINDOW_ZOOM_LEVEL,
   languageSettingSpec,
 } from '../../plugins/settings/core-setting-specs';
+
+// 设置值的权威存储在 main:在 values-store 模块创建(读 main 快照、订阅广播)之前装上内存版 main。
+const fakeMain = await vi.hoisted(async () => {
+  const { createFakeUserSettingsMain } = await import('../_helpers/fake-user-settings-main');
+  const main = createFakeUserSettingsMain();
+  main.install();
+  return main;
+});
 
 beforeEach(() => {
   useSettingsValuesStore.setState({ values: {} });
@@ -636,10 +644,7 @@ describe('SettingItemRow — number 步长', () => {
 // VSCode settingsEditor2.updateChangedSetting:在设置编辑器里把值改回默认值 = 重置(写 undefined),
 // 不留下「等于默认值的 override」—— 否则竖条 / 读屏「已修改」/ 重置按钮 / `@modified` 都还在。
 describe('SettingItemRow — 改回默认值即重置', () => {
-  // setValue / reset 基于 live localStorage 读-改-写:清掉前面用例留下的持久化值。
-  beforeEach(() => localStorage.clear());
-
-  it('number:↑ 14 再改回默认 13 → 删除 override(localStorage 键一并删除),已修改指示消失', () => {
+  it('number:↑ 14 再改回默认 13 → 删除 override(main 记录里的键一并删除),已修改指示消失', async () => {
     const s = spec({ id: 'editor.fontSize', title: '字号', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);
     const row = container.querySelector('[data-setting-row="editor.fontSize"]')!;
@@ -648,11 +653,14 @@ describe('SettingItemRow — 改回默认值即重置', () => {
     fireEvent.change(input, { target: { value: '14' } });
     expect(useSettingsValuesStore.getState().values['editor.fontSize']).toBe(14);
     expect(row.getAttribute('data-modified')).toBe('true');
+    await act(flushUserSettings);
+    expect(fakeMain.record('settings')['editor.fontSize']).toBe(14);
 
     fireEvent.change(input, { target: { value: '13' } });
     expect(Object.hasOwn(useSettingsValuesStore.getState().values, 'editor.fontSize')).toBe(false);
-    const persisted = JSON.parse(localStorage.getItem(SETTINGS_VALUES_STORAGE_KEY) ?? '{}') as Record<string, unknown>;
-    expect(Object.hasOwn(persisted, 'editor.fontSize')).toBe(false);
+    await act(flushUserSettings);
+    expect(Object.hasOwn(fakeMain.record('settings'), 'editor.fontSize')).toBe(false);
+    expect(Object.hasOwn(useSettingsValuesStore.getState().values, 'editor.fontSize')).toBe(false);
     expect(row.hasAttribute('data-modified')).toBe(false);
     expect(row.querySelector('[data-testid="setting-modified-indicator"]')).toBeNull();
     expect(input.value).toBe('13');

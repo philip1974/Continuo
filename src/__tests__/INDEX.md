@@ -2490,6 +2490,12 @@
 
 - [`use-stable-callback.spec.tsx`](./use-stable-callback/use-stable-callback.spec.tsx)
 
+## [user-settings-main-store(设置值与快捷键覆盖存在主进程文件)](./user-settings-main-store/README.md)
+
+- [`renderer-main-roundtrip.spec.ts`](./user-settings-main-store/renderer-main-roundtrip.spec.ts)
+- [`user-settings-ipc.spec.ts`](./user-settings-main-store/user-settings-ipc.spec.ts)
+- [`user-settings-service.spec.ts`](./user-settings-main-store/user-settings-service.spec.ts)
+
 ## [wc-gone-hook · 何时回收 webContents 名下的 main 侧资源](./wc-gone-hook/README.md)
 
 - [`wc-gone-hook-navigation.spec.ts`](./wc-gone-hook/wc-gone-hook-navigation.spec.ts)

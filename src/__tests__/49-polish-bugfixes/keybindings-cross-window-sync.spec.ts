@@ -1,65 +1,52 @@
 // @vitest-environment jsdom
-// 第二十二轮 P2-BA:keybindings-store 跨窗口 storage 同步。
+// 第二十二轮 P2-BA:keybindings-store 跨窗口同步。
 //
-// 根因:overrides 用 localStorage 持久化,但 zustand 内存快照只在本窗启动时读一次。
-// 多窗口下窗口 A 改/解绑快捷键 → 写 localStorage,窗口 B 内存仍是旧值 → B 的
-// useCommandHotkeys 仍按旧绑定派发键盘,设置 tab / CommandPalette 显示陈旧 hotkey,
-// 直到 B 重载才收敛。修复镜像 settings values-store 的同款 storage 监听。
+// 根因:zustand 内存快照只在本窗启动时读一次。多窗口下窗口 A 改/解绑快捷键,窗口 B 内存仍是旧值 → B 的
+// useCommandHotkeys 仍按旧绑定派发键盘,设置 tab / CommandPalette 显示陈旧 hotkey,直到 B 重载才收敛。
+// 快捷键覆盖迁到主进程文件后由 main 广播(此前是 localStorage 的 storage 事件),见 src/__tests__/user-settings-main-store/。
 // 见 README "第二十二轮"。被测:src/plugins/keybindings/keybindings-store.ts。
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import {
+  createFakeUserSettingsMain,
+  uninstallUserSettingsHost,
+  type FakeUserSettingsMain,
+} from '../_helpers/fake-user-settings-main';
 
-const STORAGE_KEY = 'continuo.keybindings.overrides';
+async function openWindow(main: FakeUserSettingsMain) {
+  vi.resetModules();
+  main.install();
+  return import('../../plugins/keybindings/keybindings-store');
+}
 
-beforeEach(() => {
-  localStorage.clear();
-  useKeybindingsStore.setState({ overrides: {} });
-});
+afterEach(() => uninstallUserSettingsHost());
 
-describe('topic49 P2-BA · keybindings 跨窗口 storage 同步', () => {
-  it('别窗改了 localStorage(storage 事件)→ 本窗 overrides 重读到新绑定', () => {
-    const next = { 'editor.save': 'mod+shift+s' };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    window.dispatchEvent(
-      new StorageEvent('storage', {
-        key: STORAGE_KEY,
-        newValue: JSON.stringify(next),
-      }),
-    );
-    expect(useKeybindingsStore.getState().overrides['editor.save']).toBe(
-      'mod+shift+s',
-    );
+describe('topic49 P2-BA · keybindings 跨窗口同步', () => {
+  it('别窗改了快捷键(main 广播)→ 本窗 overrides 更新到新绑定', async () => {
+    const main = createFakeUserSettingsMain();
+    const b = await openWindow(main);
+    main.externalUpdate('keybindings', { 'editor.save': 'mod+shift+s' });
+    expect(b.useKeybindingsStore.getState().overrides['editor.save']).toBe('mod+shift+s');
   });
 
-  it('别窗解绑(空字符串)→ 本窗收敛到 unbind 语义', () => {
-    useKeybindingsStore.setState({ overrides: { 'editor.save': 'mod+s' } });
-    const next = { 'editor.save': '' };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    window.dispatchEvent(
-      new StorageEvent('storage', {
-        key: STORAGE_KEY,
-        newValue: JSON.stringify(next),
-      }),
-    );
-    expect(useKeybindingsStore.getState().overrides['editor.save']).toBe('');
+  it('别窗解绑(空字符串)→ 本窗收敛到 unbind 语义', async () => {
+    const main = createFakeUserSettingsMain({ keybindings: { record: { 'editor.save': 'mod+s' } } });
+    const b = await openWindow(main);
+    main.externalUpdate('keybindings', { 'editor.save': '' });
+    expect(b.useKeybindingsStore.getState().overrides['editor.save']).toBe('');
   });
 
-  it('storage 事件 key 不是本 store 的 key → 忽略', () => {
-    useKeybindingsStore.setState({ overrides: { 'editor.save': 'mod+s' } });
-    localStorage.setItem('some.other.key', 'x');
-    window.dispatchEvent(
-      new StorageEvent('storage', { key: 'some.other.key', newValue: 'x' }),
-    );
-    expect(useKeybindingsStore.getState().overrides['editor.save']).toBe('mod+s');
+  it('只收本类记录的广播:设置值的变化不动 overrides', async () => {
+    const main = createFakeUserSettingsMain({ keybindings: { record: { 'editor.save': 'mod+s' } } });
+    const b = await openWindow(main);
+    main.externalUpdate('settings', { 'editor.save': 'x' });
+    expect(b.useKeybindingsStore.getState().overrides).toEqual({ 'editor.save': 'mod+s' });
   });
 
-  it('别窗清空全部 override→ 本窗 overrides 收敛为空', () => {
-    useKeybindingsStore.setState({ overrides: { 'editor.save': 'mod+s' } });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({}));
-    window.dispatchEvent(
-      new StorageEvent('storage', { key: STORAGE_KEY, newValue: '{}' }),
-    );
-    expect(useKeybindingsStore.getState().overrides['editor.save']).toBeUndefined();
+  it('别窗恢复默认 → 本窗 overrides 收敛为空', async () => {
+    const main = createFakeUserSettingsMain({ keybindings: { record: { 'editor.save': 'mod+s' } } });
+    const b = await openWindow(main);
+    main.externalUpdate('keybindings', {}, ['editor.save']);
+    expect(b.useKeybindingsStore.getState().overrides['editor.save']).toBeUndefined();
   });
 });

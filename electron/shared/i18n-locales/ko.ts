@@ -930,6 +930,12 @@ export const ko: Record<TranslationKey, string> = {
   'settings.trusted_domains.empty': '추가한 도메인 없음',
   'settings.trusted_domains.not_saved':
     '저장된 신뢰할 수 있는 도메인을 읽을 수 없습니다. 지금 변경한 내용은 Continuo를 종료할 때까지만 적용되며 저장되지 않습니다.',
+  'settings.persist.save_failed': '설정을 저장하지 못했습니다. 방금 변경한 내용은 유지되지 않았습니다.',
+  'settings.persist.not_saved':
+    '저장된 설정을 읽을 수 없습니다. 지금 변경한 내용은 Continuo를 종료할 때까지만 적용되며 저장되지 않습니다.',
+  'keybindings.persist.save_failed': '단축키를 저장하지 못했습니다. 방금 변경한 내용은 유지되지 않았습니다.',
+  'keybindings.persist.not_saved':
+    '저장된 단축키를 읽을 수 없습니다. 지금 변경한 내용은 Continuo를 종료할 때까지만 적용되며 저장되지 않습니다.',
   'commands.preferences.manage_trusted_domains.title': '신뢰할 수 있는 도메인 관리',
   'panels.editor.link.blocked_scheme': '보안상의 이유로 이 링크를 열지 않았습니다: {scheme}',
   'panels.editor.unicode.ambiguous': '{char} 문자는 소스 코드에서 더 일반적인 ASCII 문자 {ascii}와(과) 혼동될 수 있습니다.',

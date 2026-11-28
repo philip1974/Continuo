@@ -955,6 +955,12 @@ export const en = {
   'settings.trusted_domains.empty': 'No domains added yet',
   'settings.trusted_domains.not_saved':
     'The saved trusted domains could not be read. Changes made now apply only until Continuo quits and will not be saved.',
+  'settings.persist.save_failed': 'Failed to save settings. The last change was not kept.',
+  'settings.persist.not_saved':
+    'The saved settings could not be read. Changes made now apply only until Continuo quits and will not be saved.',
+  'keybindings.persist.save_failed': 'Failed to save keyboard shortcuts. The last change was not kept.',
+  'keybindings.persist.not_saved':
+    'The saved keyboard shortcuts could not be read. Changes made now apply only until Continuo quits and will not be saved.',
   'commands.preferences.manage_trusted_domains.title': 'Manage Trusted Domains',
   'panels.editor.link.blocked_scheme': 'For security reasons, this link was not opened: {scheme}',
   'panels.editor.unicode.ambiguous': 'The character {char} could be confused with the ASCII character {ascii}, which is more common in source code.',

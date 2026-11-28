@@ -1,6 +1,7 @@
-// keybindings overrides 持久化:KeybindingCaptureModal 保存 → localStorage
-// 'continuo.keybindings.overrides'.
+// keybindings overrides 持久化:KeybindingCaptureModal 保存 → 主进程文件 userData/user-keybindings.json
+//(此前是 localStorage 'continuo.keybindings.overrides',见 src/__tests__/user-settings-main-store/)。
 import { test, expect } from './fixtures/electron-app';
+import { USER_KEYBINDINGS_FILE, readUserSettingsFile } from './helpers/user-settings-file';
 import {
   EDIT_HOTKEY_SELECTOR,
   KEYBINDINGS_TAB,
@@ -10,8 +11,9 @@ import {
 const SET_HOTKEY = /^(设置快捷键|Set hotkey|단축키 설정)$/;
 const SAVE = /^(保存|Save|저장)$/;
 
-test('改 settings.toggle hotkey → localStorage 写 overrides', async ({
+test('改 settings.toggle hotkey → user-keybindings.json 写 override', async ({
   window,
+  userDataDir,
 }) => {
   await openSettingsTab(window, KEYBINDINGS_TAB);
 
@@ -32,12 +34,6 @@ test('改 settings.toggle hotkey → localStorage 写 overrides', async ({
   await saveBtn.click();
   await expect(dialog).toBeHidden();
 
-  // localStorage 写入
-  await window.waitForTimeout(100);
-  const raw = await window.evaluate(() =>
-    localStorage.getItem('continuo.keybindings.overrides'),
-  );
-  expect(raw).not.toBeNull();
-  const data = JSON.parse(raw!) as Record<string, string>;
-  expect(data['settings.toggle']).toBe('k');
+  // 主进程文件写入
+  await expect.poll(() => readUserSettingsFile(userDataDir, USER_KEYBINDINGS_FILE)?.['settings.toggle']).toBe('k');
 });

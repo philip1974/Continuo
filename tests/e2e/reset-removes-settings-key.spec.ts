@@ -1,5 +1,6 @@
-// reset 一个 override → localStorage values 中 key 删除.
+// reset 一个 override → 主进程设置文件(user-settings.json)中 key 删除.
 import { test, expect } from './fixtures/electron-app';
+import { readUserSettingsFile } from './helpers/user-settings-file';
 import {
   clickFirstVisibleResetDefault,
   EDITOR_TAB,
@@ -10,6 +11,7 @@ import {
 
 test('改 fontSize=20 → reset → values 不含 editor.fontSize', async ({
   window,
+  userDataDir,
 }) => {
   await window.getByRole('button', { name: SETTINGS }).click();
   await window
@@ -19,20 +21,13 @@ test('改 fontSize=20 → reset → values 不含 editor.fontSize', async ({
 
   const fontInput = settingNumberInput(window, 'editor.fontSize');
   await fontInput.fill('20');
-  await window.waitForTimeout(200);
-
-  let stored = await window.evaluate(() =>
-    localStorage.getItem('continuo.settings.values'),
-  );
-  expect(stored).toContain('"editor.fontSize":20');
+  await expect.poll(() => readUserSettingsFile(userDataDir)?.['editor.fontSize']).toBe(20);
 
   // reset
   await clickFirstVisibleResetDefault(window);
-  await window.waitForTimeout(200);
 
-  stored = await window.evaluate(() =>
-    localStorage.getItem('continuo.settings.values'),
-  );
-  // editor.fontSize key 删除
-  expect(stored ?? '').not.toContain('"editor.fontSize"');
+  // editor.fontSize key 删除(文件仍在)
+  await expect.poll(() => readUserSettingsFile(userDataDir)).not.toBeNull();
+  await expect.poll(() => Object.hasOwn(readUserSettingsFile(userDataDir) ?? { 'editor.fontSize': 0 }, 'editor.fontSize')).toBe(false);
+  expect(await window.evaluate(() => globalThis.__continuoTest?.getSettingValue('editor.fontSize'))).toBeUndefined();
 });

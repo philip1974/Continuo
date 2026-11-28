@@ -38,6 +38,7 @@ import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
 import { registerWindowIpc, type WindowIpcDeps } from './ipc/window.ipc';
 import { registerI18nIpc } from './ipc/i18n.ipc';
+import { registerUserSettingsIpc } from './ipc/user-settings.ipc';
 import { registerAccessibilityIpc } from './ipc/accessibility.ipc';
 import { registerHostColorSchemeIpc } from './ipc/host-color-scheme.ipc';
 import { registerMarketplaceIpc } from './ipc/marketplace.ipc';
@@ -360,6 +361,9 @@ export function registerIpc(deps: WindowIpcDeps): void {
   );
 
   registerI18nIpc();
+
+  // 用户设置值 / 快捷键覆盖(权威存储在 main,见 services/user-settings.service)
+  registerUserSettingsIpc();
 
   // 系统读屏检测(初值 + 变化广播;终端 screenReaderMode 用)
   registerAccessibilityIpc();

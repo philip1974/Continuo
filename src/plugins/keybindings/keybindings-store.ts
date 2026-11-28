@@ -8,7 +8,8 @@
 //   key 不存在        = 走 spec 默认(主键 hotkey + 附加默认键 secondaryHotkeys)
 //   override(新组合或解绑)覆盖命令的全部默认键(含附加默认键);格式与多默认键之前相同,旧数据原样可读。
 //
-// 持久化:localStorage(同 settings values store 的轻量策略)。
+// 持久化:主进程 userData/user-keybindings.json(同 settings values store,见 storage/user-settings-record.ts);
+// 旧版 localStorage 记录首次启动时一次性迁入。
 
 import { create } from 'zustand';
 import {
@@ -18,10 +19,13 @@ import {
   isValidHotkeyShape,
   type CommandSpec,
 } from '../registries/CommandRegistry';
-import { createRecordStoreOps, type RecordStoreOps } from '../storage/local-storage-record';
+import { createUserSettingsRecordOps, type UserSettingsRecordOps } from '../storage/user-settings-record';
+import { notify } from '../../notifications/notify';
+import { t } from '../../i18n';
 import { ownValue } from '../../../electron/shared/own-value';
 
-const STORAGE_KEY = 'continuo.keybindings.overrides';
+/** 旧版 localStorage 键(一次性迁移的来源)。 */
+const LEGACY_STORAGE_KEY = 'continuo.keybindings.overrides';
 
 export interface KeybindingsState {
   /** key=commandId, value=hotkey 字符串(空 = unbind). */
@@ -32,18 +36,18 @@ export interface KeybindingsState {
   reset: (commandId: string) => void;
 }
 
-// localStorage 读-改-写 / 重置 / 跨窗同步(R6/R113 race 缓解、E260 写读 cap 对称、P2-BA 跨窗收敛)
-// 与 settings values-store 共用 createRecordStoreOps;本文件只保留 key、读端净化与写端校验。
+// 读写 / 跨窗同步 / 一次性迁移与 settings values-store 共用 createUserSettingsRecordOps;本文件只保留读端净化与写端校验。
 // 边界(E22):value 守卫 + 上限。畸形/篡改 overrides 混入非字符串值会让 getEffectiveHotkey →
 // compileCombo(effective).toLowerCase() 崩溃;hotkey 限长 CMD_HOTKEY_MAX(与注册侧同一上限);commandId(key)限长 CMD_ID_MAX;
 // 条目数封顶。非法项丢弃(降级到默认快捷键),不崩。
 // 边界(E240,E145 写端对偶):读端 valueGuard 复用写端(setHotkey)同一 isValidHotkeyShape 形态校验 ——
-// 此前读端只验 string + 长度,但写端/注册端均拒非法形态。篡改/旧版本残留的畸形 localStorage 值(如
+// 此前读端只验 string + 长度,但写端/注册端均拒非法形态。篡改/旧版本残留的畸形值(如
 // mod++s 空段)会被读端放行 → compileCombo 当成 mod+s 参与全局快捷键匹配 → 意外触发命令。
 // 读端只接受 ''(unbind)或形态合法的 hotkey,其余丢弃(降级默认),与写端语义一致(读≡写,防旁路)。
 // 显式标注:ops 与 store 互相引用(惰性访问器),不标注会让 TS 循环推断成 any。
-const ops: RecordStoreOps<string> = createRecordStoreOps<string>({
-  key: STORAGE_KEY,
+const ops: UserSettingsRecordOps<string> = createUserSettingsRecordOps<string>({
+  scope: 'keybindings',
+  legacyKey: LEGACY_STORAGE_KEY,
   readOpts: {
     valueGuard: (v): v is string =>
       typeof v === 'string' &&
@@ -54,12 +58,17 @@ const ops: RecordStoreOps<string> = createRecordStoreOps<string>({
   },
   getRecord: () => useKeybindingsStore.getState().overrides,
   setRecord: (overrides) => useKeybindingsStore.setState({ overrides }),
-  tooLargeWarning:
-    '[keybindings] setHotkey 拒写:overrides 序列化超 localStorage raw cap,保留上次有效状态',
+  tooLargeWarning: '[keybindings] setHotkey 拒写:快捷键记录超出上限,保留上次有效状态',
+  saveFailedMessage: () => t('keybindings.persist.save_failed'),
+  notSavedMessage: () => t('keybindings.persist.not_saved'),
+  notify: {
+    error: (message, key) => notify.error(message, { replaceKey: key }),
+    warn: (message, key) => notify.warn(message, { replaceKey: key }),
+  },
 });
 
 export const useKeybindingsStore = create<KeybindingsState>(() => ({
-  overrides: ops.read(),
+  overrides: ops.initial,
   setHotkey: (commandId, hotkey) => {
     // 边界(E145,写端校验):'' = unbind(放行);非空 hotkey 须长度 ≤ CMD_HOTKEY_MAX 且形态合法
     //(isValidHotkeyShape,与注册侧/捕获侧同一来源)。畸形 override(含空白/空段/超长)会让

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyInitialThemeClass, readInitialTheme } from '@/theme/initial-theme';
 import { SETTINGS_VALUES_STORAGE_KEY } from '@/plugins/settings/storage-key';
 import { GENERAL_THEME } from '@/plugins/settings/core-setting-specs';
+import { createFakeUserSettingsMain, uninstallUserSettingsHost } from '../_helpers/fake-user-settings-main';
 
 const html = document.documentElement;
 const setStored = (record: unknown): void =>
@@ -24,6 +25,7 @@ beforeEach(() => {
   mockSystem(true);
 });
 afterEach(() => {
+  uninstallUserSettingsHost();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   html.classList.remove('dark');
@@ -72,6 +74,37 @@ describe('readInitialTheme / applyInitialThemeClass', () => {
   });
 });
 
+// 设置值的权威存储在 main(user-settings.json):首帧经同步 IPC 快照读,不读 localStorage;
+// 只有 main 文件尚未建立(首次启动新版本,待迁移)时才读旧 localStorage 记录。
+describe('首帧来源:main 快照', () => {
+  it('已迁移 → 用 main 快照里的主题,不看旧 localStorage', () => {
+    setStored({ [GENERAL_THEME.id]: 'dark' }); // 陈旧的旧记录
+    createFakeUserSettingsMain({ settings: { record: { [GENERAL_THEME.id]: 'light' } } }).install();
+    expect(readInitialTheme()).toBe('light');
+    applyInitialThemeClass();
+    expect(html.classList.contains('dark')).toBe(false);
+  });
+
+  it('待迁移(main 文件原本不存在)→ 用旧 localStorage 记录(迁移过程中首帧也正确)', () => {
+    setStored({ [GENERAL_THEME.id]: 'light' });
+    createFakeUserSettingsMain({ settings: { needsImport: true } }).install();
+    expect(readInitialTheme()).toBe('light');
+  });
+
+  it('快照读取抛错 → 默认主题,不抛', () => {
+    const w = globalThis as unknown as { window: { api?: Record<string, unknown> } };
+    w.window.api = {
+      userSettings: {
+        snapshot: () => {
+          throw new Error('ipc down');
+        },
+      },
+    };
+    expect(() => applyInitialThemeClass()).not.toThrow();
+    expect(html.classList.contains('dark')).toBe(true);
+  });
+});
+
 describe('接线', () => {
   const read = (rel: string): string => readFileSync(resolve(__dirname, '../..', rel), 'utf-8');
 
@@ -82,7 +115,10 @@ describe('接线', () => {
     expect(call).toBeLessThan(src.indexOf("import('./main-app')"));
   });
 
-  it('设置值 store 与首帧读取用同一个 localStorage 键', () => {
-    expect(read('plugins/settings/values-store.ts')).toMatch(/key: SETTINGS_VALUES_STORAGE_KEY/);
+  it('设置值 store 与首帧读取用同一来源(main 快照的 settings 记录 / 同一个旧 localStorage 键)', () => {
+    const store = read('plugins/settings/values-store.ts');
+    expect(store).toMatch(/scope: 'settings'/);
+    expect(store).toMatch(/legacyKey: SETTINGS_VALUES_STORAGE_KEY/);
+    expect(read('theme/initial-theme.ts')).toMatch(/initialUserSettingsRecord\('settings', SETTINGS_VALUES_STORAGE_KEY\)/);
   });
 });

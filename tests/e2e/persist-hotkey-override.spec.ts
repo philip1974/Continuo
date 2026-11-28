@@ -7,6 +7,7 @@ import path from 'node:path';
 import { dispatchModKey } from './helpers/hotkeys';
 import { launchContinuo } from './helpers/launch';
 import { waitForTestHooks } from './helpers/app-ready';
+import { USER_KEYBINDINGS_FILE, readUserSettingsFile } from './helpers/user-settings-file';
 
 test('override settings.toggle=mod+shift+y → 关 → 重启 → 新组合仍触发', async () => {
   test.setTimeout(60_000);
@@ -21,7 +22,7 @@ test('override settings.toggle=mod+shift+y → 关 → 重启 → 新组合仍�
       const t = globalThis.__continuoTest!;
       t.setHotkey('settings.toggle', 'mod+shift+y');
     });
-    await win1.waitForTimeout(200);
+    await expect.poll(() => readUserSettingsFile(ud, USER_KEYBINDINGS_FILE)?.['settings.toggle']).toBe('mod+shift+y');
     await app1.close();
 
     // ── 第二次:重启 ──
@@ -30,12 +31,8 @@ test('override settings.toggle=mod+shift+y → 关 → 重启 → 新组合仍�
     await win2.waitForLoadState('domcontentloaded');
     await waitForTestHooks(win2);
 
-    // 验证 override 已从 localStorage 恢复
-    const restored = await win2.evaluate(() => {
-      const raw = localStorage.getItem('continuo.keybindings.overrides');
-      return raw ? (JSON.parse(raw) as Record<string, string>) : null;
-    });
-    expect(restored?.['settings.toggle']).toBe('mod+shift+y');
+    // override 仍在主进程文件里(重启读入;下面按新组合触发验证 store 已恢复)
+    expect(readUserSettingsFile(ud, USER_KEYBINDINGS_FILE)?.['settings.toggle']).toBe('mod+shift+y');
 
     // 给 plugin 注册一些时间(commands 注册可能异步)
     await win2.waitForTimeout(1_000);

@@ -9,6 +9,16 @@ import {
   type FlushRequestPayload,
 } from '../shared/persistence-channels';
 import { guardedListener, subscribeAndAnnounce, subscribeIpc } from './subscribe-ipc';
+import {
+  USER_SETTINGS_CHANNELS,
+  isUserSettingsChanged,
+  isUserSettingsSnapshot,
+  type UserSettingsChanged,
+  type UserSettingsRecord,
+  type UserSettingsScope,
+  type UserSettingsScopeState,
+  type UserSettingsSnapshot,
+} from '../shared/user-settings';
 import { createTerminalDataDemux } from './terminal-data-demux';
 import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry, FsScanFilesData } from '../shared/fs-entry';
@@ -765,6 +775,35 @@ const api = {
     onChange(listener: (payload: unknown) => void): () => void {
       const wrapped = (_evt: unknown, payload: unknown) => listener(payload);
       return subscribeIpc(I18N_CHANNELS.CHANGED, wrapped);
+    },
+  },
+  /**
+   * 用户设置值 / 快捷键覆盖(权威存储在 main 的 userData 文件,见 electron/main/services/user-settings.service)。
+   * snapshot 是同步 IPC:renderer 首帧前调用(主题 / 字号首帧即正确);不受信 / 畸形 → null。
+   */
+  userSettings: {
+    snapshot(): UserSettingsSnapshot | null {
+      const r: unknown = ipcRenderer.sendSync(USER_SETTINGS_CHANNELS.SNAPSHOT);
+      return isUserSettingsSnapshot(r) ? r : null;
+    },
+    /** 增量修改(设 set 里的值、删 remove 里的 key);main 写盘后返回新状态。 */
+    update(
+      scope: UserSettingsScope,
+      set: UserSettingsRecord,
+      remove: readonly string[],
+    ): Promise<IpcResult<UserSettingsScopeState>> {
+      return ipcRenderer.invoke(USER_SETTINGS_CHANNELS.UPDATE, { scope, set, remove: [...remove] });
+    },
+    /** 一次性迁入旧版 localStorage 记录(main 只在文件原本不存在时接受)。 */
+    importLegacy(scope: UserSettingsScope, record: UserSettingsRecord): Promise<IpcResult<UserSettingsScopeState>> {
+      return ipcRenderer.invoke(USER_SETTINGS_CHANNELS.IMPORT, { scope, record });
+    },
+    /** 订阅任一窗口的修改(main 提交后广播),返 unsubscribe。 */
+    onChanged(cb: (payload: UserSettingsChanged) => void): () => void {
+      return subscribeIpc(
+        USER_SETTINGS_CHANNELS.CHANGED,
+        guardedListener(isUserSettingsChanged, '[user-settings] dropped malformed changed payload', cb),
+      );
     },
   },
   /** 系统读屏检测(VSCode accessibilitySupport 的平台侧):终端 screenReaderMode 按它 + 设置 editor.accessibilitySupport 判定。 */

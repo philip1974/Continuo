@@ -7,6 +7,7 @@ import path from 'node:path';
 import { test } from './fixtures/electron-app';
 import { launchContinuo } from './helpers/launch';
 import { waitForTestHooks } from './helpers/app-ready';
+import { readUserSettingsFile, removeUserSettingsFiles } from './helpers/user-settings-file';
 import { MATCHED_SETTINGS, openSettings, settingsSearch } from './helpers/settings';
 
 const chip = (window: import('@playwright/test').Page, id: string) =>
@@ -69,6 +70,7 @@ test('旧 id terminal.fontSize / terminal.cursorStyle 的已存值重启后迁�
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
     await waitForTestHooks(win1);
+    // 旧版本存在 localStorage(主进程文件还不存在):首次启动新版本时迁入,旧 id 一并改名
     await win1.evaluate(() =>
       localStorage.setItem(
         'continuo.settings.values',
@@ -76,6 +78,7 @@ test('旧 id terminal.fontSize / terminal.cursorStyle 的已存值重启后迁�
       ),
     );
     await app1.close();
+    removeUserSettingsFiles(ud);
 
     const app2 = await launchContinuo(ud);
     const win2 = await app2.firstWindow();
@@ -84,11 +87,12 @@ test('旧 id terminal.fontSize / terminal.cursorStyle 的已存值重启后迁�
     const got = await win2.evaluate(() => ({
       fontSize: globalThis.__continuoTest!.getSettingValue('terminal.integrated.fontSize'),
       cursorStyle: globalThis.__continuoTest!.getSettingValue('terminal.integrated.cursorStyle'),
-      stored: JSON.parse(localStorage.getItem('continuo.settings.values') ?? '{}') as Record<string, unknown>,
     }));
     expect(got.fontSize).toBe(18);
     expect(got.cursorStyle).toBe('bar');
-    expect(got.stored).toEqual({ 'terminal.integrated.fontSize': 18, 'terminal.integrated.cursorStyle': 'bar' });
+    await expect
+      .poll(() => readUserSettingsFile(ud))
+      .toEqual({ 'terminal.integrated.fontSize': 18, 'terminal.integrated.cursorStyle': 'bar' });
     await app2.close();
   } finally {
     rmSync(ud, { recursive: true, force: true });

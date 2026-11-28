@@ -345,6 +345,7 @@
   两窗 locale 反复互斗翻转。两个真相源(广播驱动的 store vs 各窗本地 localStorage values)
   无跨窗同步。storage 监听让 values 跨窗一致(设置均 app 级全局,跨窗一致也更符合预期),
   且各窗收敛同值后多次 setStoreLocale 都是同 locale 幂等,无震荡。
+- 后续:设置值迁到主进程文件(`user-settings-main-store/`),跨窗同步改由 main 提交后广播,本规范随之改写为广播语义。
 
 ## P2 批次(第十二轮 — 最终收敛确认 + watcherPool 跨窗修复)
 ### P2-GG watcherPool LRU 驱逐清 owner 记账,避免跨窗口误杀 watcher — `explorer-watch/watch-pool.spec.ts`
@@ -608,6 +609,7 @@
   改/解绑快捷键后,窗口 B 仍按旧绑定派发键盘(`useCommandHotkeys` 读 `getEffectiveHotkey`)+
   设置 tab / CommandPalette 显示陈旧 hotkey,直到 B 重载才收敛。keybindings 是 values-store
   的平行 store,被漏掉了同步。(theme `ThemeProvider` 同缺但影响更小,DEFER。)
+- 后续:快捷键覆盖迁到主进程文件(`user-settings-main-store/`),跨窗同步改由 main 提交后广播,本规范随之改写为广播语义。
 
 ### P2-BB marketplace 更新成功后 reload 本地版本再 refresh — `marketplace-tab` 回归
 - `MarketplaceTab.onUpdate` 成功后 `dismissUpdate` + **`await mgr.reload(entry.id)`** 推进

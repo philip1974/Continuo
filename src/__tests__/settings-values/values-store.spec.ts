@@ -12,6 +12,21 @@ import {
   type SettingItemSpec,
 } from '../../plugins/registries/SettingItemRegistry';
 import { coApp } from '../../plugins/co-app';
+import {
+  createFakeUserSettingsMain,
+  flushUserSettings,
+  uninstallUserSettingsHost,
+  type FakeUserSettingsMain,
+} from '../_helpers/fake-user-settings-main';
+
+type ValuesStoreModule = typeof import('../../plugins/settings/values-store');
+
+/** 一个「窗口」:装上该窗口的 host 后重新加载 values-store(store 创建时读 main 快照)。 */
+async function openWindow(main: FakeUserSettingsMain): Promise<ValuesStoreModule> {
+  vi.resetModules();
+  main.install();
+  return import('../../plugins/settings/values-store');
+}
 
 /** 非 React 读取口径:override ?? default,经 coerceSettingValue 规整(与 useSettingValue 同一规整)。 */
 function getSettingValue(spec: SettingItemSpec): unknown {
@@ -47,7 +62,10 @@ beforeEach(() => {
   useSettingsValuesStore.setState({ values: {} });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  uninstallUserSettingsHost();
+});
 
 describe('settings values-store', () => {
   it('初态 values 空,getSettingValue 返 default', () => {
@@ -61,80 +79,50 @@ describe('settings values-store', () => {
     expect(getSettingValue(themeSpec)).toBe('light');
   });
 
-  it('setValue 写入相同值且内存已同步时不通知订阅者且不重复写 localStorage', () => {
-    const values = { 'general.theme': 'light' };
-    globalThis.localStorage.setItem(
-      'continuo.settings.values',
-      JSON.stringify(values),
-    );
-    useSettingsValuesStore.setState({ values });
-    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-    const objectKeysSpy = vi.spyOn(Object, 'keys');
+  it('setValue 写入相同值时不通知订阅者且不发给 main', async () => {
+    const main = createFakeUserSettingsMain({ settings: { record: { 'general.theme': 'light' } } });
+    const w = await openWindow(main);
+    const values = w.useSettingsValuesStore.getState().values;
     const listener = vi.fn();
-    const unsubscribe = useSettingsValuesStore.subscribe(listener);
-
+    const unsubscribe = w.useSettingsValuesStore.subscribe(listener);
     try {
-      useSettingsValuesStore.getState().setValue('general.theme', 'light');
-      const objectKeysCalls = objectKeysSpy.mock.calls.length;
-
-      expect(useSettingsValuesStore.getState().values).toBe(values);
-      expect(setItemSpy).not.toHaveBeenCalled();
-      expect(objectKeysCalls).toBe(0);
-      expect(listener).not.toHaveBeenCalled();
-    } finally {
-      unsubscribe();
-      objectKeysSpy.mockRestore();
-      setItemSpy.mockRestore();
-    }
-  });
-
-  it('storage 同步读到相同 values 内容时不通知订阅者', () => {
-    const values = { 'general.theme': 'light' };
-    globalThis.localStorage.setItem(
-      'continuo.settings.values',
-      JSON.stringify(values),
-    );
-    useSettingsValuesStore.setState({ values });
-    const listener = vi.fn();
-    const unsubscribe = useSettingsValuesStore.subscribe(listener);
-
-    try {
-      window.dispatchEvent(
-        new StorageEvent('storage', { key: 'continuo.settings.values' }),
-      );
-
-      expect(useSettingsValuesStore.getState().values).toBe(values);
+      w.useSettingsValuesStore.getState().setValue('general.theme', 'light');
+      await flushUserSettings();
+      expect(w.useSettingsValuesStore.getState().values).toBe(values);
+      expect(main.calls).toEqual([]);
       expect(listener).not.toHaveBeenCalled();
     } finally {
       unsubscribe();
     }
   });
 
-  // 边界(E260,写读 cap 对称):整份 overrides 序列化超 localStorage 读端 raw cap(1MiB)时,setValue
-  // 拒写且**不提交内存态** —— 否则本会话内存 vs 磁盘发散,下次启动 readRecord 整表返 {} = 所有设置静默丢失。
-  it('E260 整份超 1MiB → setValue 拒写且不提交内存态(保留上次有效状态)', () => {
+  it('main 广播内容相同的 values 时不通知订阅者', async () => {
+    const main = createFakeUserSettingsMain({ settings: { record: { 'general.theme': 'light' } } });
+    const w = await openWindow(main);
+    const values = w.useSettingsValuesStore.getState().values;
+    const listener = vi.fn();
+    const unsubscribe = w.useSettingsValuesStore.subscribe(listener);
+    try {
+      main.rebroadcast('settings');
+      expect(w.useSettingsValuesStore.getState().values).toBe(values);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  // 边界(E260,写读 cap 对称):整份记录超 main 文件上限时 main 拒写(PAYLOAD_TOO_LARGE),本窗**不保留**乐观写入 ——
+  // 否则本会话内存与磁盘发散,重启后这次修改凭空消失。
+  it('E260 main 拒写(超上限)→ 回滚到上次有效状态并 warn', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const CAP = 1024 * 1024;
-    // 预置一份单条恰好略低于 cap 的有效 overrides(模拟多个大 text 累积);再加一条即超 cap。
-    const big = 'x'.repeat(CAP - 40);
-    globalThis.localStorage.setItem(
-      'continuo.settings.values',
-      JSON.stringify({ 'editor.scratch': big }),
-    );
-    useSettingsValuesStore.setState({ values: { 'editor.scratch': big } });
-
-    useSettingsValuesStore.getState().setValue('general.theme', 'light');
-
-    // 不提交内存态:general.theme 未写入,values 仍为上次有效状态
-    expect(
-      useSettingsValuesStore.getState().values['general.theme'],
-    ).toBeUndefined();
-    expect(getSettingValue(themeSpec)).toBe('dark'); // 回退 default(未写入)
-    // localStorage 未被超大记录覆盖(仍可被 readRecord 读回 editor.scratch)
-    expect(globalThis.localStorage.getItem('continuo.settings.values')).toBe(
-      JSON.stringify({ 'editor.scratch': big }),
-    );
-    expect(warn).toHaveBeenCalled();
+    const main = createFakeUserSettingsMain({ settings: { record: { 'editor.scratch': 'big' } } });
+    const w = await openWindow(main);
+    main.failNextUpdate('PAYLOAD_TOO_LARGE');
+    w.useSettingsValuesStore.getState().setValue('general.theme', 'light');
+    await flushUserSettings();
+    expect(w.useSettingsValuesStore.getState().values).toEqual({ 'editor.scratch': 'big' });
+    expect(main.record('settings')).toEqual({ 'editor.scratch': 'big' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[settings] setValue 拒写'));
     warn.mockRestore();
   });
 
@@ -193,11 +181,15 @@ describe('settings values-store', () => {
     expect(getSettingValue(textSpec)).toBe('hello');
   });
 
-  it('setValue 持久化到 localStorage', () => {
-    useSettingsValuesStore.getState().setValue('editor.fontSize', 18);
-    const raw = globalThis.localStorage.getItem('continuo.settings.values');
-    expect(raw).not.toBeNull();
-    expect(JSON.parse(raw!)).toEqual({ 'editor.fontSize': 18 });
+  it('setValue 立即生效,并以增量发给 main(main 写盘后两边一致)', async () => {
+    const main = createFakeUserSettingsMain();
+    const w = await openWindow(main);
+    w.useSettingsValuesStore.getState().setValue('editor.fontSize', 18);
+    expect(w.useSettingsValuesStore.getState().values).toEqual({ 'editor.fontSize': 18 }); // 乐观更新
+    expect(main.calls).toEqual([{ kind: 'update', scope: 'settings', set: { 'editor.fontSize': 18 }, remove: [] }]);
+    await flushUserSettings();
+    expect(main.record('settings')).toEqual({ 'editor.fontSize': 18 });
+    expect(w.useSettingsValuesStore.getState().values).toEqual({ 'editor.fontSize': 18 });
   });
 
   it('reset 删除 override → 回 default', () => {
@@ -214,56 +206,47 @@ describe('settings values-store', () => {
     expect(useSettingsValuesStore.getState().values).toBe(before);
   });
 
-  // race(R6):多窗口 lost update —— 窗口 B 基于陈旧内存快照改自己的 key,不得整表覆盖掉
-  // 窗口 A 刚写进 localStorage 的另一个 key。setValue 须基于 live localStorage merge。
-  it('R6 setValue 基于 live localStorage merge:不丢别窗已写的 key', () => {
-    // 窗口 A 已写 general.theme=light(直接落 localStorage);窗口 B 内存快照陈旧(只有 fontSize=14)。
-    globalThis.localStorage.setItem(
-      'continuo.settings.values',
-      JSON.stringify({ 'editor.fontSize': 14, 'general.theme': 'light' }),
-    );
-    useSettingsValuesStore.setState({ values: { 'editor.fontSize': 14 } });
-
-    // 窗口 B 改自己的 fontSize → 须 merge live(含 A 的 theme),而非整表写回陈旧快照。
-    useSettingsValuesStore.getState().setValue('editor.fontSize', 18);
-
-    const persisted = JSON.parse(
-      globalThis.localStorage.getItem('continuo.settings.values')!,
-    );
-    expect(persisted).toEqual({ 'editor.fontSize': 18, 'general.theme': 'light' });
-    // 本窗内存也收敛到含别窗 key。
-    expect(useSettingsValuesStore.getState().values['general.theme']).toBe('light');
+  // race(R6/R113):多窗口 lost update —— 此前各窗口在 localStorage 上读-改-写,两窗可基于旧快照互相覆盖。
+  // 现在只发增量、由 main 串行读-改-写:两个窗口同时改不同 key,两个都保留,且各窗经广播收敛。
+  it('R6 两个窗口同时改不同 key → main 两个都保留,两窗都收敛到合并结果', async () => {
+    const main = createFakeUserSettingsMain({ settings: { record: { 'editor.fontSize': 14 } } });
+    const a = await openWindow(main);
+    const b = await openWindow(main);
+    a.useSettingsValuesStore.getState().setValue('general.theme', 'light');
+    b.useSettingsValuesStore.getState().setValue('editor.fontSize', 18);
+    await flushUserSettings();
+    const merged = { 'editor.fontSize': 18, 'general.theme': 'light' };
+    expect(main.record('settings')).toEqual(merged);
+    expect(a.useSettingsValuesStore.getState().values).toEqual(merged);
+    expect(b.useSettingsValuesStore.getState().values).toEqual(merged);
   });
 
-  it('R6 reset 基于 live localStorage:删自己 key 不丢别窗 key', () => {
-    globalThis.localStorage.setItem(
-      'continuo.settings.values',
-      JSON.stringify({ 'editor.fontSize': 18, 'general.theme': 'light' }),
-    );
-    useSettingsValuesStore.setState({ values: { 'editor.fontSize': 18 } });
-
-    useSettingsValuesStore.getState().reset('editor.fontSize');
-
-    const persisted = JSON.parse(
-      globalThis.localStorage.getItem('continuo.settings.values')!,
-    );
-    expect(persisted).toEqual({ 'general.theme': 'light' });
+  it('R6 reset 只删自己的 key,不丢别窗的 key', async () => {
+    const main = createFakeUserSettingsMain({ settings: { record: { 'editor.fontSize': 18 } } });
+    const a = await openWindow(main);
+    const b = await openWindow(main);
+    a.useSettingsValuesStore.getState().setValue('general.theme', 'light');
+    b.useSettingsValuesStore.getState().reset('editor.fontSize');
+    await flushUserSettings();
+    expect(main.record('settings')).toEqual({ 'general.theme': 'light' });
+    expect(b.useSettingsValuesStore.getState().values).toEqual({ 'general.theme': 'light' });
   });
 
-  it('writeStored 抛(quota)→ 静默,in-memory 仍写入', () => {
-    const original = globalThis.localStorage.setItem;
-    globalThis.localStorage.setItem = () => {
-      throw new Error('QuotaExceededError');
-    };
+  it('main 写盘失败 → 回滚到上次有效状态并提示保存失败', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
-      expect(() =>
-        useSettingsValuesStore.getState().setValue('general.theme', 'light'),
-      ).not.toThrow();
-      expect(useSettingsValuesStore.getState().values['general.theme']).toBe(
-        'light',
-      );
+      const main = createFakeUserSettingsMain();
+      const w = await openWindow(main);
+      main.failNextUpdate('HANDLER_ERROR');
+      expect(() => w.useSettingsValuesStore.getState().setValue('general.theme', 'light')).not.toThrow();
+      await flushUserSettings();
+      expect(w.useSettingsValuesStore.getState().values).toEqual({});
+      // notify 镜像到 console.error(Provider 未挂载时)
+      expect(error).toHaveBeenCalledWith(expect.anything(), expect.stringMatching(/settings\.persist\.save_failed|Failed to save settings/));
     } finally {
-      globalThis.localStorage.setItem = original;
+      error.mockRestore();
+      warn.mockRestore();
     }
   });
 });
@@ -483,7 +466,6 @@ describe('values-store · readStored 防御', () => {
 // 终端字号 / 光标样式改用 VSCode 的 id(terminal.integrated.fontSize / terminal.integrated.cursorStyle):旧 id 的已存值不丢。
 describe('settings values-store — 旧设置 id 迁移', () => {
   const KEY = 'continuo.settings.values';
-  const stored = () => JSON.parse(globalThis.localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>;
 
   it('迁移规则:旧 id 改记到新 id 并删除;新 id 已有值时以新 id 为准;无旧 id 返回原对象', () => {
     const plain = { 'editor.fontSize': 14 };
@@ -500,25 +482,28 @@ describe('settings values-store — 旧设置 id 迁移', () => {
     ).toEqual({ 'terminal.integrated.fontSize': 20 });
   });
 
-  it('启动:已存的旧 id 读成新 id,并立即写回存储(旧 id 消失)', async () => {
-    globalThis.localStorage.setItem(KEY, JSON.stringify({ 'terminal.fontSize': 18, 'terminal.cursorStyle': 'bar' }));
-    vi.resetModules();
-    const fresh = await import('../../plugins/settings/values-store');
-    expect(fresh.useSettingsValuesStore.getState().values).toEqual({
-      'terminal.integrated.fontSize': 18,
-      'terminal.integrated.cursorStyle': 'bar',
+  it('启动:已存的旧 id 读成新 id,并立即写回 main(旧 id 消失)', async () => {
+    const main = createFakeUserSettingsMain({
+      settings: { record: { 'terminal.fontSize': 18, 'terminal.cursorStyle': 'bar' } },
     });
-    expect(stored()).toEqual({ 'terminal.integrated.fontSize': 18, 'terminal.integrated.cursorStyle': 'bar' });
+    const fresh = await openWindow(main);
+    const expected = { 'terminal.integrated.fontSize': 18, 'terminal.integrated.cursorStyle': 'bar' };
+    expect(fresh.useSettingsValuesStore.getState().values).toEqual(expected);
+    await flushUserSettings();
+    expect(main.record('settings')).toEqual(expected);
   });
 
-  it('跨窗口同步 / 读-改-写读到旧 id 时同样迁移,不把旧 id 写回', () => {
-    globalThis.localStorage.setItem(KEY, JSON.stringify({ 'terminal.cursorStyle': 'underline' }));
-    window.dispatchEvent(new StorageEvent('storage', { key: KEY }));
-    expect(useSettingsValuesStore.getState().values).toEqual({ 'terminal.integrated.cursorStyle': 'underline' });
+  it('跨窗口广播读到旧 id 时同样迁移', async () => {
+    const main = createFakeUserSettingsMain();
+    const w = await openWindow(main);
+    main.externalUpdate('settings', { 'terminal.cursorStyle': 'underline' });
+    expect(w.useSettingsValuesStore.getState().values).toEqual({ 'terminal.integrated.cursorStyle': 'underline' });
+  });
 
+  it('无 main(单测 / 无 preload):按旧 localStorage 记录只读初始化(同样迁移旧 id)', async () => {
     globalThis.localStorage.setItem(KEY, JSON.stringify({ 'terminal.fontSize': 16 }));
-    useSettingsValuesStore.getState().setValue('editor.fontSize', 15);
-    expect(stored()).toEqual({ 'terminal.integrated.fontSize': 16, 'editor.fontSize': 15 });
-    expect(useSettingsValuesStore.getState().values).toEqual({ 'terminal.integrated.fontSize': 16, 'editor.fontSize': 15 });
+    vi.resetModules();
+    const fresh = await import('../../plugins/settings/values-store');
+    expect(fresh.useSettingsValuesStore.getState().values).toEqual({ 'terminal.integrated.fontSize': 16 });
   });
 });

@@ -47,7 +47,8 @@ renderer 换主题时经 IPC 存下最新颜色,新窗口使用),避免亮色主
 - 冷启动底色:持久化 `mode=system` → 按 `nativeTheme.shouldUseDarkColors`(OS 当前外观,不用上次解析值);否则用持久化的
   `theme`。文件缺失 / JSON 损坏 / 字段非法 / 超大(> 4 KiB)→ 默认暗色,不抛。
 - renderer:`index.html` 静态 `class="dark"`;CSP `script-src 'self'` 不允许内联脚本,故由入口模块 `main.tsx` 在动态加载
-  main-app(样式 + React)之前同步 `applyInitialThemeClass()`:读 localStorage 设置值 `general.theme`(与 values-store 同键
-  `SETTINGS_VALUES_STORAGE_KEY`,只认自有键),system 按 `prefers-color-scheme`,无效 / 缺失 / 存储不可用 → 默认主题。
+  main-app(样式 + React)之前同步 `applyInitialThemeClass()`:读设置值 `general.theme` —— 与 values-store 初值同一来源:main
+  的同步快照(`user-settings.json`,见 `user-settings-main-store/`);main 文件尚未建立(首次启动新版本、待迁移)时读旧 localStorage
+  记录(`SETTINGS_VALUES_STORAGE_KEY`)。只认自有键,system 按 `prefers-color-scheme`,无效 / 缺失 / 读取失败 → 默认主题。
   样式到达时 class 已正确,之后 ThemeProvider 用同一设置值接管。
 - WindowBackgroundSync 上报 `(resolved, mode)`。
