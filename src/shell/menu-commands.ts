@@ -106,6 +106,14 @@ export function runEditUndoRedo(payload: unknown): void {
 }
 
 /**
+ * 显示另一命令键位的菜单项:「设置…」(workbench.action.openSettings,只打开)显示 ⌘,(settings.toggle 的键位;VSCode 菜单「设置」
+ * 显示 ⌘,)。设置未显示时两者效果相同;⌘, 在设置已显示时收回设置(本项目约定,见 settings-toggle)。
+ */
+const MENU_ACCELERATOR_FROM: Partial<Record<MenuCommandId, string>> = {
+  'workbench.action.openSettings': 'settings.toggle',
+};
+
+/**
  * 菜单命令当前显示的主键(归一后的 hotkey,见 canonicalHotkey):与命令面板 / tooltip 同一规则(resolveDisplayHotkey:改键跟随、
  * 解绑 / 落在保留键上不显示,转到文件… / 显示所有命令显示其保留键),冲突落败(按下执行别的命令)不显示。未注册 → null。
  */
@@ -117,8 +125,9 @@ export function menuKeybindings(
 ): Record<MenuCommandId, string | null> {
   const out = {} as Record<MenuCommandId, string | null>;
   for (const id of MENU_COMMAND_IDS) {
-    const spec = commands.get(id);
-    const combo = spec && !isHotkeyShadowed(id, all, platform, overrides) ? resolveDisplayHotkey(spec, overrides, platform) : undefined;
+    const keyId = MENU_ACCELERATOR_FROM[id] ?? id;
+    const spec = commands.get(keyId);
+    const combo = spec && !isHotkeyShadowed(keyId, all, platform, overrides) ? resolveDisplayHotkey(spec, overrides, platform) : undefined;
     out[id] = combo ? canonicalHotkey(combo, platform) : null;
   }
   return out;

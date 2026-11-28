@@ -374,6 +374,7 @@ export const en = {
   'commands.view.toggle_full_screen.title': 'Toggle Full Screen',
   'commands.view.show_output.title': 'Show Output',
   'commands.view.show_debug.title': 'Show Debug',
+  'commands.view.toggle_settings.title': 'Toggle Settings',
   'commands.view.move_group_to_new_window.title': 'Move Group into New Window',
   'commands.view.reset_layout.title': 'Reset Layout',
   'commands.editor.close_others.title': 'Close Other Editors in Group',

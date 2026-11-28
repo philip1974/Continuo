@@ -1,7 +1,7 @@
 // 功能入口可发现性(BDD: src/__tests__/entry-discoverability/):
 // 1. 应用菜单 文件 → 关闭编辑器 / 显示 → 运行 / 帮助外链(经 main 的 e2e 菜单钩子,与真实点击同一路径;外链不点,只看结构)
 // 2. 活动栏「运行和调试」「搜索」打开对应面板
-// 3. 状态栏「侧栏已隐藏」点击显示侧栏
+// 3. 状态栏「侧栏已隐藏」点击显示侧栏,焦点进资源管理器树;活动栏图标随面板显示切换激活态、再点收起
 // 4. 设置搜索框旁「筛选设置」→「已修改」插入 @modified
 // 5. 命令面板搜「keybindings」找到「打开键盘快捷方式」
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -100,10 +100,21 @@ test('活动栏「运行和调试」打开调试视图、「搜索」打开搜�
   const cdp = await win.context().newCDPSession(win);
   await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
   const activityBar = win.locator('main aside').first();
-  await activityBar.getByRole('button', { name: RUN_DEBUG }).click();
+  const runDebug = activityBar.getByRole('button', { name: RUN_DEBUG });
+  const searchButton = activityBar.getByRole('button', { name: SEARCH_BUTTON });
+  await expect(runDebug).toHaveAttribute('aria-pressed', 'false');
+  await runDebug.click();
   await expect(win.getByRole('tab', { name: DEBUG_TAB })).toHaveCount(1, { timeout: 10_000 });
-  await activityBar.getByRole('button', { name: SEARCH_BUTTON }).click();
+  await expect(runDebug).toHaveAttribute('aria-pressed', 'true');
+  // 再点已激活的「运行和调试」→ 收起调试视图(VSCode 活动栏 toggle)
+  await runDebug.click();
+  await expect(win.getByRole('tab', { name: DEBUG_TAB })).toHaveCount(0, { timeout: 10_000 });
+  await expect(runDebug).toHaveAttribute('aria-pressed', 'false');
+  await runDebug.click();
+  await expect(win.getByRole('tab', { name: DEBUG_TAB })).toHaveCount(1, { timeout: 10_000 });
+  await searchButton.click();
   await expect(win.getByRole('textbox', { name: /^(搜索|Search|검색)$/ })).toBeFocused({ timeout: 10_000 });
+  await expect(searchButton).toHaveAttribute('aria-pressed', 'true');
 
   await dispatchModKey(win, 'b');
   const hidden = win.locator('footer').getByRole('button', { name: SIDEBAR_HIDDEN });
@@ -112,6 +123,10 @@ test('活动栏「运行和调试」打开调试视图、「搜索」打开搜�
   await hidden.click();
   await expect(hidden).toHaveCount(0);
   await expect(win.getByRole('treeitem', { name: /^main-file\.ts$/ })).toBeVisible();
+  // 焦点进资源管理器树(不掉到 body)
+  await expect
+    .poll(() => win.evaluate(() => document.activeElement?.closest('[role=tree]') !== null), { timeout: 10_000 })
+    .toBe(true);
 });
 
 test('设置「筛选设置」→「已修改」插入 @modified;命令面板搜 keybindings 找到「打开键盘快捷方式」', async () => {

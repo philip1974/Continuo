@@ -1,7 +1,9 @@
 // 内置 Settings Panel 插件(v5 Phase 5,VSCode 同款)。
 //
-// 注册 'settings' panel 类型 + 命令 'settings.toggle'(⌘,,标题「首选项: 打开设置」)。命令是 toggle:
-// 不存在 → 打开 + 收起侧栏;已 active → 关闭;已存在但非 active → 聚焦。
+// 注册 'settings' panel 类型 + 两条命令:
+// - 'workbench.action.openSettings'(命令面板「首选项: 打开设置」、菜单「设置…」;VSCode 同 id):只打开 / 聚焦,已显示也不关。
+// - 'settings.toggle'(⌘,,命令面板「查看: 切换设置」)是 toggle:不存在 → 打开 + 收起侧栏;已 active → 关闭;已存在但非 active
+//   → 聚焦。刻意差异:VSCode 的 ⌘, 即 openSettings(不切换);本项目 ⌘, 再按收回设置是既有约定(BDD settings-toggle)。
 //
 // BDD:
 //   - settings-panel(panel UI)
@@ -9,7 +11,7 @@
 
 import { Plugin } from '@/plugins/Plugin';
 import { lazyPanel, preloadableLazy } from '@/lib/lazy-panel';
-import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
+import { openSettingsPanel, toggleSettingsPanel } from '@/lib/toggle-settings-panel';
 import { loadCategoryTabContent } from './lazy-category-tab';
 import { preloadPluginsTabs } from './PluginsTabPlugin';
 import { preloadKeybindingsTab } from './KeybindingsTabPlugin';
@@ -28,6 +30,9 @@ const settingsPanel = preloadableLazy(() => {
 /** 启动空闲时预取(main-app):冷启动 ⌘, 后搜索框同步挂载,立刻键入不丢字。BDD: src/__tests__/open-panel-focus/ */
 export const preloadSettingsPanel = settingsPanel.preload;
 
+/** 只打开 / 聚焦设置的命令(命令面板「首选项: 打开设置」、应用菜单「设置…」)。 */
+export const OPEN_SETTINGS_COMMAND_ID = 'workbench.action.openSettings';
+
 export default class SettingsPanelPlugin extends Plugin {
   onload(): void {
     this.registerPanel({
@@ -38,14 +43,21 @@ export default class SettingsPanelPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: 'settings.toggle',
-      // VSCode「Preferences: Open Settings」(workbench.action.openSettings,⌘,):标题 / 分类同 VSCode,便于按「打开设置」搜到;
-      // 行为仍是 toggle(已显示时再按关闭,见文件头)。
+      // VSCode「Preferences: Open Settings」(workbench.action.openSettings,preferences.contribution.ts):只打开 / 聚焦。
+      id: OPEN_SETTINGS_COMMAND_ID,
       title: 'Open Settings',
       titleKey: 'commands.preferences.open_settings.title',
       category: 'Preferences',
       categoryKey: 'commands.preferences.category',
       keywordsKey: 'commands.preferences.open_settings.keywords',
+      fn: () => openSettingsPanel(),
+    });
+    this.addCommand({
+      id: 'settings.toggle',
+      title: 'Toggle Settings',
+      titleKey: 'commands.view.toggle_settings.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
       hotkey: 'mod+,',
       fn: () => toggleSettingsPanel(),
     });

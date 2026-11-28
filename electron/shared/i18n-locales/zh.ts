@@ -360,6 +360,7 @@ export const zh: Record<TranslationKey, string> = {
   'commands.view.toggle_full_screen.title': '切换全屏',
   'commands.view.show_output.title': '显示输出',
   'commands.view.show_debug.title': '显示调试',
+  'commands.view.toggle_settings.title': '切换设置',
   'commands.view.move_group_to_new_window.title': '将组移到新窗口',
   'commands.view.reset_layout.title': '重置布局',
   'commands.editor.close_others.title': '关闭组中的其他编辑器',

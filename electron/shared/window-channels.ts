@@ -142,7 +142,7 @@ export const MENU_COMMAND_IDS = [
   'workbench.action.closeActiveEditor',
   'workbench.action.closeFolder',
   // 首选项(macOS 应用菜单;其它平台 文件 → 首选项)
-  'settings.toggle',
+  'workbench.action.openSettings',
   'workbench.action.openGlobalKeybindings',
   // 编辑
   'actions.find',

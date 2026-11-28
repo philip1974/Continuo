@@ -132,4 +132,13 @@ describe('renderer:菜单命令的生效主键(与命令面板同一规则)', ()
     // 全部保存改到 ⌘/:⌘/ 上的 commentLine 只在编辑器正文成立,不算压过
     expect(keys(reg, { 'workbench.action.files.saveAll': 'mod+/' })['workbench.action.files.saveAll']).toBe('meta+/');
   });
+
+  it('「设置…」(workbench.action.openSettings,只打开、无自身键位)显示 settings.toggle 的生效键位 ⌘,,改键 / 解绑跟随', () => {
+    const reg = registry();
+    reg.register({ id: 'workbench.action.openSettings', title: 'Open Settings', fn: vi.fn() });
+    reg.register({ id: 'settings.toggle', title: 'Toggle Settings', hotkey: 'mod+,', fn: vi.fn() });
+    expect(keys(reg)['workbench.action.openSettings']).toBe('meta+,');
+    expect(keys(reg, { 'settings.toggle': 'mod+shift+y' })['workbench.action.openSettings']).toBe('meta+shift+y');
+    expect(keys(reg, { 'settings.toggle': '' })['workbench.action.openSettings']).toBeNull();
+  });
 });

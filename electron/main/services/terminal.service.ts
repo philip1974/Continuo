@@ -23,6 +23,7 @@ import { codedError } from '../../shared/error-message';
 import { mergeSpawnEnv } from '../lib/child-spawn-hardening';
 import { CONTINUO_HOOK_EVENTS_DIR_ENV } from '../lib/continuo-env-keys';
 import { isShellProcessName, processDisplayName } from '../../shared/shell-process-name';
+import { readProcessCwd, type ProcessCwdDeps } from './terminal-process-cwd';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow(截断 + 100ms 合批)
@@ -379,6 +380,8 @@ interface Instance {
   readonly shellCleanup: () => Promise<void>;
   /** spawn 的 shell 路径(runningChildProcess 与前台进程名比较)。 */
   readonly shell: string;
+  /** shell 用 OSC 7 上报过当前目录(之后以上报值为准,见 currentCwd)。 */
+  cwdReported: boolean;
 }
 
 const instances = new Map<string, Instance>();
@@ -555,6 +558,7 @@ export async function createTerminal(
     mcpToken: meta?.mcpToken ?? '',
     shellCleanup,
     shell,
+    cwdReported: false,
   };
 
   // PHASE 1: register all Continuo-side state BEFORE PTY spawn.
@@ -612,6 +616,37 @@ export function runningChildProcess(id: string): string | null {
   const name = foregroundProcess(id);
   if (name === null) return null;
   return isShellProcessName(name, inst.shell) ? null : name;
+}
+
+/** 记下 shell 已用 OSC 7 上报当前目录(会话 cwd 此后即 shell 的当前目录)。 */
+export function noteCwdReported(id: string): void {
+  const inst = instances.get(id);
+  if (inst) inst.cwdReported = true;
+}
+
+/**
+ * 终端当前目录(拆分终端继承用;VSCode splitCwd: inherited):shell 上报过 OSC 7 → null(调用方用会话 cwd);否则 shell 进程的
+ * 真实当前目录(VSCode TerminalProcess.getCwd:mac lsof / Linux /proc,见 terminal-process-cwd);取不到 → null。
+ */
+export async function shellProcessCwd(id: string, deps?: ProcessCwdDeps): Promise<string | null> {
+  const inst = instances.get(id);
+  if (!inst || inst.cwdReported) return null;
+  const pid = shellPid(id);
+  return pid === null ? null : readProcessCwd(pid, deps);
+}
+
+/** node-pty 的 shell 进程 pid(同 foregroundProcess 按 SessionManager 私有字段形态读);取不到 → null。 */
+function shellPid(id: string): number | null {
+  const internals = getSessionManager() as unknown as {
+    readonly sessions?: ReadonlyMap<string, { readonly pty?: { readonly pid?: unknown } }>;
+  };
+  let pid: unknown;
+  try {
+    pid = internals.sessions?.get(id)?.pty?.pid;
+  } catch {
+    return null;
+  }
+  return typeof pid === 'number' ? pid : null;
 }
 
 /** node-pty 的前台进程名(含 shell 本身);取不到 → null。 */

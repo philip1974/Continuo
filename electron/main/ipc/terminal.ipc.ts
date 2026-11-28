@@ -405,6 +405,36 @@ export function makeRunningProcessHandler(deps?: {
   };
 }
 
+/**
+ * 终端当前目录(拆分终端继承,VSCode splitCwd: inherited):shell 用 OSC 7 上报过 → 会话 cwd;否则 shell 进程的真实当前目录
+ *(macOS 默认 zsh 不上报 OSC 7,`cd` 后会话 cwd 仍是初始目录);取不到 → 会话 cwd(初始目录,同 VSCode 回退 initialCwd)。
+ * 只查本窗口的会话;结果只作新终端的 cwd 用(main 新建时照常校验)。BDD: src/__tests__/terminal-split/
+ */
+export function makeCwdHandler(deps?: {
+  sessionStore?: Pick<typeof terminalSessions, 'get'>;
+  service?: Pick<typeof termService, 'shellProcessCwd'>;
+}) {
+  const sessionStore = deps?.sessionStore ?? terminalSessions;
+  const service = deps?.service ?? termService;
+  return async (input: IdOnlyInput, win: BrowserWindow): Promise<{ cwd: string | null }> => {
+    assertOwnedSession(sessionStore, input.id, win);
+    const processCwd = await service.shellProcessCwd(input.id);
+    // 查询期间会话被关 / 窗口换了 → 按不存在处理
+    assertOwnedSession(sessionStore, input.id, win);
+    const sessionCwd = sessionStore.get(input.id)?.cwd;
+    return { cwd: processCwd ?? (sessionCwd ? sessionCwd : null) };
+  };
+}
+
+/** OSC 7 上报的当前目录(只认本窗口的会话):写进会话 cwd,并记下该 shell 会上报目录(此后 terminal.cwd 以上报值为准)。 */
+export function makeUpdateCwdHandler() {
+  return (input: z.infer<typeof updateCwdInputSchema>, win: BrowserWindow): void => {
+    assertOwnedSession(terminalSessions, input.id, win);
+    terminalSessions.updateCwd(input.id, input.cwd);
+    termService.noteCwdReported(input.id);
+  };
+}
+
 /** 用户重命名:非空 → 固定标题;空(或全空白)→ 清除,回到自动标题(VSCode 重命名为空同)。 */
 export function makeRenameHandler(deps?: { sessionStore?: typeof terminalSessions }) {
   const sessionStore = deps?.sessionStore ?? terminalSessions;
@@ -537,6 +567,7 @@ export function registerTerminalIpc(): void {
   ownerScopedHandle(TERMINAL_CHANNELS.RESIZE, resizeInputSchema, resizeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.RUNNING_PROCESS, idOnlyInputSchema, runningProcessHandler);
+  ownerScopedHandle(TERMINAL_CHANNELS.CWD, idOnlyInputSchema, makeCwdHandler());
   ownerScopedHandle(TERMINAL_CHANNELS.RENAME, titleInputSchema, makeRenameHandler());
   ownerScopedHandle(TERMINAL_CHANNELS.RESOLVE_LINKS, resolveLinksInputSchema, makeResolveLinksHandler());
   ownerScopedHandle(
@@ -548,10 +579,7 @@ export function registerTerminalIpc(): void {
     },
   );
 
-  ownerScopedHandle(SESSION_UPDATE_CWD_CHANNEL, updateCwdInputSchema, (input, win) => {
-    assertOwnedSession(terminalSessions, input.id, win);
-    terminalSessions.updateCwd(input.id, input.cwd);
-  });
+  ownerScopedHandle(SESSION_UPDATE_CWD_CHANNEL, updateCwdInputSchema, makeUpdateCwdHandler());
 
   // sessions_changed:严格 per-owner 路由 — 不论 user / agent,可见域只由
   // ownerWindowId 决定,与 listSessionsHandler 一致。

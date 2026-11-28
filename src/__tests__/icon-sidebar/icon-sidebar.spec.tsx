@@ -32,6 +32,8 @@ vi.mock('../../shell/dock/dock-api-ref', () => ({
   setDockApi: vi.fn(),
   getDockApi: vi.fn(),
   focusPanel: vi.fn(),
+  subscribeDockApi: vi.fn(() => () => {}),
+  runWhenDockLayoutReady: vi.fn(),
 }));
 
 vi.mock('../../lib/toggle-settings-panel', () => ({

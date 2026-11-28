@@ -23,14 +23,20 @@ test.afterEach(async () => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-async function launch(): Promise<{ app: ElectronApplication; win: Page; ws: string }> {
+async function launch(opts: { readonly zdotdir?: string } = {}): Promise<{ app: ElectronApplication; win: Page; ws: string }> {
   const ud = mkdtempSync(path.join(tmpdir(), 'split-ud-'));
   const ws = mkdtempSync(path.join(tmpdir(), 'split-ws-'));
   dirs.push(ud, ws);
   mkdirSync(path.join(ws, 'sub'));
   writeFileSync(path.join(ws, 'a.ts'), 'export const a = 1;\n');
   seedExplorerJson(ud, { root: ws });
-  const app = await launchContinuo(ud);
+  // zdotdir:zsh 从空目录读启动文件(不加载用户 ~/.zshrc 里可能上报 OSC 7 的插件);launchContinuo 继承本进程 env
+  const prevZdotdir = process.env.ZDOTDIR;
+  if (opts.zdotdir !== undefined) process.env.ZDOTDIR = opts.zdotdir;
+  const app = await launchContinuo(ud).finally(() => {
+    if (prevZdotdir === undefined) delete process.env.ZDOTDIR;
+    else process.env.ZDOTDIR = prevZdotdir;
+  });
   apps.push(app);
   const win = await app.firstWindow();
   await win.waitForLoadState('domcontentloaded');
@@ -142,4 +148,45 @@ test('终端获焦时拆分键在当前终端右侧拆出新终端:焦点进新�
   await openCommandPalette(win);
   await commandPaletteInput(win).fill('Split Terminal');
   await expect(win.getByRole('option', { name: /(拆分终端|Split Terminal|터미널 분할)/ }).first()).toBeVisible();
+});
+
+test('右键「拆分终端」失败(父终端目录与工作区已被删除,新建被拒)→ 焦点回到父终端,不掉到 body', async () => {
+  test.setTimeout(90_000);
+  const { win, ws } = await launch();
+  expect(await win.evaluate(() => globalThis.__continuoTest!.executeCommand('terminal.new'))).toBe(true);
+  await expect(win.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(1, { timeout: 20_000 });
+  const [first] = (await layout(win)).groups.flat();
+  await focusTerminal(win, first!);
+  await expect.poll(() => activeText(win), { timeout: 15_000 }).not.toBe('');
+  rmSync(ws, { recursive: true, force: true });
+  await win.locator('[data-testid=terminal-panel-view-xterm-host]').first().click({ button: 'right' });
+  await win.getByRole('menuitem', { name: SPLIT_LABEL }).click();
+  await expect.poll(async () => (await layout(win)).focused, { timeout: 10_000 }).toBe(first);
+  await win.waitForTimeout(500);
+  expect((await layout(win)).groups.flat()).toEqual([first]);
+  expect((await layout(win)).focused).toBe(first);
+});
+
+test('shell 不上报 OSC 7(macOS 默认 zsh、无用户插件):拆分仍继承父终端 `cd` 之后的目录(main 端取 shell 进程真实目录)', async () => {
+  test.setTimeout(90_000);
+  const zdotdir = mkdtempSync(path.join(tmpdir(), 'split-zdot-'));
+  dirs.push(zdotdir);
+  const { win, ws } = await launch({ zdotdir });
+  expect(await win.evaluate(() => globalThis.__continuoTest!.executeCommand('terminal.new'))).toBe(true);
+  await expect(win.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(1, { timeout: 20_000 });
+  const [first] = (await layout(win)).groups.flat();
+  await focusTerminal(win, first!);
+  await expect.poll(() => activeText(win), { timeout: 15_000 }).not.toBe('');
+  await win.keyboard.type('cd sub && printf "%s\\n" READY');
+  await win.keyboard.press('Enter');
+  await expect.poll(() => activeText(win), { timeout: 10_000 }).toMatch(/^READY$/m);
+  await win.keyboard.press(SPLIT_KEY);
+  await expect(win.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(2, { timeout: 20_000 });
+  await expect.poll(async () => (await layout(win)).groups.length, { timeout: 10_000 }).toBe(2);
+  const newId = (await layout(win)).groups[1]![0]!;
+  await expect.poll(async () => (await layout(win)).focused, { timeout: 10_000 }).toBe(newId);
+  await expect.poll(() => activeText(win), { timeout: 15_000 }).not.toBe('');
+  await win.keyboard.type('pwd');
+  await win.keyboard.press('Enter');
+  await expect.poll(() => activeText(win), { timeout: 10_000 }).toMatch(new RegExp(`${path.basename(ws)}/sub$`, 'm'));
 });

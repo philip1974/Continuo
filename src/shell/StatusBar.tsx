@@ -338,12 +338,15 @@ const EditorSelectionItem = memo(function EditorSelectionItem({ tabId, groupId }
   );
 });
 
-/** 切换侧栏的命令(状态栏「侧栏已隐藏」点击执行;提示显示其当前生效键位)。 */
+/** 切换侧栏的命令(状态栏「侧栏已隐藏」悬停提示显示其当前生效键位)。 */
 const TOGGLE_SIDEBAR_COMMAND_ID = 'explorer.toggleSidebar';
+/** 显示资源管理器并聚焦(workbench.view.explorer:侧栏打开 + 焦点进文件树,无工作区 → 「打开文件夹」)。 */
+const SHOW_EXPLORER_COMMAND_ID = 'workbench.view.explorer';
 
 /**
- * 「侧栏已隐藏」:点击显示侧栏(同 ⌘B,经命令注册表执行),悬停「显示侧栏 (⌘B)」(键位随改绑)。可访问名 = 可见文字,
- * 动作说明在 title(作可访问描述,同 MCP 复制按钮)。
+ * 「侧栏已隐藏」:点击显示侧栏并把焦点交给资源管理器树(经命令注册表执行 workbench.view.explorer),悬停「显示侧栏 (⌘B)」
+ *(键位随改绑)。不走 ⌘B 的 toggle:显示侧栏后本按钮随即消失,⌘B 不动焦点(VSCode 显示侧栏也不抢焦点)→ 焦点会掉到 body。
+ * 可访问名 = 可见文字,动作说明在 title(作可访问描述,同 MCP 复制按钮)。
  */
 function SidebarHiddenItem({ label, showLabel }: { readonly label: string; readonly showLabel: string }) {
   const hotkey = useRegisteredCommandHotkeyText(coApp.commands, TOGGLE_SIDEBAR_COMMAND_ID);
@@ -351,7 +354,7 @@ function SidebarHiddenItem({ label, showLabel }: { readonly label: string; reado
     // native button:24px 状态栏内的行内文本按钮(同 MCP 复制按钮);颜色走语义 token。
     <button
       type="button"
-      onClick={() => void runRegisteredCommand(coApp.commands, TOGGLE_SIDEBAR_COMMAND_ID, showLabel)}
+      onClick={() => void runRegisteredCommand(coApp.commands, SHOW_EXPLORER_COMMAND_ID, showLabel)}
       title={withHotkey(showLabel, hotkey)}
       className={STATUS_ITEM_BUTTON_CLASS}
     >

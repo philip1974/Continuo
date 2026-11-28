@@ -34,7 +34,7 @@ describe('设置命令的标题同 VSCode', () => {
     ['en', 'Preferences: Open Settings'],
     ['ko', '기본 설정: 설정 열기'],
   ] as const)('%s → %s', (locale, label) => {
-    expect(displayLabel(locale, 'settings.toggle')).toBe(label);
+    expect(displayLabel(locale, 'workbench.action.openSettings')).toBe(label);
   });
 
   it.each([
@@ -44,7 +44,7 @@ describe('设置命令的标题同 VSCode', () => {
     ['en', 'preferences'],
     ['ko', '설정 열기'],
   ] as const)('%s 搜「%s」找到设置', (locale, query) => {
-    expect(search(locale, query)).toContain('settings.toggle');
+    expect(search(locale, query)).toContain('workbench.action.openSettings');
   });
 });
 

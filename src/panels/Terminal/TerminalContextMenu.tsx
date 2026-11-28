@@ -48,8 +48,8 @@ export function TerminalContextMenu({
   children,
 }: {
   actions: TerminalContextMenuActions;
-  /** 拆分终端(在本终端旁新建,见 shell/dock/terminal-split)。 */
-  onSplit: () => void;
+  /** 拆分终端(在本终端旁新建,见 shell/dock/terminal-split);resolve 新终端 id,失败 null。 */
+  onSplit: () => Promise<string | null>;
   children: ReactNode;
 }) {
   const t = useT();
@@ -86,7 +86,15 @@ export function TerminalContextMenu({
           <Item
             onSelect={() => {
               keepFocusAwayRef.current = true;
-              onSplit();
+              // 拆分失败(新建被拒 / 无工作区时取消选文件夹…):没有新终端接焦点 → 还给本终端,不掉到 body;
+              // 期间焦点已去了别处(用户点了别的地方 / 弹出的对话框)则不抢。
+              const doc = portalHost?.ownerDocument ?? document;
+              const refocus = () => {
+                if (!doc.activeElement || doc.activeElement === doc.body) actions.focus();
+              };
+              onSplit().then((id) => {
+                if (id === null) refocus();
+              }, refocus);
             }}
             shortcut={splitShortcut}
           >

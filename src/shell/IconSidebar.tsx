@@ -2,7 +2,8 @@
 // 顶部:内置导航(VSCode 活动栏默认顺序 资源管理器 / 搜索 / 源代码管理 / 运行和调试 / 扩展,取本项目有的:资源管理器、搜索、
 // 运行和调试)。中段:plugin 通过 ribbon 贡献的图标。
 // 底部:Settings 等元类(产品无账户体系,不放账户头像 chip)。
-// Explorer 按钮 toggle 左侧 Explorer Sidebar 显隐(active 状态显示左侧 accent bar);
+// Explorer 按钮 toggle 左侧 Explorer Sidebar 显隐(active 状态显示左侧 accent bar);搜索 / 运行和调试在对应面板于主窗正显示时
+// 同样 active,再点收起该面板;
 // Settings 按钮开关 Settings 面板。
 
 import { useRegistry } from '@/plugins/registries/useRegistry';
@@ -16,6 +17,8 @@ import { useAvailableUpdates } from '@/marketplace/update-store';
 import { runContributedAction, runRegisteredCommand } from '@/lib/run-contributed-action';
 import { useT } from '@/i18n';
 import { useRegisteredCommandHotkeyText, withHotkey } from '@/lib/hotkey-label';
+import { SEARCH_PANEL_ID } from '@/shell/dock/side-panel';
+import { closeVisiblePanelOfType, usePanelTypeVisible } from '@/shell/dock/visible-panel-type';
 
 interface IconBarItemConfig {
   id: string;
@@ -100,6 +103,7 @@ const SETTINGS_ICON = <SettingsGearIcon size={ICON_SIZE} />;
 /** 活动栏「搜索」/「运行和调试」执行的命令(VSCode workbench.view.search ⇧⌘F / workbench.view.debug ⇧⌘D)。 */
 const ACTIVITY_SEARCH_COMMAND_ID = 'workbench.action.findInFiles';
 const ACTIVITY_DEBUG_COMMAND_ID = 'workbench.view.debug';
+const DEBUG_PANEL_TYPE = 'debug';
 
 export function IconSidebar() {
   const t = useT();
@@ -112,6 +116,8 @@ export function IconSidebar() {
   const settingsHotkey = useRegisteredCommandHotkeyText(coApp.commands, 'settings.toggle');
   const searchHotkey = useRegisteredCommandHotkeyText(coApp.commands, ACTIVITY_SEARCH_COMMAND_ID);
   const debugHotkey = useRegisteredCommandHotkeyText(coApp.commands, ACTIVITY_DEBUG_COMMAND_ID);
+  const searchVisible = usePanelTypeVisible(SEARCH_PANEL_ID);
+  const debugVisible = usePanelTypeVisible(DEBUG_PANEL_TYPE);
 
   const explorerLabel = sidebarOpen ? t('shell.iconbar.hide_explorer') : t('shell.iconbar.show_explorer');
   const explorerItem: IconBarItemConfig = {
@@ -122,24 +128,40 @@ export function IconSidebar() {
     onClick: toggleSidebar,
     active: sidebarOpen,
   };
-  // 打开 / 聚焦对应面板(与 ⇧⌘F / ⇧⌘D 同一命令;命令抛错弹 error toast)
-  const commandItem = (id: string, commandId: string, label: string, hotkey: string | undefined, node: React.ReactNode) => ({
+  // VSCode 活动栏(paneCompositeBar ViewContainerActivityAction):对应视图在主窗正显示 → 激活态(aria-pressed),再点收起(关掉该面板,
+  // 同资源管理器图标收起侧栏);否则打开 / 聚焦对应面板(与 ⇧⌘F / ⇧⌘D 同一命令;命令抛错弹 error toast)。
+  const commandItem = (
+    id: string,
+    commandId: string,
+    panelType: string,
+    visible: boolean,
+    label: string,
+    hotkey: string | undefined,
+    node: React.ReactNode,
+  ): IconBarItemConfig => ({
     id,
     label,
     tooltip: withHotkey(label, hotkey),
     node,
-    onClick: () => void runRegisteredCommand(coApp.commands, commandId, label),
+    onClick: visible
+      ? () => closeVisiblePanelOfType(panelType)
+      : () => void runRegisteredCommand(coApp.commands, commandId, label),
+    active: visible,
   });
-  const searchItem: IconBarItemConfig = commandItem(
+  const searchItem = commandItem(
     'search',
     ACTIVITY_SEARCH_COMMAND_ID,
+    SEARCH_PANEL_ID,
+    searchVisible,
     t('shell.iconbar.search'),
     searchHotkey,
     SEARCH_ICON,
   );
-  const debugItem: IconBarItemConfig = commandItem(
+  const debugItem = commandItem(
     'debug',
     ACTIVITY_DEBUG_COMMAND_ID,
+    DEBUG_PANEL_TYPE,
+    debugVisible,
     t('shell.iconbar.run_debug'),
     debugHotkey,
     RUN_DEBUG_ICON,

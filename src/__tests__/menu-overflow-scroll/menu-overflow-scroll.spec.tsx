@@ -39,7 +39,7 @@ describe('Radix 右键菜单限高 + 滚动', () => {
     render(
       <TerminalContextMenu
         actions={{ hasSelection: () => false, copy: noop, paste: noop, selectAll: noop, clear: noop, focus: noop }}
-        onSplit={noop}
+        onSplit={async () => null}
       >
         <div data-testid="term">term</div>
       </TerminalContextMenu>,

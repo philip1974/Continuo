@@ -880,6 +880,7 @@
 
 ## [功能入口可发现性(对齐 VSCode 菜单 / 活动栏 / 命令面板 / 过滤菜单)](./entry-discoverability/README.md)
 
+- [`activity-active.spec.tsx`](./entry-discoverability/activity-active.spec.tsx)
 - [`app-menu-entries.spec.ts`](./entry-discoverability/app-menu-entries.spec.ts)
 - [`palette-entries.spec.ts`](./entry-discoverability/palette-entries.spec.ts)
 - [`ui-entries.spec.tsx`](./entry-discoverability/ui-entries.spec.tsx)
@@ -2298,6 +2299,8 @@
 
 ## [拆分终端](./terminal-split/README.md)
 
+- [`process-cwd.spec.ts`](./terminal-split/process-cwd.spec.ts)
+- [`split-cwd-main.spec.ts`](./terminal-split/split-cwd-main.spec.ts)
 - [`terminal-split.spec.ts`](./terminal-split/terminal-split.spec.ts)
 
 ## [terminal-store (M-Terminal Step T3 + Agent Terminal MCP P1)](./terminal-store/README.md)

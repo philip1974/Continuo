@@ -7,7 +7,7 @@ import {
 } from './helpers/palette';
 import { SETTINGS } from './helpers/settings';
 
-test('执行 settings.toggle → localStorage recent 含 settings.toggle id', async ({
+test('执行「首选项: 打开设置」→ localStorage recent 含 workbench.action.openSettings id', async ({
   window,
 }) => {
   await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({
@@ -28,5 +28,5 @@ test('执行 settings.toggle → localStorage recent 含 settings.toggle id', as
   );
   expect(raw).not.toBeNull();
   const list = JSON.parse(raw!) as Array<{ id: string; ts: number }>;
-  expect(list[0]?.id).toBe('settings.toggle');
+  expect(list[0]?.id).toBe('workbench.action.openSettings');
 });

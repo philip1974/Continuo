@@ -395,6 +395,9 @@ const api = {
     /** 关闭前确认:前台正在运行的子程序名(只有 shell 时为 null)。 */
     runningProcess: (id: string): Promise<IpcResult<{ process: string | null }>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.RUNNING_PROCESS, { id }),
+    /** 拆分终端继承目录:OSC 7 上报的目录,否则 shell 进程的真实当前目录(取不到 → 会话初始目录;无 → null)。 */
+    cwd: (id: string): Promise<IpcResult<{ cwd: string | null }>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.CWD, { id }),
     updateCwd: (id: string, cwd: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(SESSION_UPDATE_CWD_CHANNEL, { id, cwd }),
     /** tab 右键「重命名…」:非空固定标题;空串清除,回到自动标题。 */

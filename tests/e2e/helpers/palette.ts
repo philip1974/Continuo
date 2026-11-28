@@ -62,5 +62,16 @@ export async function filterToSettingsCommand(window: Page): Promise<Locator> {
   return settingsCommandOption(window);
 }
 
+const TOGGLE_SETTINGS_COMMAND_TITLE = /(切换设置|Toggle Settings|설정 전환)/;
+
+/** 命令面板里按英文原名筛出 ⌘, 的「查看: 切换设置」(settings.toggle)并返回该项。 */
+export async function filterToToggleSettingsCommand(window: Page): Promise<Locator> {
+  await commandPaletteInput(window).fill('Toggle Settings');
+  return window
+    .getByRole('listbox', { name: COMMAND_LIST })
+    .getByRole('option')
+    .filter({ hasText: TOGGLE_SETTINGS_COMMAND_TITLE });
+}
+
 /** 列表行选中态:className 含独立的 `border-accent`(pickerRowClassName;未选中行是 `border-transparent`)。 */
 export const ROW_SELECTED = /(^|\s)border-accent(\s|$)/;

@@ -22,7 +22,7 @@ function actions(over: Partial<TerminalContextMenuActions> = {}): TerminalContex
   };
 }
 
-function open(a: TerminalContextMenuActions, onSplit: () => void = vi.fn()) {
+function open(a: TerminalContextMenuActions, onSplit: () => Promise<string | null> = vi.fn(async () => 'new')) {
   render(
     <TerminalContextMenu actions={a} onSplit={onSplit}>
       <div data-testid="term">xterm</div>
@@ -61,11 +61,36 @@ describe('终端右键菜单', () => {
     act(() => fireEvent.click(screen.getByRole('menuitem', { name: label })));
     expect(a[key]).toHaveBeenCalledTimes(1);
   });
-  it('「拆分终端」→ onSplit(关闭菜单后焦点交给新终端,不回本终端:jsdom 不触发 onCloseAutoFocus,见 e2e terminal-split)', () => {
-    const onSplit = vi.fn();
-    open(actions(), onSplit);
+  it('「拆分终端」→ onSplit(关闭菜单后焦点交给新终端,不回本终端:jsdom 不触发 onCloseAutoFocus,见 e2e terminal-split)', async () => {
+    const onSplit = vi.fn(async () => 'new');
+    const a = actions();
+    open(a, onSplit);
     act(() => fireEvent.click(screen.getByRole('menuitem', { name: '拆分终端' })));
     expect(onSplit).toHaveBeenCalledTimes(1);
+    await act(async () => {});
+    expect(a.focus).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['新建失败(null)', () => Promise.resolve(null)],
+    ['抛错', () => Promise.reject(new Error('boom'))],
+  ] as const)('「拆分终端」%s → 焦点还给本终端(不掉到 body)', async (_label, impl) => {
+    const a = actions();
+    open(a, vi.fn(impl));
+    act(() => fireEvent.click(screen.getByRole('menuitem', { name: '拆分终端' })));
+    await act(async () => {});
+    expect(a.focus).toHaveBeenCalledTimes(1);
+  });
+  it('「拆分终端」失败前焦点已去了别处 → 不抢焦点', async () => {
+    let fail!: (v: null) => void;
+    const a = actions();
+    open(a, () => new Promise<string | null>((r) => (fail = r)));
+    act(() => fireEvent.click(screen.getByRole('menuitem', { name: '拆分终端' })));
+    const other = document.createElement('input');
+    document.body.appendChild(other);
+    other.focus();
+    await act(async () => fail(null));
+    expect(a.focus).not.toHaveBeenCalled();
+    other.remove();
   });
   it('三语文案齐全', async () => {
     const { en } = await import('../../../electron/shared/i18n-locales/en');

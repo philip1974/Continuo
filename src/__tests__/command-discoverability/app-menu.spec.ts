@@ -1,5 +1,5 @@
 // BDD: command-discoverability —— 应用菜单随界面语言(role 项带三语 label、Edit / View / Window 显式子项),
-// 应用菜单有「设置… ⌘,」= 命令 settings.toggle(在 首选项 ▸ 子菜单里,见 app-menu-bar)。见同目录 README 第 1 条。
+// 应用菜单有「设置… ⌘,」= 命令 workbench.action.openSettings(只打开;显示 settings.toggle 的键位 ⌘,;在 首选项 ▸ 子菜单里,见 app-menu-bar)。见同目录 README 第 1 条。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MenuItemConstructorOptions } from 'electron';
 
@@ -99,13 +99,13 @@ describe.each([
   });
 });
 
-describe('「设置…」菜单项 = 命令 settings.toggle', () => {
+describe('「设置…」菜单项 = 命令 workbench.action.openSettings', () => {
   function settingsItem(items: readonly Item[]): Item | undefined {
     return flatten(items).find((m) => m.label === 'menu.app.settings');
   }
 
-  it('mac:在应用菜单里,accelerator = 推送的生效键位(⌘,);点击经 RUN_MENU_COMMAND 发 settings.toggle', () => {
-    setMenuKeybindings({ 'settings.toggle': 'meta+,' });
+  it('mac:在应用菜单里,accelerator = 推送的生效键位(⌘,);点击经 RUN_MENU_COMMAND 发 workbench.action.openSettings', () => {
+    setMenuKeybindings({ 'workbench.action.openSettings': 'meta+,' });
     const top = template(true);
     const appMenu = top[0]!;
     expect(appMenu.label).toBe('Continuo');
@@ -113,19 +113,21 @@ describe('「设置…」菜单项 = 命令 settings.toggle', () => {
     expect(item?.accelerator).toBe('Command+,');
     const win = new mocks.FakeBrowserWindow();
     item?.click?.(item as never, win as never, {} as never);
-    expect(mocks.sendMenuCommand).toHaveBeenCalledWith(win, 'settings.toggle', false);
+    expect(mocks.sendMenuCommand).toHaveBeenCalledWith(win, 'workbench.action.openSettings', false);
   });
 
   it('其它平台:在 File 菜单里', () => {
-    setMenuKeybindings({ 'settings.toggle': 'ctrl+,' });
+    setMenuKeybindings({ 'workbench.action.openSettings': 'ctrl+,' });
     const file = template(false).find((m) => m.label === 'menu.file.label');
     const item = settingsItem(Array.isArray(file?.submenu) ? file.submenu : []);
     expect(item?.accelerator).toBe('Ctrl+,');
   });
 
-  it('settings.toggle 是菜单命令,命令默认键 mod+,', () => {
+  it('workbench.action.openSettings 是菜单命令(无自身键位);⌘, 属于 settings.toggle', () => {
     bootCorePlugins();
-    expect(MENU_COMMAND_IDS).toContain('settings.toggle');
+    expect(MENU_COMMAND_IDS).toContain('workbench.action.openSettings');
+    expect(MENU_COMMAND_IDS).not.toContain('settings.toggle');
+    expect(coApp.commands.get('workbench.action.openSettings')?.hotkey).toBeUndefined();
     expect(coApp.commands.get('settings.toggle')?.hotkey).toBe('mod+,');
   });
 });

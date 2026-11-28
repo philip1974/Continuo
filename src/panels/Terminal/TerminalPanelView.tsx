@@ -147,7 +147,7 @@ function TerminalPanelContent({
   }, [focus]);
 
   // 右键「拆分终端」:拆分本终端(不是窗口的活动终端)。
-  const splitHere = useCallback(() => void splitTerminalPanel(api.id), [api.id]);
+  const splitHere = useCallback(() => splitTerminalPanel(api.id), [api.id]);
 
   // 对外句柄:focus 供 DockShell 在 exit-maximize 后拉回 xterm 焦点(topic-22:
   // 同一 panel 已 active 时 onDidActiveChange 不会再触发);openSearch 供

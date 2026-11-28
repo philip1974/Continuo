@@ -187,6 +187,35 @@ describe('落点与 cwd', () => {
     expect(gridColumns(api)).toEqual([['terminal-a'], ['terminal-b'], ['terminal-c'], ['terminal-agent']]);
   });
 
+  /** main 端 terminal.cwd 的替身(preload 未注入时 coApi 回退 window.api)。 */
+  function stubMainCwd(impl: (id: string) => Promise<unknown>) {
+    const cwd = vi.fn(impl);
+    vi.stubGlobal('api', { terminal: { cwd } });
+    return cwd;
+  }
+
+  it('cwd 取 main 端 terminal.cwd(shell 未上报 OSC 7 时为 shell 进程 `cd` 之后的真实目录),优先于会话 cwd', async () => {
+    const { push } = setup();
+    const cwd = stubMainCwd(async () => ({ ok: true, data: { cwd: '/repo/sub/deeper' } }));
+    await splitTerminalPanel('terminal-a');
+    expect(cwd).toHaveBeenCalledWith('a');
+    expect(createUserTerminal).toHaveBeenCalledWith({ cwd: '/repo/sub/deeper' });
+    push(makeSession('b', { createdAt: 3 }));
+  });
+
+  it('main 端取不到(cwd null)→ 不传 cwd(按工作区根新建);查询失败 → 回退会话 cwd', async () => {
+    const { push } = setup();
+    stubMainCwd(async () => ({ ok: true, data: { cwd: null } }));
+    await splitTerminalPanel('terminal-a');
+    expect(createUserTerminal).toHaveBeenLastCalledWith({});
+    stubMainCwd(async () => {
+      throw new Error('ipc down');
+    });
+    await splitTerminalPanel('terminal-a');
+    expect(createUserTerminal).toHaveBeenLastCalledWith({ cwd: '/repo/sub' });
+    push(makeSession('b', { createdAt: 3 }));
+  });
+
   it('父终端会话没有 cwd → 不传 cwd(按工作区根新建)', async () => {
     const { push } = setup();
     useTerminalStore.setState({ sessions: [makeSession('a', { cwd: '' }), makeSession('c', { createdAt: 2 })] });

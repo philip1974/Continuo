@@ -1,6 +1,6 @@
 # settings-toggle(⌘, 切换 Settings panel,VSCode `Toggle` 风)
 
-行为契约:**`settings.toggle` 命令(⌘,/ IconSidebar 齿轮 / 命令面板)
+行为契约:**`settings.toggle` 命令(⌘,,命令面板「查看: 切换设置」)与 IconSidebar 齿轮
 统一走 `toggleSettingsPanel()` helper。helper 实现 toggle 语义:**
 
 * **panel 不存在** → 打开 + `setSidebarOpen(false)` 收起 Explorer 侧栏(让 Settings 拿到更宽空间)
@@ -8,6 +8,10 @@
 * **panel 存在但主窗没在显示它**(被其他 tab 遮住)→ `setActive()` 聚焦 + 收起侧栏
 * **panel 在 popout 子窗**(即便是活动面板)→ 不关闭,在子窗激活并聚焦子窗,侧栏不动;活动组在子窗时新建落在主窗(见 `popout-open-target`)
 * **dock 未就绪**(开机时序)→ 静默忽略,无副作用
+
+> 只打开的入口:命令面板「首选项: 打开设置」与应用菜单「设置…」= `workbench.action.openSettings`(VSCode 同 id),走
+> `openSettingsPanel()`:不存在 → 新建 + 收侧栏;存在 → 激活,**已显示也不关**。刻意差异:VSCode 的 ⌘, 就是 openSettings(不切换),
+> 本项目 ⌘, 保留「再按收回」。
 
 > 与 VSCode 不同的是收侧栏(VSCode `⌘,` 不联动 sidebar)。Continuo 的 Settings panel 内部已是「左导航 + 右内容」两栏,再叠 Explorer 侧栏会被挤窄。
 
@@ -32,7 +36,9 @@
 ### 命令注册
 
 * `coApp.commands.getAll()` 含 id=`settings.toggle`
-* `category='Preferences'`、`title='Open Settings'`(命令面板「首选项: 打开设置」,VSCode workbench.action.openSettings 说法,见 `entry-discoverability`)、`hotkey='mod+,'`
+* `category='View'`、`title='Toggle Settings'`(命令面板「查看: 切换设置」)、`hotkey='mod+,'`
+* 另有 `workbench.action.openSettings`:`category='Preferences'`、`title='Open Settings'`(「首选项: 打开设置」,见 `entry-discoverability`),
+  无默认键;设置已显示时执行不关闭(对照:同一状态下 `settings.toggle` 关闭)
 
 ### dock 未就绪
 

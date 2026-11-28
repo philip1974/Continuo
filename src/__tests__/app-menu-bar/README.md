@@ -12,7 +12,7 @@
 
 | 菜单 | 命令项(命令 id) |
 |---|---|
-| 应用(macOS) | 首选项 ▸ 设置…(`settings.toggle`)、键盘快捷方式(`workbench.action.openGlobalKeybindings`);其余 role 项不变 |
+| 应用(macOS) | 首选项 ▸ 设置…(`workbench.action.openSettings`)、键盘快捷方式(`workbench.action.openGlobalKeybindings`);其余 role 项不变 |
 | 文件 | 新建窗口、打开文件夹…(`workbench.action.files.openFolder`)、在新窗口中打开文件夹…、打开最近的文件夹…(`workbench.action.openRecent`)、重新打开已关闭的编辑器、全部保存(`workbench.action.files.saveAll`)、自动保存(勾选项 `workbench.action.toggleAutoSave`,见 `files-auto-save`)、[Windows / Linux:首选项 ▸]、还原文件 / 关闭编辑器 / 关闭文件夹 / 关闭窗口(见 `entry-discoverability`) |
 | 编辑 | 撤销 / 重做(按焦点分派,见第 6 条)、剪切 / 复制 / 粘贴…(role 不变)、查找(`actions.find`)、替换(`editor.action.startFindReplaceAction`)、在文件中查找(`workbench.action.findInFiles`)、切换行注释 / 块注释(`editor.action.commentLine` / `blockComment`) |
 | 选择 | 全选(role)、展开行选择(`expandLineSelection`)、向上 / 向下复制一行、向上 / 向下移动一行、在上面 / 下面添加光标、添加下一个匹配项(`addSelectionToNextFindMatch`)、选择所有匹配项(`selectHighlights`) |
@@ -83,7 +83,8 @@ VSCode 菜单的撤销 / 重做是 `undo` / `redo` 多实现命令(`UndoCommand.
 ## 与 VSCode 的差异
 
 - 只取关键入口;没有 打开最近 ▸ 子菜单(打开的是最近文件夹选择器)、Run 菜单、扩展 / 源代码管理等视图(显示 ▸ 运行 = 调试视图)
-- 首选项 ▸ 设置 = `settings.toggle`(命令面板标题「首选项: 打开设置」;已显示时再点会关闭,与 ⌘, 一致)
+- 首选项 ▸ 设置 = `workbench.action.openSettings`(命令面板「首选项: 打开设置」,同 VSCode:只打开 / 聚焦,已显示不关);菜单显示的 ⌘, 是
+  `settings.toggle` 的生效键位(`menuKeybindings` 的 `MENU_ACCELERATOR_FROM`,改键 / 解绑跟随)。刻意差异:⌘, 在设置已显示时收回(见 `settings-toggle`)
 - 帮助 → 键盘快捷方式参考打开设置的快捷键页(VSCode 打开 PDF)
 - 选择菜单的「展开行选择」对应 `expandLineSelection`(VSCode 选择菜单是语法级「扩大选区」)
 - 编辑菜单保留「全选」(选择菜单也有)

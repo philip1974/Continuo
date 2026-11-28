@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // BDD: settings-toggle
 // 验证 settings.toggle 命令 + toggleSettingsPanel helper:
-//   - 命令注册(id='settings.toggle' / hotkey='mod+,' / category='Settings')
+//   - 命令注册(id='settings.toggle' / hotkey='mod+,' / 查看: 切换设置;workbench.action.openSettings 只打开)
 //   - dock 未就绪 → 静默 noop
 //   - panel 不存在 → addPanel + setSidebarOpen(false)
 //   - panel 存在且 active → close,sidebarOpen 不变
@@ -72,14 +72,41 @@ describe('settings.toggle · 命令注册', () => {
     expect(ids).toContain('settings.toggle');
   });
 
-  it('hotkey=mod+, / category=Preferences(VSCode「Preferences: Open Settings」)', () => {
+  it('hotkey=mod+, / 命令面板「查看: 切换设置」', () => {
     bootCorePlugins();
     const cmd = coApp.commands
       .getAll()
       .find((c) => c.id === 'settings.toggle')!;
     expect(cmd.hotkey).toBe('mod+,');
+    expect(cmd.category).toBe('View');
+    expect(cmd.title).toBe('Toggle Settings');
+    expect(cmd.titleKey).toBe('commands.view.toggle_settings.title');
+  });
+
+  it('workbench.action.openSettings(「首选项: 打开设置」,无默认键)只打开:设置已显示时执行不关闭', async () => {
+    bootCorePlugins();
+    const cmd = coApp.commands.get('workbench.action.openSettings')!;
     expect(cmd.category).toBe('Preferences');
     expect(cmd.title).toBe('Open Settings');
+    expect(cmd.hotkey).toBeUndefined();
+    const panel = makeFakePanel(true);
+    const fake = makeFakeApi({ panel });
+    setDockApi(fake as never);
+    await cmd.fn();
+    expect(panel.api.close).not.toHaveBeenCalled();
+    expect(fake.addPanel).not.toHaveBeenCalled();
+    // 对照:⌘, 的 settings.toggle 在同一状态下关闭设置
+    await coApp.commands.get('settings.toggle')!.fn();
+    expect(panel.api.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('workbench.action.openSettings:设置不存在 → 新建 + 收起侧栏', async () => {
+    bootCorePlugins();
+    const fake = makeFakeApi({ panel: null });
+    setDockApi(fake as never);
+    await coApp.commands.get('workbench.action.openSettings')!.fn();
+    expect(fake.addPanel).toHaveBeenCalledTimes(1);
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(false);
   });
 });
 

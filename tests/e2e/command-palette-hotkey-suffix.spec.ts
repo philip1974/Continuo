@@ -4,7 +4,8 @@ import { SETTINGS } from './helpers/settings';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 import { dispatchModKey } from './helpers/hotkeys';
 
-const SETTINGS_TITLE = /(打开设置|Open Settings|설정 열기)/;
+// ⌘, 属于「查看: 切换设置」(settings.toggle);「首选项: 打开设置」只打开、无默认键
+const SETTINGS_TITLE = /(切换设置|Toggle Settings|설정 전환)/;
 
 test('settings.toggle 行右侧显示 hotkey 切片', async ({ window }) => {
   const settingsButton = window.getByRole('button', { name: SETTINGS });

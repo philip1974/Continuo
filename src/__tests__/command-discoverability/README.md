@@ -13,7 +13,7 @@
 - Edit / View / Window 为显式子项(不再用 Electron 默认子菜单的英文标签);View 仍是「重新加载 / 强制重新加载」自定义项
   (先脏确认 + flush)+ 开发者工具 / 缩放 / 全屏
 - Windows / Linux 的 Window 菜单不再带 role `close`(其 Ctrl+W 会直接关整窗);关窗口在 File 菜单(⇧Ctrl+W)
-- 应用菜单(macOS)首选项 ▸ 有「设置… ⌘,」;其它平台在 File → 首选项 ▸。点击 = 命令 `settings.toggle`(经 `MENU_COMMAND_IDS` /
+- 应用菜单(macOS)首选项 ▸ 有「设置… ⌘,」;其它平台在 File → 首选项 ▸。点击 = 命令 `workbench.action.openSettings`(只打开 / 聚焦,已显示不关;显示的 ⌘, 是 `settings.toggle` 的键位;经 `MENU_COMMAND_IDS` /
   `RUN_MENU_COMMAND`,popout 子窗聚焦时发给打开它的主窗);accelerator 显示命令当前生效的主键(见 `app-menu-bar`),一次按键只执行一次
   (renderer 热键先处理并 preventDefault,菜单 accelerator 不再触发)
 - 切换界面语言 → 菜单整体重建(既有 `setMenuRebuilder`),标签跟随
@@ -67,7 +67,7 @@
 |---|---|
 | `electron/main/app-menu.ts` | 应用菜单模板(三语 label、显式子项、「设置…」) |
 | `electron/main/index.ts` | `buildAppMenu`:注入开窗 / 重新加载动作;语言切换重建 |
-| `electron/shared/window-channels.ts` | `MENU_COMMAND_IDS` 登记 `settings.toggle`;`VIEW_ACTION` 通道与动作表 |
+| `electron/shared/window-channels.ts` | `MENU_COMMAND_IDS` 登记 `workbench.action.openSettings`;`VIEW_ACTION` 通道与动作表 |
 | `electron/main/ipc/window.ipc.ts` | `window:view-action` |
 | `src/shell/window-commands.ts` | 窗口类命令(Quick Open / 关闭 / 重新加载 / 缩放 / 全屏) |
 | `src/shell/dock/dock-panel-actions.ts` | 显示输出 / 调试、弹出到独立窗口(dock「⋯」菜单与标题栏按钮共用) |

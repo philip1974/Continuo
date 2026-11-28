@@ -37,6 +37,7 @@ function registerCommands(): void {
     ['settings.toggle', 'mod+,'],
     ['workbench.action.findInFiles', 'mod+shift+f'],
     ['workbench.view.debug', 'mod+shift+d'],
+    ['workbench.view.explorer', 'mod+shift+e'],
   ] as const) {
     commands.register({ id, title: id, hotkey, fn: () => void ran.push(id) });
   }
@@ -154,7 +155,7 @@ describe('状态栏「侧栏已隐藏」可点', () => {
     delete (window as { api?: unknown }).api;
   });
 
-  it('侧栏隐藏时是按钮:title「显示侧栏 (键位)」随改键;点击执行 explorer.toggleSidebar;侧栏显示时不出现', async () => {
+  it('侧栏隐藏时是按钮:title「显示侧栏 (⌘B 键位)」随改键;点击执行 workbench.view.explorer(显示侧栏 + 焦点进资源管理器树,不掉到 body);侧栏显示时不出现', async () => {
     useLayoutUiStore.setState({ sidebarOpen: false });
     const { rerender } = render(<StatusBar />);
     const btn = screen.getByRole('button', { name: '侧栏已隐藏' });
@@ -164,7 +165,7 @@ describe('状态栏「侧栏已隐藏」可点', () => {
     expect(btn.getAttribute('title')).toBe('显示侧栏 (Ctrl+Alt+B)');
     fireEvent.click(btn);
     await flush();
-    expect(ran).toEqual(['explorer.toggleSidebar']);
+    expect(ran).toEqual(['workbench.view.explorer']);
     act(() => useLayoutUiStore.setState({ sidebarOpen: true }));
     rerender(<StatusBar />);
     expect(screen.queryByRole('button', { name: '侧栏已隐藏' })).toBeNull();

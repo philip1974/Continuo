@@ -56,12 +56,12 @@ export function appMenuTemplate(
     };
   };
 
-  // 首选项(VSCode:macOS 在应用菜单 Code → Preferences,其它平台 File → Preferences):设置… = settings.toggle(⌘,)、
+  // 首选项(VSCode:macOS 在应用菜单 Code → Preferences,其它平台 File → Preferences):设置… = workbench.action.openSettings(只打开 / 聚焦,同 VSCode;显示 ⌘, = settings.toggle 的键位)、
   // 键盘快捷方式 = 打开设置的快捷键页。
   const preferencesItem: Item = {
     label: t('menu.app.preferences'),
     submenu: [
-      command('settings.toggle', 'menu.app.settings'),
+      command('workbench.action.openSettings', 'menu.app.settings'),
       command('workbench.action.openGlobalKeybindings', 'menu.app.keyboard_shortcuts'),
     ],
   };

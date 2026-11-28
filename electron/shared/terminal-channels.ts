@@ -14,6 +14,8 @@ export const TERMINAL_CHANNELS = {
   READ_HISTORY: 'terminal:read_history',
   // 关闭终端前确认(VSCode confirmOnKill):查询前台是否有 shell 以外的子程序在运行。
   RUNNING_PROCESS: 'terminal:running_process',
+  // 拆分终端继承目录(VSCode splitCwd: inherited):OSC 7 上报的目录,否则 shell 进程的真实当前目录。
+  CWD: 'terminal:cwd',
   // tab 右键「重命名…」(用户标题,固定)。
   RENAME: 'terminal:rename',
   // 终端本地文件链接:候选路径按终端 cwd 解析并确认是存在的普通文件(VSCode TerminalLinkResolver)。

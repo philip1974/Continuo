@@ -85,11 +85,11 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
   it('macOS 应用菜单:首选项 ▸ 设置… / 键盘快捷方式;其它平台在文件菜单', () => {
     const prefs = (items: readonly Item[]) => submenu(items, 'menu.app.preferences');
     const mac = template(true);
-    expect(commandsOf(prefs(submenu(mac, 'Continuo')))).toEqual(['settings.toggle', 'workbench.action.openGlobalKeybindings']);
+    expect(commandsOf(prefs(submenu(mac, 'Continuo')))).toEqual(['workbench.action.openSettings', 'workbench.action.openGlobalKeybindings']);
     expect(submenu(mac, 'menu.file.label').some((m) => m.label === 'menu.app.preferences')).toBe(false);
     const other = template(false);
     expect(commandsOf(prefs(submenu(other, 'menu.file.label')))).toEqual([
-      'settings.toggle',
+      'workbench.action.openSettings',
       'workbench.action.openGlobalKeybindings',
     ]);
   });
