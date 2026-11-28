@@ -27,6 +27,8 @@ import { StatusBar } from '@/shell/StatusBar';
 import { IconSidebar } from '@/shell/IconSidebar';
 import { setDockApi } from '@/shell/dock/dock-api-ref';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { useEditorStore } from '@/stores/editor.store';
+import { EditorHeader } from '@/panels/Editor/EditorHeader';
 import { useWorkspaceTrustStore } from '@/stores/workspace-trust.store';
 import { createDock } from '../dock-terminal-vscode-focus/dock-fixtures';
 import { en } from '../../../electron/shared/i18n-locales/en';
@@ -36,6 +38,7 @@ import { ko } from '../../../electron/shared/i18n-locales/ko';
 const specs = workbenchLayoutCommandSpecs();
 const run = (id: string) => specs.find((c) => c.id === id)!.fn();
 const src = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
+const fileTab = (id: string) => ({ id, filePath: id, content: 'x', originalContent: 'x', dirty: false });
 const SETTINGS = [WORKBENCH_STATUS_BAR_VISIBLE, WORKBENCH_ACTIVITY_BAR_LOCATION, WORKBENCH_EDITOR_SHOW_TABS];
 
 beforeAll(() => {
@@ -142,7 +145,7 @@ describe('状态栏 / 活动栏', () => {
 });
 
 describe('标签栏', () => {
-  it('隐藏 → 本窗口 <html data-editor-show-tabs="none">,恢复即移除;App(主窗与 popout 子窗)挂载;dockview.css 隐藏 tab 栏', () => {
+  it('隐藏 → 本窗口 <html data-editor-show-tabs="none">,恢复即移除;App(主窗与 popout 子窗)挂载', () => {
     render(<WorkbenchLayoutFromSettings />);
     expect(document.documentElement.hasAttribute(EDITOR_SHOW_TABS_ATTR)).toBe(false);
     act(() => run('workbench.action.hideEditorTabs'));
@@ -151,9 +154,42 @@ describe('标签栏', () => {
     expect(document.documentElement.hasAttribute(EDITOR_SHOW_TABS_ATTR)).toBe(false);
     const app = src('src/shell/App.tsx');
     expect(app.indexOf('<WorkbenchLayoutFromSettings />')).toBeLessThan(app.indexOf('isPopoutWindow() ? <PopoutHost />'));
-    expect(src('src/styles/dockview.css')).toMatch(
-      /:root\[data-editor-show-tabs='none'\] \.dv-groupview > \.dv-tabs-and-actions-container \{\s*display: none !important;/,
-    );
+  });
+
+  it('隐藏 → 编辑器文件 tab 行(连同编辑器操作)不渲染,恢复即回来(VSCode showTabs none = NoEditorTabsControl)', () => {
+    useEditorStore.setState({ tabs: [fileTab('/w/a.ts'), fileTab('/w/b.ts')], activeTabId: '/w/a.ts', mode: 'source' });
+    const { container } = render(<EditorHeader onCloseRequest={() => {}} />);
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    act(() => run('workbench.action.hideEditorTabs'));
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    expect(container.firstChild).toBeNull();
+    act(() => run('workbench.action.showMultipleEditorTabs'));
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
+  });
+
+  it('dock 组 tab 栏只在组里仅有一个编辑器面板时随之隐藏;与终端等面板同组 / 只有终端时照常显示(鼠标仍可切换面板)', () => {
+    const css = src('src/styles/dockview.css');
+    // 旧规则(所有 dock 组都藏 tab 栏)不得回来
+    expect(css).not.toMatch(/:root\[data-editor-show-tabs='none'\] \.dv-groupview > \.dv-tabs-and-actions-container \{/);
+    const rule = /:root\[data-editor-show-tabs='none'\]\s+\.dv-groupview:has\(([^{]+)\{\s*display: none !important;/.exec(css);
+    expect(rule).not.toBeNull();
+    const selector = `.dv-groupview:has(${rule![1]!}`.trim();
+    const dom = (panels: ('editor' | 'terminal')[]) => {
+      const group = document.createElement('div');
+      group.className = 'dv-groupview';
+      group.innerHTML =
+        `<div class="dv-tabs-and-actions-container"><div class="dv-tabs-container">${panels.map(() => '<div class="dv-tab"></div>').join('')}</div></div>` +
+        `<div class="dv-content-container">${panels[0] === 'editor' ? '<div data-editor-panel-root=""></div>' : '<div data-panel-focus-root=""></div>'}</div>`;
+      document.body.appendChild(group);
+      const header = group.querySelector('.dv-tabs-and-actions-container')!;
+      const hidden = header.matches(selector);
+      group.remove();
+      return hidden;
+    };
+    expect(dom(['editor'])).toBe(true);
+    expect(dom(['editor', 'terminal'])).toBe(false);
+    expect(dom(['terminal', 'editor'])).toBe(false);
+    expect(dom(['terminal'])).toBe(false);
   });
 });
 

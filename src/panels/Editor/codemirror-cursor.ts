@@ -4,12 +4,14 @@
 //   src/vs/editor/browser/viewParts/viewCursors/viewCursor.ts —— line 默认 2px(cursorWidth 0)、> 0 取该宽且不超过一个半角字符宽,
 //     line-thin 1px;block / block-outline / underline / underline-thin 占一个字符宽,underline 2px、underline-thin 1px;
 //   src/vs/editor/browser/viewParts/viewCursors/viewCursors.css —— smooth / phase / expand 的关键帧(0.5s alternate)。
-// 刻意差异:block 光标用「差值混合」反色显示光标下的字(VSCode 把该字符以背景色重画在光标里;CodeMirror 光标层不含文字),
-// 强制颜色(Windows 高对比度)下改画 CanvasText 实线框(背景会被系统色抹掉);闪烁以 1s 为一个完整周期循环(VSCode 0.5s alternate
+//   viewCursor.ts block:实心光标色块(editorCursor.foreground),块内以背景色(editorCursor.background,缺省编辑器背景)重画光标下的字,
+//     块宽 = 该字宽(行尾 / 空白取一个半角字宽)。
+// 刻意差异:block 由本模块自己的光标层(blockCursorLayer)绘制(CodeMirror 光标元素不含文字;它自己的光标在 block 下透明,仍留在 DOM),
+// 重画的字不带语法样式(粗 / 斜体);强制颜色(Windows 高对比度)下用 CanvasText 块 + Canvas 字;闪烁以 1s 为一个完整周期循环(VSCode 0.5s alternate
 // 等价;不随光标移动重新开始 —— VSCode 输入时重置闪烁);Markdown 编辑模式(原生光标)只同步形状与是否闪烁(nativeCaretStyle)。BDD: src/__tests__/editor-cursor-options/
 
-import { drawSelection, EditorView } from '@codemirror/view';
-import type { Extension } from '@codemirror/state';
+import { drawSelection, EditorView, layer, RectangleMarker, type LayerMarker } from '@codemirror/view';
+import { EditorSelection, findClusterBreak, type EditorState, type Extension } from '@codemirror/state';
 import { useMemo } from 'react';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
@@ -39,6 +41,88 @@ export function lineCursorWidthPx(style: EditorCursorStyle, width: number): numb
 }
 
 const CURSOR = '.cm-cursorLayer .cm-cursor';
+const BLOCK_CLASS = 'cm-blockCursor';
+const BLOCK = `.cm-cursorLayer .${BLOCK_CLASS}`;
+
+/** block 光标里重画的字:光标后的一个字形簇;行尾、空白(含 tab)→ 空串(只画一个半角宽的块)。 */
+export function blockCursorGlyph(state: EditorState, head: number): string {
+  const line = state.doc.lineAt(head);
+  if (head >= line.to) return '';
+  const end = line.from + findClusterBreak(line.text, head - line.from);
+  const text = state.sliceDoc(head, end);
+  return /^\s+$/.test(text) ? '' : text;
+}
+
+/** block 光标:光标处的实心块,块内是重画的字(宽度随字,如 CJK 全角)。 */
+class BlockCursorMarker implements LayerMarker {
+  constructor(
+    readonly className: string,
+    readonly left: number,
+    readonly top: number,
+    readonly height: number,
+    readonly text: string,
+  ) {}
+  draw(): HTMLElement {
+    const el = document.createElement('div');
+    this.adjust(el);
+    return el;
+  }
+  update(el: HTMLElement, prev: LayerMarker): boolean {
+    if (!(prev instanceof BlockCursorMarker)) return false;
+    this.adjust(el);
+    return true;
+  }
+  private adjust(el: HTMLElement): void {
+    el.className = this.className;
+    el.style.left = `${this.left}px`;
+    el.style.top = `${this.top}px`;
+    el.style.height = `${this.height}px`;
+    el.style.lineHeight = `${this.height}px`;
+    el.textContent = this.text;
+  }
+  eq(o: LayerMarker): boolean {
+    return (
+      o instanceof BlockCursorMarker &&
+      o.className === this.className &&
+      o.left === this.left &&
+      o.top === this.top &&
+      o.height === this.height &&
+      o.text === this.text
+    );
+  }
+}
+
+/**
+ * block 光标层(与 drawSelection 的光标层同样的位置规则:空选区与非空选区的 head 各一个;同样的闪烁 —— 层带 cm-cursorLayer 类,
+ * 选区变化时切换动画名重新开始,周期同 drawSelection)。
+ */
+function blockCursorLayer(blinkRateMs: number): Extension {
+  return layer({
+    above: true,
+    class: 'cm-cursorLayer',
+    markers(view) {
+      const out: LayerMarker[] = [];
+      const { ranges, main } = view.state.selection;
+      for (const r of ranges) {
+        const cursor = r.empty ? r : EditorSelection.cursor(r.head, r.assoc);
+        const piece = RectangleMarker.forRange(view, 'x', cursor)[0];
+        if (!piece) continue;
+        const className = `${BLOCK_CLASS} ${r === main ? 'cm-blockCursor-primary' : 'cm-blockCursor-secondary'}`;
+        out.push(new BlockCursorMarker(className, piece.left, piece.top, piece.height, blockCursorGlyph(view.state, r.head)));
+      }
+      return out;
+    },
+    update(update, dom) {
+      if (update.transactions.some((tr) => tr.selection)) {
+        dom.style.animationName = dom.style.animationName === 'cm-blink' ? 'cm-blink2' : 'cm-blink';
+      }
+      return update.docChanged || update.selectionSet;
+    },
+    mount(dom) {
+      dom.style.animationDuration = `${blinkRateMs}ms`;
+    },
+  });
+}
 
 export type ThemeSpec = Parameters<typeof EditorView.theme>[0];
 
@@ -53,13 +137,19 @@ function shapeRules(style: EditorCursorStyle, width: number): ThemeSpec {
   switch (style) {
     case 'block':
       return {
-        // 差值混合:白色块把下面的字与底色反相(亮 / 暗 / 高对比度主题都可读;反相须纯白,不是主题色板颜色);混合须设在光标层上 ——
-        // 层自带 z-index,是独立的层叠上下文,设在光标元素上只会与透明的层混合
-        [CURSOR]: { ...box, backgroundColor: 'white' },
-        '.cm-cursorLayer': { mixBlendMode: 'difference' },
+        // CodeMirror 自己的光标透明(仍留在 DOM 供定位 / 计数),由 blockCursorLayer 画实心块 + 块内重画的字(VSCode viewCursor)
+        [CURSOR]: { ...box, backgroundColor: 'transparent' },
+        [BLOCK]: {
+          display: 'none',
+          minWidth: '1ch',
+          whiteSpace: 'pre',
+          backgroundColor: 'var(--md-on-surface)',
+          color: 'var(--md-surface)',
+        },
+        [`&.cm-focused > .cm-scroller > .cm-cursorLayer .${BLOCK_CLASS}`]: { display: 'block' },
+        // 强制颜色:系统色块 + 反色字(不让系统把背景抹成 Canvas)
         '@media (forced-colors: active)': {
-          '.cm-cursorLayer': { mixBlendMode: 'normal' },
-          [CURSOR]: { backgroundColor: 'transparent', border: '1px solid CanvasText' },
+          [BLOCK]: { forcedColorAdjust: 'none', backgroundColor: 'CanvasText', color: 'Canvas' },
         },
       };
     case 'block-outline':
@@ -89,7 +179,7 @@ function blinkRules(blinking: EditorCursorBlinking): ThemeSpec {
     [`@keyframes ${name}`]: KEYFRAMES[blinking],
     // expand 的上下收缩作用在每个光标上(作用在层上会把整层压扁),层本身不再闪烁
     ...(blinking === 'expand'
-      ? { [layer]: { animation: 'none !important' }, [`${layer} .cm-cursor`]: { animation: run } }
+      ? { [layer]: { animation: 'none !important' }, [`${layer} .cm-cursor, ${layer} .${BLOCK_CLASS}`]: { animation: run } }
       : { [layer]: { animation: run } }),
   };
 }
@@ -115,10 +205,12 @@ export function editorCursor(o: EditorCursorOptions): Extension {
   const key = `${o.style}|${lineCursorWidthPx(o.style, o.width) ?? ''}|${o.blinking}`;
   let ext = cache.get(key);
   if (!ext) {
+    // solid:不闪烁(CodeMirror cursorBlinkRate 0);其余由 blink 的周期或下面的自定义动画决定
+    const blinkRate = o.blinking === 'solid' ? 0 : BLINK_CYCLE_MS;
     ext = [
-      // solid:不闪烁(CodeMirror cursorBlinkRate 0);其余由 blink 的周期或下面的自定义动画决定
-      drawSelection({ cursorBlinkRate: o.blinking === 'solid' ? 0 : BLINK_CYCLE_MS }),
+      drawSelection({ cursorBlinkRate: blinkRate }),
       EditorView.theme(cursorThemeSpec(o)),
+      o.style === 'block' ? blockCursorLayer(blinkRate) : [],
     ];
     cache.set(key, ext);
   }

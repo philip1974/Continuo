@@ -109,8 +109,12 @@
   overflow: clip;
 }
 
-/* 查看 › 外观 › 标签栏 › 隐藏(workbench.editor.showTabs = none;src/shell/workbench-layout.ts 在各窗口 <html> 标记):dock 组不显示
- * tab 栏(连同其中的组操作,VSCode 同),内容占满整组。dockview 自己的 header.hidden 也只是 display: none。 */
-:root[data-editor-show-tabs='none'] .dv-groupview > .dv-tabs-and-actions-container {
+/* 查看 › 外观 › 标签栏 › 隐藏(workbench.editor.showTabs = none;src/shell/workbench-layout.ts 在各窗口 <html> 标记):
+ * 文件 tab 行由 EditorHeader 按设置不渲染(VSCode NoEditorTabsControl)。dock 组 tab 栏只在组里仅有一个编辑器面板时随之隐藏
+ *(此时它只是重复的「编辑器」标题,VSCode 编辑器组没有这一层);组里还有终端等面板、或只有终端时照常显示 —— VSCode 的
+ * showTabs 只管编辑器 tab,不能让同组面板失去鼠标切换入口。dockview 自己的 header.hidden 也只是 display: none。 */
+:root[data-editor-show-tabs='none']
+  .dv-groupview:has(> .dv-tabs-and-actions-container .dv-tab:only-child):has(> .dv-content-container [data-editor-panel-root])
+  > .dv-tabs-and-actions-container {
   display: none !important;
 }

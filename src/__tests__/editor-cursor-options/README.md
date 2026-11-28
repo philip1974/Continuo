@@ -10,11 +10,12 @@
   underline-thin,默认 line)、`cursorWidth`(默认 0,「cursorStyle 为 line 时的宽度」)、`cursorBlinking`(blink / smooth / phase /
   expand / solid,默认 blink)。
 - `src/vs/editor/browser/viewParts/viewCursors/viewCursor.ts`:line 宽 = `cursorWidth > 0 ? cursorWidth : 2`,且不超过半角字符宽;
-  line-thin 1px;block / block-outline / underline* 占一个字符宽,underline 2px、underline-thin 1px。
+  line-thin 1px;block / block-outline / underline* 占一个字符宽,underline 2px、underline-thin 1px;block 是实心光标色块
+  (`editorCursor.foreground`),块内以背景色(`editorCursor.background`,缺省编辑器背景)重画光标下的字,块宽随字。
 - `viewCursors.css`:smooth / phase / expand 关键帧(0.5s alternate);blink 亮 / 灭各 500ms;solid 不闪。
 
-**刻意差异**:block 用差值混合反色显示光标下的字(VSCode 在光标里以背景色重画该字符;CodeMirror 光标层不含文字),强制颜色下画
-CanvasText 实线框;闪烁不随光标移动重新开始;Markdown 编辑模式(ProseMirror 原生光标)只同步 `caret-shape`(竖线 / 块 / 下划线)
+**刻意差异**:block 由自己的光标层画(`--md-on-surface` 实心块 + `--md-surface` 重画的字;CodeMirror 光标元素不含文字,它自己的
+光标在 block 下透明、仍留在 DOM),重画的字不带语法样式(粗 / 斜体),行尾 / 空白画一个半角宽的空块;强制颜色下 CanvasText 块 + Canvas 字;闪烁不随光标移动重新开始;Markdown 编辑模式(ProseMirror 原生光标)只同步 `caret-shape`(竖线 / 块 / 下划线)
 与 `caret-animation`(solid = 不闪烁),宽度与平滑类动画原生光标做不到。
 
 ## 模块
@@ -22,7 +23,7 @@ CanvasText 实线框;闪烁不随光标移动重新开始;Markdown 编辑模式(
 | 文件 | 职责 |
 |---|---|
 | `src/plugins/settings/core-setting-specs.ts` | `EDITOR_CURSOR_STYLE` / `EDITOR_CURSOR_WIDTH` / `EDITOR_CURSOR_BLINKING`(编辑器 tab 外观组) |
-| `src/panels/Editor/codemirror-cursor.ts` | `editorCursor(options)` CodeMirror 扩展、`lineCursorWidthPx`、`nativeCaretStyle`、`useEditorCursorOptions` |
+| `src/panels/Editor/codemirror-cursor.ts` | `editorCursor(options)` CodeMirror 扩展(block 另挂光标层)、`blockCursorGlyph`、`lineCursorWidthPx`、`nativeCaretStyle`、`useEditorCursorOptions` |
 | `src/panels/Editor/CodeEditor.tsx` / `ConflictDiffPanel.tsx` | 光标 Compartment,设置变化 reconfigure |
 | `src/panels/Editor/MilkdownEditor.tsx` | 原生光标的 caret-shape / caret-animation |
 
@@ -34,11 +35,13 @@ CanvasText 实线框;闪烁不随光标移动重新开始;Markdown 编辑模式(
 
 1. 三个设置:VSCode 同 id / 取值 / 默认值,编辑器 tab 注册,选项与说明三语。
 2. 竖线宽度:cursorWidth 0 → 2px,n → npx(不超过 1ch);细竖线 1px;块类 / 下划线类 → 一个字符宽。
-3. 真实 CodeMirror:默认光标规则是 2px(不再是 1.2px);block 反色;underline 2px 底边;闪烁周期 1000ms,solid → 0(不闪);
+3. 真实 CodeMirror:默认光标规则是 2px(不再是 1.2px);block 实心色块 + 块内背景色字(亮 / 暗 / 高对比度主题下块与底色、
+   字与块对比度都 ≥ 3:1;此前白底差值混合在亮色主题下与底色混不到一起,空位几乎看不见);underline 2px 底边;闪烁周期 1000ms,solid → 0(不闪);
    smooth / phase / expand 用各自关键帧。
 4. 代码编辑器与冲突比较经 Compartment 即时切换;Markdown 编辑模式 caret-shape:block* → block,underline* → underscore,其余 bar;
    solid → caret-animation: manual。
 
 ## e2e
 
-`tests/e2e/presentation-mode.spec.ts`:代码编辑器光标 2px;改 cursorWidth 3 → 3px;改样式 underline → 2px 底边、无左边框。
+`tests/e2e/presentation-mode.spec.ts`:代码编辑器光标 2px;改 cursorWidth 3 → 3px;改样式 underline → 2px 底边、无左边框;
+block 在亮 / 暗 / 高对比度主题下像素采样:行尾空位的块与底色、块内字与块的对比度 ≥ 3:1。

@@ -11,6 +11,7 @@ import {
   EDITOR_CURSOR_WIDTH,
 } from '@/plugins/settings/core-setting-specs';
 import {
+  blockCursorGlyph,
   cursorThemeSpec,
   editorCursor,
   lineCursorWidthPx,
@@ -95,16 +96,33 @@ describe('CodeMirror 光标扩展', () => {
     expect(getDrawSelectionConfig(mount(opts({ blinking: 'solid' })).state).cursorBlinkRate).toBe(0);
   });
 
-  it('block:一个字符宽、白底在光标层上差值混合反色;强制颜色下改 CanvasText 实线框', () => {
+  it('block:实心光标色块(--md-on-surface)、块内以编辑器背景色(--md-surface)重画光标下的字,不再用差值混合;CodeMirror 自己的光标透明;强制颜色下 CanvasText 块 + Canvas 字', () => {
     const spec = cursorThemeSpec(opts({ style: 'block' }));
-    expect(spec[C]).toMatchObject({ borderLeft: 'none', width: '1ch', backgroundColor: 'white' });
-    expect(spec['.cm-cursorLayer']).toEqual({ mixBlendMode: 'difference' });
+    const B = '.cm-cursorLayer .cm-blockCursor';
+    expect(spec[C]).toMatchObject({ borderLeft: 'none', width: '1ch', backgroundColor: 'transparent' });
+    expect(spec[B]).toMatchObject({ minWidth: '1ch', backgroundColor: 'var(--md-on-surface)', color: 'var(--md-surface)', display: 'none' });
+    expect(spec['&.cm-focused > .cm-scroller > .cm-cursorLayer .cm-blockCursor']).toEqual({ display: 'block' });
     expect(spec['@media (forced-colors: active)']).toEqual({
-      '.cm-cursorLayer': { mixBlendMode: 'normal' },
-      [C]: { backgroundColor: 'transparent', border: '1px solid CanvasText' },
+      [B]: { forcedColorAdjust: 'none', backgroundColor: 'CanvasText', color: 'Canvas' },
     });
+    expect(JSON.stringify(spec)).not.toContain('mixBlendMode');
     mount(opts({ style: 'block' }));
-    expect(cssText()).toContain('mix-blend-mode: difference');
+    expect(cssText()).not.toContain('mix-blend-mode');
+    // 只有 block 才挂自己的光标层(编辑器里多一个 cm-cursorLayer)
+    const layers = (o: EditorCursorOptions) => mount(o).dom.querySelectorAll('.cm-cursorLayer').length;
+    expect(layers(opts({ style: 'block' }))).toBe(layers(opts()) + 1);
+  });
+
+  it('block 块内重画的字:光标后的一个字形簇(CJK / 组合字符整个);行尾、空格、tab → 空', () => {
+    const state = EditorState.create({ doc: 'ab\t 中e\u0301\nx' });
+    expect(blockCursorGlyph(state, 0)).toBe('a');
+    expect(blockCursorGlyph(state, 2)).toBe('');
+    expect(blockCursorGlyph(state, 3)).toBe('');
+    expect(blockCursorGlyph(state, 4)).toBe('中');
+    expect(blockCursorGlyph(state, 5)).toBe('e\u0301');
+    expect(blockCursorGlyph(state, 7)).toBe('');
+    expect(blockCursorGlyph(state, 8)).toBe('x');
+    expect(blockCursorGlyph(state, 9)).toBe('');
   });
 
   it('underline 2px 底边、underline-thin 1px、block-outline 1px 框,都无左边框、一个字符宽', () => {
@@ -122,7 +140,7 @@ describe('CodeMirror 光标扩展', () => {
     expect(cursorThemeSpec(opts({ blinking: 'phase' }))['@keyframes wm-cursor-phase']).toBeDefined();
     const expand = cursorThemeSpec(opts({ blinking: 'expand' }));
     expect(expand[layer]).toEqual({ animation: 'none !important' });
-    expect(expand[`${layer} .cm-cursor`]).toEqual({ animation: 'wm-cursor-expand 1000ms ease-in-out infinite !important' });
+    expect(expand[`${layer} .cm-cursor, ${layer} .cm-blockCursor`]).toEqual({ animation: 'wm-cursor-expand 1000ms ease-in-out infinite !important' });
     expect(Object.keys(cursorThemeSpec(opts()))).not.toContain(layer);
   });
 

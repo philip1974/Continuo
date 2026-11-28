@@ -59,7 +59,7 @@ import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import { useGitStatus } from '@/panels/Explorer/hooks/useGitStatus';
 import { fileGitDecoration, GIT_KIND_LABEL_KEY, GIT_KIND_TEXT_CLASS } from '@/panels/Explorer/git-decorations';
 import { useSettingValue } from '@/plugins/settings/values-store';
-import { EDITOR_DECORATIONS_BADGES, EDITOR_DECORATIONS_COLORS } from '@/plugins/settings/core-setting-specs';
+import { EDITOR_DECORATIONS_BADGES, EDITOR_DECORATIONS_COLORS, WORKBENCH_EDITOR_SHOW_TABS } from '@/plugins/settings/core-setting-specs';
 
 /**
  * Tab 栏渲染所需的"chrome"子集(打磨 R23):只含标题/脏态相关字段,**不含
@@ -468,13 +468,16 @@ export const EditorHeader = memo(function EditorHeader({
   const workspaceRoot = useWorkspaceStore((s) => s.root);
   const gitColors = useSettingValue(EDITOR_DECORATIONS_COLORS.id, EDITOR_DECORATIONS_COLORS.default);
   const gitBadges = useSettingValue(EDITOR_DECORATIONS_BADGES.id, EDITOR_DECORATIONS_BADGES.default);
+  const showTabs = useSettingValue(WORKBENCH_EDITOR_SHOW_TABS.id, WORKBENCH_EDITOR_SHOW_TABS.default);
   const gitIndex = useGitStatus(
     workspaceRoot ?? '',
     (gitColors || gitBadges) && workspaceRoot !== null && tabsChrome.length > 0,
     true,
   );
 
-  if (tabsChrome.length === 0) return null;
+  // 查看 › 外观 › 标签栏 › 隐藏(workbench.editor.showTabs = none):不渲染文件 tab 行,连同编辑器操作(VSCode NoEditorTabsControl
+  // 高度为 0;Markdown 模式切换行照常)。切换文件走快速打开 / ⌃Tab / 资源管理器。BDD: src/__tests__/workbench-layout-visibility/
+  if (tabsChrome.length === 0 || showTabs === 'none') return null;
 
   return (
     <div
