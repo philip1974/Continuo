@@ -140,6 +140,32 @@ test('窗口无响应 → 弹「窗口没有响应」;恢复响应时框被关�
   await expect(window.locator('text=src').first()).toBeVisible();
 });
 
+test('有未保存文件时窗口无响应 → 无响应框列出文件名并说明重新打开 / 关闭会丢失', async ({ electronApp, window }) => {
+  await openDirtyFile(window);
+  // 等脏态上报到达 main(无响应框据此列出文件)
+  await expect
+    .poll(() =>
+      electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isDocumentEdited() ?? false),
+    )
+    .toBe(process.platform === 'darwin');
+  if (process.platform !== 'darwin') await window.waitForTimeout(500);
+  await stubDialog(electronApp, null);
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]!.emit('unresponsive');
+  });
+  await expect.poll(async () => (await calls(electronApp)).length).toBe(1);
+  const [call] = await calls(electronApp);
+  expect(call!.message).toMatch(/(not responding|没有响应|응답하지 않습니다)/);
+  expect(call!.detail).toMatch(/(will lose unsaved changes|将丢失以下文件未保存的更改|변경 내용이 손실됩니다)/);
+  expect(call!.detail).toContain('a.ts');
+  // 恢复响应 → 框关掉,未保存的修改还在
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]!.emit('responsive');
+  });
+  await expect.poll(async () => (await calls(electronApp))[0]?.aborted).toBe(true);
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
+});
+
 /** 经 main 在(可能已重载的)主窗 renderer 里查工作区树是否显示 src(Playwright 的 Page 在崩溃后保持 crashed 状态)。 */
 const workspaceTreeRestored = (app: ElectronApplication) =>
   app.evaluate(({ BrowserWindow }) => {

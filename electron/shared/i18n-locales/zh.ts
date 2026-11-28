@@ -686,6 +686,7 @@ export const zh: Record<TranslationKey, string> = {
   'dialog.window_crashed.lost_files': '以下文件未保存的更改已丢失：',
   'dialog.window_unresponsive.message': '窗口没有响应',
   'dialog.window_unresponsive.detail': '可以重新打开或关闭窗口，或者保持等待。',
+  'dialog.window_unresponsive.unsaved_files': '重新打开或关闭窗口将丢失以下文件未保存的更改：',
   'dock.empty.message': '所有面板都关掉了。',
   'dock.empty.in_other_windows': '所有面板都在其他窗口中。',
   'dock.empty.restore': '恢复默认布局',

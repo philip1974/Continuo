@@ -708,6 +708,7 @@ export const en = {
   'dialog.window_crashed.lost_files': 'Unsaved changes to the following files were lost:',
   'dialog.window_unresponsive.message': 'The window is not responding',
   'dialog.window_unresponsive.detail': 'You can reopen or close the window or keep waiting.',
+  'dialog.window_unresponsive.unsaved_files': 'Reopening or closing the window will lose unsaved changes to the following files:',
   'dock.empty.message': 'All panels are closed.',
   'dock.empty.in_other_windows': 'All panels are open in other windows.',
   'dock.empty.restore': 'Restore default layout',

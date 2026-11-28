@@ -690,6 +690,7 @@ export const ko: Record<TranslationKey, string> = {
   'dialog.window_crashed.lost_files': '다음 파일의 저장되지 않은 변경 내용이 손실되었습니다:',
   'dialog.window_unresponsive.message': '창이 응답하지 않습니다',
   'dialog.window_unresponsive.detail': '창을 다시 열거나 닫거나 계속 기다릴 수 있습니다.',
+  'dialog.window_unresponsive.unsaved_files': '창을 다시 열거나 닫으면 다음 파일의 저장되지 않은 변경 내용이 손실됩니다:',
   'dock.empty.message': '모든 패널이 닫혀 있습니다.',
   'dock.empty.in_other_windows': '모든 패널이 다른 창에 열려 있습니다.',
   'dock.empty.restore': '기본 레이아웃 복원',

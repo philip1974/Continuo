@@ -5,6 +5,8 @@
 // 刻意差异:
 //   - 重新打开 = 在同一窗口里 reload(VSCode 销毁窗口再按工作区开新窗;这里 reload 后 renderer 按本窗 windowSeq 段恢复布局);
 //   - 崩溃前有未保存的 tab → 框里列出这些文件并说明改动已丢失(只提示;VSCode 有热退出备份,这里没有);
+//   - 无响应时有未保存的 tab → 框里列出这些文件、说明重新打开 / 关闭会丢失它们,默认按钮改为「保持等待」
+//     (VSCode 靠热退出备份,重新打开不丢,说明文字固定、默认「重新打开」);
 //   - 无响应框选重新打开 / 关闭:先 forcefullyCrashRenderer,等杀进程引发的 render-process-gone 到达后再走与崩溃框
 //     同一条恢复路径(同 tick 立即 reload 会被正在退出的旧进程吞掉,窗口停在崩溃空白态);超时没等到 gone 也照样恢复
 //     (VSCode 直接 destroy 窗口再开新窗,没有这段时序);
@@ -47,14 +49,7 @@ export function buildCrashDialog(
   t: MainT,
 ): WindowErrorDialogOptions {
   const lines = [t('dialog.window_crashed.detail')];
-  if (lost && lost.ids.length > 0) {
-    const names = lost.ids.slice(0, DIRTY_CLOSE_MAX_NAMES).map((id) => dirtyIdFileName(id, t));
-    const more = lost.ids.length - names.length;
-    if (more > 0) {
-      names.push(t(more === 1 ? 'dialog.unsaved_close.more_one' : 'dialog.unsaved_close.more_other', { count: more }));
-    }
-    lines.push('', t('dialog.window_crashed.lost_files'), ...names);
-  }
+  if (hasDirty(lost)) lines.push('', t('dialog.window_crashed.lost_files'), ...dirtyFileLines(lost, t));
   return {
     type: 'warning',
     buttons: [t('dialog.window_error.reopen'), t('dialog.window_error.close')],
@@ -69,7 +64,25 @@ export function buildCrashDialog(
   };
 }
 
-export function buildUnresponsiveDialog(t: MainT): WindowErrorDialogOptions {
+const hasDirty = (state: DirtyState | undefined): state is DirtyState => state !== undefined && state.ids.length > 0;
+
+/** 未保存文件名(最多 DIRTY_CLOSE_MAX_NAMES 个,其余一行概括;同关窗「是否保存」框)。 */
+function dirtyFileLines(state: DirtyState, t: MainT): string[] {
+  const names = state.ids.slice(0, DIRTY_CLOSE_MAX_NAMES).map((id) => dirtyIdFileName(id, t));
+  const more = state.ids.length - names.length;
+  if (more > 0) {
+    names.push(t(more === 1 ? 'dialog.unsaved_close.more_one' : 'dialog.unsaved_close.more_other', { count: more }));
+  }
+  return names;
+}
+
+/**
+ * 有未保存的 tab → 说明里列出这些文件、讲明重新打开 / 关闭会丢失它们,默认按钮改为「保持等待」(回车不丢数据)。
+ */
+export function buildUnresponsiveDialog(t: MainT, dirty?: DirtyState): WindowErrorDialogOptions {
+  const detail = hasDirty(dirty)
+    ? [t('dialog.window_unresponsive.detail'), '', t('dialog.window_unresponsive.unsaved_files'), ...dirtyFileLines(dirty, t)].join('\n')
+    : t('dialog.window_unresponsive.detail');
   return {
     type: 'warning',
     buttons: [
@@ -77,12 +90,12 @@ export function buildUnresponsiveDialog(t: MainT): WindowErrorDialogOptions {
       t('dialog.window_error.close'),
       t('dialog.window_error.keep_waiting'),
     ],
-    defaultId: REOPEN_ID,
+    defaultId: hasDirty(dirty) ? KEEP_WAITING_ID : REOPEN_ID,
     // Esc / 被 signal 关掉 = 继续等待。
     cancelId: KEEP_WAITING_ID,
     noLink: true,
     message: t('dialog.window_unresponsive.message'),
-    detail: t('dialog.window_unresponsive.detail'),
+    detail,
   };
 }
 
@@ -165,7 +178,8 @@ export function wireWindowErrorDialogs(win: WindowErrorTarget, deps: WindowError
     const controller = new AbortController();
     unresponsive = controller;
     deps
-      .showMessageBox({ ...buildUnresponsiveDialog(deps.t()), signal: controller.signal })
+      // 弹框时取脏 tab 快照(renderer 卡死,记账停在卡死前最后一次上报)。
+      .showMessageBox({ ...buildUnresponsiveDialog(deps.t(), deps.dirtySnapshot()), signal: controller.signal })
       .catch((err: unknown) => {
         console.warn('[window-error] unresponsive dialog failed', err);
         return { response: KEEP_WAITING_ID };

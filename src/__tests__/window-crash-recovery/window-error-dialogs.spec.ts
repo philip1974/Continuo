@@ -7,6 +7,7 @@ import {
   KILL_GONE_TIMEOUT_MS,
   REOPEN_ID,
   buildCrashDialog,
+  buildUnresponsiveDialog,
   popoutsOpenedBy,
   wireWindowErrorDialogs,
   type WindowErrorDialogOptions,
@@ -179,6 +180,30 @@ describe('窗口无响应', () => {
     expect(opts.detail).toBe('You can reopen or close the window or keep waiting.');
     expect(opts.buttons).toEqual(['Reopen', 'Close', 'Keep Waiting']);
     expect(opts.cancelId).toBe(KEEP_WAITING_ID);
+  });
+
+  it('有未保存的 tab → 列出文件名、说明重新打开 / 关闭会丢失它们,默认按钮改为「保持等待」', () => {
+    const { win, dialogs } = setup({ dirty: 2, ids: ['/w/src/a.ts#1', '/w/b.md#3'] });
+    win.emit('unresponsive');
+    const opts = dialogs()[0]!;
+    expect(opts.detail).toContain('You can reopen or close the window or keep waiting.');
+    expect(opts.detail).toContain('Reopening or closing the window will lose unsaved changes to the following files:');
+    expect(opts.detail).toContain('a.ts');
+    expect(opts.detail).toContain('b.md');
+    expect(opts.detail).not.toContain('/w/src');
+    expect(opts.defaultId).toBe(KEEP_WAITING_ID);
+    expect(opts.buttons).toEqual(['Reopen', 'Close', 'Keep Waiting']);
+  });
+
+  it('超过 10 个未保存文件只列前 10 个,其余一行概括;没有脏 tab → 说明不变、默认「重新打开」', () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `/w/f${i}.ts#1`);
+    const detail = buildUnresponsiveDialog(t, { dirty: 12, ids }).detail;
+    expect(detail).toContain('f9.ts');
+    expect(detail).not.toContain('f10.ts');
+    expect(detail).toContain('...2 additional files not shown');
+    const clean = buildUnresponsiveDialog(t, { dirty: 0, ids: [] });
+    expect(clean.detail).toBe('You can reopen or close the window or keep waiting.');
+    expect(clean.defaultId).toBe(REOPEN_ID);
   });
 
   it('同一段无响应期间不重复弹框;恢复响应 → 关掉框且不做任何处理', async () => {
