@@ -600,6 +600,12 @@
 
 - [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)
 
+## [编辑器剪贴板(复制 / 剪切 / 粘贴,对齐 VSCode)](./editor-clipboard/README.md)
+
+- [`clipboard-copy-html.spec.ts`](./editor-clipboard/clipboard-copy-html.spec.ts)
+- [`clipboard-copy-paste.spec.ts`](./editor-clipboard/clipboard-copy-paste.spec.ts)
+- [`milkdown-paste.spec.ts`](./editor-clipboard/milkdown-paste.spec.ts)
+
 ## [关闭编辑器 tab 回到组内最近使用的 tab](./editor-close-mru/README.md)
 
 - [`editor-close-mru.spec.ts`](./editor-close-mru/editor-close-mru.spec.ts)
@@ -934,6 +940,7 @@
 
 ## [资源管理器入口命令(VSCode 对齐)](./explorer-commands/README.md)
 
+- [`copy-path-keys.spec.ts`](./explorer-commands/copy-path-keys.spec.ts)
 - [`explorer-commands-tree.spec.tsx`](./explorer-commands/explorer-commands-tree.spec.tsx)
 - [`explorer-commands.spec.ts`](./explorer-commands/explorer-commands.spec.ts)
 - [`header-new-target.spec.tsx`](./explorer-commands/header-new-target.spec.tsx)

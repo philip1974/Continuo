@@ -25,6 +25,9 @@ import { cursorSyntaxLeft, cursorSyntaxRight } from '@codemirror/commands';
 import { ROUTED_KEYMAP_COMMANDS } from './codemirror-text-commands';
 import { lineNumberSelect } from './codemirror-line-number-select';
 import { unicodeHighlight } from './codemirror-unicode-highlight';
+import { editorClipboard } from './codemirror-clipboard';
+import { getStoredSettingValue } from '@/plugins/settings/values-store';
+import { EDITOR_COPY_WITH_SYNTAX_HIGHLIGHTING } from '@/plugins/settings/core-setting-specs';
 
 /** 去掉 CodeMirror 自带的转到行小面板(纯函数;其余绑定原样返回)。 */
 export function withoutConflictingSearchKeys(bindings: readonly KeyBinding[]): KeyBinding[] {
@@ -91,6 +94,13 @@ function buildBasicSetup(): Extension {
   out.push(lineNumberSelect);
   // 不可见 / 双向控制字符补全 + 同形字加框(VSCode renderControlCharacters / unicodeHighlight;BDD: src/__tests__/editor-unicode-highlight/)
   out.push(unicodeHighlight);
+  // 无选区复制 / 剪切整行带换行 + 编辑器元数据(跨窗口粘贴仍整行插到上方)、带语法高亮的 HTML、粘贴前后断开撤销
+  //(VSCode emptySelectionClipboard / copyWithSyntaxHighlighting;BDD: src/__tests__/editor-clipboard/)
+  out.push(
+    editorClipboard({
+      copyWithSyntaxHighlighting: () => getStoredSettingValue(EDITOR_COPY_WITH_SYNTAX_HIGHLIGHTING.id) !== false,
+    }),
+  );
   return out;
 }
 

@@ -37,6 +37,7 @@ import {
   focusAndSelect,
   focusFallbackIndex,
   handleTreeKeyDown,
+  focusedActionTargets,
   focusedTargetDir,
   neighborAfterRemoval,
   EXPLORER_FILE_TREE_ATTR,
@@ -1617,13 +1618,19 @@ export function FolderTree({ root }: { root: string }) {
           refreshAllStable();
         } else if (request.kind === 'undo' || request.kind === 'redo') {
           runFileUndoStable(request.kind === 'undo');
+        } else if (request.kind === 'copyPath') {
+          // 同右键「复制路径 / 复制相对路径」:焦点项在多选里 → 全部选中项(\n 拼接),否则焦点项
+          const t = treeRef.current;
+          const targets = t ? focusedActionTargets(t, renderedItemsRef.current) : [];
+          if (request.relative) contextActions.onCopyRelativePath(targets);
+          else contextActions.onCopyPath(targets);
         } else {
           focusOriginRef.current = request.kind === 'focusTree' ? request.origin : undefined;
           setFocusPending(true);
         }
         return true;
       }),
-    [root, startCreateAtFocus, refreshAllStable, runFileUndoStable],
+    [root, startCreateAtFocus, refreshAllStable, runFileUndoStable, contextActions],
   );
 
   // 删除 / 撤销新建确认框的未保存警告,按数量用单 / 复数句式:只删这一个脏文件 →「该文件……其编辑器」;

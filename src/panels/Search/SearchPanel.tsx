@@ -293,6 +293,8 @@ export function SearchPanel() {
     const option = matchFindOptionHotkey(e.nativeEvent);
     if (!option) return;
     e.preventDefault();
+    // 截住冒泡:同键的全局命令(编辑器之外 ⌥⌘C = 复制路径)不再执行(VSCode 查找框里归切换选项)
+    e.stopPropagation();
     actions.toggleOption(STORE_OPTION[option]);
   };
 

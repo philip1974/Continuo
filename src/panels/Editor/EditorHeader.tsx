@@ -48,6 +48,7 @@ import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
 import { tabCloseTargets, type TabCloseKind } from '@/lib/tab-close-targets';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { revealPathOrNotify } from '@/panels/Explorer/reveal-or-notify';
+import { COPY_FILE_PATH_COMMAND_ID, COPY_RELATIVE_FILE_PATH_COMMAND_ID } from '@/panels/Explorer/explorer-requests';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { tabLabelDescriptions } from './tab-label-description';
 import { CONTENT_FOCUS_TARGET_SELECTOR, focusContentTarget } from '@/lib/content-focus-target';
@@ -413,6 +414,7 @@ export const EditorHeader = memo(function EditorHeader({
           label: t('panels.explorer.ctx.copy_path'),
           onSelect: () => void copyToClipboardOrNotify(tab.filePath, copyFailed),
           disabled: untitled,
+          shortcut: commandHotkeyText(coApp.commands.get(COPY_FILE_PATH_COMMAND_ID)),
         },
         {
           label: t('panels.explorer.ctx.copy_relative_path'),
@@ -421,6 +423,7 @@ export const EditorHeader = memo(function EditorHeader({
             void copyToClipboardOrNotify(root === null ? tab.filePath : stripRootPrefix(root, tab.filePath), copyFailed);
           },
           disabled: untitled,
+          shortcut: commandHotkeyText(coApp.commands.get(COPY_RELATIVE_FILE_PATH_COMMAND_ID)),
         },
         'separator',
         // 文件已删除(orphaned)无处可显示。

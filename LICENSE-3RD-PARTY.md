@@ -54,6 +54,7 @@ Code and data ported or copied from <https://github.com/microsoft/vscode> (© Mi
 - `electron/shared/text-encoding.ts` — encoding ids, labels and order from `SUPPORTED_ENCODINGS` (`src/vs/workbench/services/textfile/common/encoding.ts`); subset.
 - `src/panels/Terminal/useTerminal.ts` — high-contrast terminal palettes from the `hcDark` / `hcLight` defaults in `src/vs/workbench/contrib/terminal/common/terminalColorRegistry.ts`.
 - `src/styles/theme.css` — high-contrast light syntax colors from `extensions/theme-defaults/themes/hc_light.json` (some darkened for contrast).
+- `src/panels/Editor/copy-html.ts` — copy-with-syntax-highlighting HTML: `tokenizeLineToHTML` ported from `src/vs/editor/common/languages/textToHtmlTokenizer.ts`, outer wrapper from `getRichTextToCopy` (`src/vs/editor/common/viewModel/viewModelImpl.ts`).
 
 ## vscode-js-debug · MIT License
 

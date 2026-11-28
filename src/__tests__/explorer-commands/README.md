@@ -64,6 +64,27 @@
   页面没处理时 macOS 仍会触发菜单(打开文件夹本身单飞,重复触发也只弹一次框)。
   e2e 模式无应用菜单
 
+### 6. 复制路径 / 复制相对路径的默认键(`copy-path-keys.spec.ts`)
+
+命令 `copyFilePath` / `copyRelativeFilePath`(VSCode 同 id;`src/panels/Editor/editor-commands.ts` `copyPathCommandKeys`),默认键照
+VSCode `fileCommands.ts`:
+
+| 平台 | 复制路径 | 复制相对路径 | 条件 |
+|---|---|---|---|
+| mac | ⌥⌘C | ⇧⌥⌘C | 编辑器之外(`!editorFocus`) |
+| Linux | Ctrl+Alt+C | Ctrl+Shift+Alt+C | 编辑器之外 |
+| Windows | Shift+Alt+C | 无(VSCode 是和弦 Ctrl+K Ctrl+Shift+C,不支持和弦) | 复制路径不限(VSCode 编辑器里同键) |
+
+- 编辑器里 mac / Linux 是和弦 ⌘K ⌥⌘C(不支持)→ 编辑器里按 ⌥⌘C 不复制路径,留给查找的区分大小写(VSCode 同)
+- 新上下文条件 `!editorFocus`(`src/lib/editor-text-focus.ts`):editorFocus 不成立即成立;与编辑器类条件互斥,终端类被它覆盖
+- 作用对象(VSCode getMultiSelectedResources):资源管理器文件树获焦 → 经 `requestExplorer({ kind: 'copyPath' })` 复制树焦点项
+  (焦点项在多选里 → 全部选中项,`\n` 拼接;同右键菜单);否则复制活动文件
+- 终端获焦:不带 ⌘ 的键(Windows Shift+Alt+C、Linux Ctrl+Alt+C)照常交给 shell(VSCode commandsToSkipShell 默认列表不含这两条);
+  mac ⌥⌘C 带 ⌘ → 让出给命令(`terminal-hotkeys` `TERMINAL_KEPT_COMMAND_IDS`)
+- 在文件中查找 / 终端查找条里 ⌥⌘C 是切换区分大小写:选项键截住冒泡,不再同时复制路径(`find-options-parity`)
+- 资源管理器右键与 tab 右键的「复制路径 / 复制相对路径」右侧显示命令当前生效键位(改键跟随、无键不显示)
+
 ## 端到端
 
+- `tests/e2e/copy-path.spec.ts`:资源管理器获焦按 ⌥⌘C / ⇧⌥⌘C 复制焦点项的路径 / 相对路径;编辑器获焦按 ⌥⌘C 不复制
 - `tests/e2e/explorer-commands.spec.ts`:⌘⇧E 聚焦资源管理器树;命令面板「新建文件」在根目录创建并打开

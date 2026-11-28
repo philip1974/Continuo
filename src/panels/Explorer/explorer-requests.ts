@@ -5,6 +5,10 @@
 
 import { pathEquals } from '@/lib/path-cross';
 
+/** 复制路径 / 复制相对路径的命令 id(VSCode 同名;editor-commands 注册,资源管理器 / tab 右键菜单显示其键位)。 */
+export const COPY_FILE_PATH_COMMAND_ID = 'copyFilePath';
+export const COPY_RELATIVE_FILE_PATH_COMMAND_ID = 'copyRelativeFilePath';
+
 export type ExplorerRequest =
   /** 在树焦点项所在目录打开新建输入框。 */
   | { readonly kind: 'create'; readonly type: 'file' | 'dir' }
@@ -16,7 +20,9 @@ export type ExplorerRequest =
   /** 全部折叠 / 刷新(同标题栏按钮;命令 collapseExplorerFolders / refreshFilesExplorer)。 */
   | { readonly kind: 'collapseAll' | 'refresh' }
   /** 撤销 / 重做文件操作(命令 explorer.undo / explorer.redo)。 */
-  | { readonly kind: 'undo' | 'redo' };
+  | { readonly kind: 'undo' | 'redo' }
+  /** 复制树焦点项 / 多选项的路径(命令 copyFilePath / copyRelativeFilePath 在树获焦时;BDD: src/__tests__/explorer-commands/)。 */
+  | { readonly kind: 'copyPath'; readonly relative: boolean };
 
 /** 处理请求;返回 false = 不归自己(如 root 不符),请求继续挂起。 */
 type RequestHandler = (request: ExplorerRequest) => boolean;

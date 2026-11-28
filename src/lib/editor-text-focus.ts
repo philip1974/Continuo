@@ -18,6 +18,8 @@
 // - `inDebugMode` / `debugStopped` / `debugRunning`:调试状态(VSCode `inDebugMode` / `debugState == 'stopped'` / `debugState == 'running'`,
 //   调试工具栏命令 F5 / F10 / F11 / ⇧F5 等用它):与焦点无关,只看本窗口显示的调试会话;不成立时同键让给后面的绑定(无会话时 F5
 //   照旧不做调试动作)。状态由调试模块注入(provideDebugState),本模块不依赖调试 store。BDD: src/__tests__/debug-user-controls/
+// - `!editorFocus`:editorFocus 不成立(VSCode `!editorFocus`,复制路径 ⌥⌘C 用它:编辑器里 ⌥⌘C 归查找的区分大小写)。
+//   资源管理器、终端、输入框等编辑器之外都成立。BDD: src/__tests__/explorer-commands/
 // BDD: src/__tests__/editor-text-commands/、src/__tests__/editor-find-keybindings/、src/__tests__/terminal-scroll-commands/、
 // src/__tests__/terminal-focus-cycle/
 
@@ -47,7 +49,8 @@ export type CommandWhen =
   | 'terminalTextSelectedFocus'
   | 'inDebugMode'
   | 'debugStopped'
-  | 'debugRunning';
+  | 'debugRunning'
+  | '!editorFocus';
 
 const TERMINAL_WHENS: ReadonlySet<unknown> = new Set<CommandWhen>([
   'terminalFocus',
@@ -56,12 +59,15 @@ const TERMINAL_WHENS: ReadonlySet<unknown> = new Set<CommandWhen>([
   'terminalTextSelectedFocus',
 ]);
 const DEBUG_WHENS: ReadonlySet<unknown> = new Set<CommandWhen>(['inDebugMode', 'debugStopped', 'debugRunning']);
+const EDITOR_WHENS: ReadonlySet<unknown> = new Set<CommandWhen>(['editorTextFocus', 'editorFocus', 'markdownEditorFocus']);
+const NOT_EDITOR = '!editorFocus';
 
 export function isCommandWhen(value: unknown): value is CommandWhen {
   return (
     value === 'editorTextFocus' ||
     value === 'editorFocus' ||
     value === 'markdownEditorFocus' ||
+    value === NOT_EDITOR ||
     TERMINAL_WHENS.has(value) ||
     DEBUG_WHENS.has(value)
   );
@@ -69,12 +75,13 @@ export function isCommandWhen(value: unknown): value is CommandWhen {
 
 /**
  * 两个条件能否同时成立(编辑器类条件之间、终端类条件之间重叠;终端与编辑器互斥;调试状态与焦点无关,与任何焦点条件都可同时成立,
- * 调试状态之间只有 stopped / running 互斥)。
+ * 调试状态之间只有 stopped / running 互斥;!editorFocus 与编辑器类互斥,与终端类、自身重叠)。
  */
 export function whenOverlaps(a: CommandWhen, b: CommandWhen): boolean {
   if (DEBUG_WHENS.has(a) || DEBUG_WHENS.has(b)) {
     return !((a === 'debugStopped' && b === 'debugRunning') || (a === 'debugRunning' && b === 'debugStopped'));
   }
+  if (a === NOT_EDITOR || b === NOT_EDITOR) return !EDITOR_WHENS.has(a === NOT_EDITOR ? b : a);
   return TERMINAL_WHENS.has(a) === TERMINAL_WHENS.has(b);
 }
 
@@ -98,7 +105,7 @@ export function provideTerminalSplitActive(probe: (doc: Document) => boolean): v
 /**
  * 条件 a 成立处 b 是否必然成立(a 的上下文被 b 完全覆盖):b 无条件、两者相同,或 a = editorTextFocus / markdownEditorFocus 而
  * b = editorFocus(正文 / Markdown 编辑器是编辑器的一部分),或 a = terminalNormalBufferFocus / terminalSplitFocus / terminalTextSelectedFocus 而
- * b = terminalFocus(主缓冲 / 有分屏 / 有选区是终端的一种状态)。
+ * b = terminalFocus(主缓冲 / 有分屏 / 有选区是终端的一种状态),或 a 是终端类而 b = !editorFocus(终端在编辑器之外)。
  * 分发表里前面的绑定 b 在后面同键绑定 a 的全部上下文里都胜出时,a 算冲突落败。
  */
 export function whenCoveredBy(a: CommandWhen | undefined, b: CommandWhen | undefined): boolean {
@@ -107,7 +114,8 @@ export function whenCoveredBy(a: CommandWhen | undefined, b: CommandWhen | undef
     a === b ||
     ((a === 'editorTextFocus' || a === 'markdownEditorFocus') && b === 'editorFocus') ||
     ((a === 'terminalNormalBufferFocus' || a === 'terminalSplitFocus' || a === 'terminalTextSelectedFocus') && b === 'terminalFocus') ||
-    ((a === 'debugStopped' || a === 'debugRunning') && b === 'inDebugMode')
+    ((a === 'debugStopped' || a === 'debugRunning') && b === 'inDebugMode') ||
+    (TERMINAL_WHENS.has(a) && b === NOT_EDITOR)
   );
 }
 
@@ -156,6 +164,7 @@ function holdsFor(when: CommandWhen, el: Element | null): boolean {
   if (when === 'terminalNormalBufferFocus') return isTerminalNormalBufferElement(el);
   if (when === 'terminalTextSelectedFocus') return el?.closest?.(`[${TERMINAL_ATTR}]`)?.hasAttribute(TERMINAL_SELECTION_ATTR) === true;
   if (when === 'markdownEditorFocus') return isMarkdownEditorElement(el);
+  if (when === NOT_EDITOR) return !isEditorElement(el);
   return when === 'editorFocus' ? isEditorElement(el) : isEditorTextElement(el);
 }
 

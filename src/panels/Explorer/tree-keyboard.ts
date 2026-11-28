@@ -327,6 +327,24 @@ function renderedFocusedItem(
 }
 
 /**
+ * 键盘动作的目标(VSCode getMultiSelectedResources):焦点项在多选里 → 全部选中项,否则焦点项本身。
+ * 选中集合与实际渲染的行取交集(防御:关掉「显示隐藏文件」时 FolderTree 已修剪选中,这里再挡一次)——看不见的项不被删除 /
+ * 剪切 / 复制。focused 缺省 = 渲染中的焦点项;没有 → 空。
+ */
+export function focusedActionTargets(
+  tree: TreeInstance<FileEntry>,
+  items: readonly ItemInstance<FileEntry>[],
+  focused: ItemInstance<FileEntry> | undefined = renderedFocusedItem(tree, items),
+): string[] {
+  if (!focused) return [];
+  const rendered = new Set<string>();
+  for (const it of items) rendered.add(it.getId());
+  const selected = new Set<string>();
+  for (const id of tree.getState().selectedItems ?? []) if (rendered.has(id)) selected.add(id);
+  return getContextActionTargets(focused.getItemData(), selected);
+}
+
+/**
  * 以树焦点项为准的目标目录(VSCode Explorer 粘贴 / 新建文件 / 新建文件夹):目录 → 自身;文件 → 所在目录;
  * 无(渲染中的)焦点项 → 工作区根。
  */
@@ -398,13 +416,7 @@ export function handleTreeKeyDown(e: KeyboardEvent, ctx: TreeKeyContext): boolea
       }
       return consume();
     }
-    // 选中集合与实际渲染的行取交集(防御:关掉「显示隐藏文件」时 FolderTree 已修剪选中,这里再挡一次)——
-    // 看不见的项不被删除 / 剪切 / 复制。
-    const rendered = new Set<string>();
-    for (const it of items) rendered.add(it.getId());
-    const selected = new Set<string>();
-    for (const id of tree.getState().selectedItems ?? []) if (rendered.has(id)) selected.add(id);
-    const targets = getContextActionTargets(focused.getItemData(), selected);
+    const targets = focusedActionTargets(tree, items, focused);
     if (command === 'openToSide') {
       // VSCode:资源管理器聚焦即可(焦点项是文件夹也认,目标里的文件夹不打开;全是文件夹 → 无动作)
       if (!ctx.actions.onOpenToSide) return false;

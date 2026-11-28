@@ -23,6 +23,7 @@ import { AddMarkStep, ReplaceStep } from '@milkdown/kit/prose/transform';
 import { createAutolinkFollower, type ParseMarkdown } from './milkdown-autolink-follow';
 import { goToNextCell, isInTable, selectedRect } from '@milkdown/kit/prose/tables';
 import type { EditorView } from '@milkdown/kit/prose/view';
+import { pasteEditorCopyAsMarkdown } from './milkdown-paste';
 
 /** 剪贴板纯文本是否单个 URL(两端空白忽略;中间不得有空白)。 */
 export function pastedUrl(text: string): string | null {
@@ -133,6 +134,21 @@ function splitLeadingSpace(trs: readonly Transaction[], state: EditorState): { f
 
 const writingKeysKey = new PluginKey('continuoMarkdownWritingKeys');
 
+/** 选中文字后粘贴单个 URL → 给选区加链接(handlePaste)。 */
+function pasteUrlAsLink(ctx: Ctx, view: EditorView, event: ClipboardEvent): boolean {
+  if (!view.editable) return false;
+  const { selection } = view.state;
+  if (selection.empty || !(selection instanceof TextSelection) || !selection.$from.sameParent(selection.$to)) return false;
+  const data = event.clipboardData;
+  if (!data || data.files.length > 0) return false;
+  const url = pastedUrl(data.getData('text/plain'));
+  if (!url || inCode(view.state)) return false;
+  const type = linkSchema.type(ctx);
+  const tr = view.state.tr.addMark(selection.from, selection.to, type.create({ href: url }));
+  view.dispatch(collapseAfterLink(tr, selection.to, type).scrollIntoView());
+  return true;
+}
+
 function createWritingKeysPlugin(ctx: Ctx): Plugin {
   const keydown = keydownHandler({
     'Mod-k': (_state, _dispatch, view) => (view ? openLinkEditor(ctx, view) : false),
@@ -184,19 +200,8 @@ function createWritingKeysPlugin(ctx: Ctx): Plugin {
         },
       },
       handleKeyDown: (view, event) => view.editable && keydown(view, event),
-      handlePaste: (view, event) => {
-        if (!view.editable) return false;
-        const { selection } = view.state;
-        if (selection.empty || !(selection instanceof TextSelection) || !selection.$from.sameParent(selection.$to)) return false;
-        const data = event.clipboardData;
-        if (!data || data.files.length > 0) return false;
-        const url = pastedUrl(data.getData('text/plain'));
-        if (!url || inCode(view.state)) return false;
-        const type = linkSchema.type(ctx);
-        const tr = view.state.tr.addMark(selection.from, selection.to, type.create({ href: url }));
-        view.dispatch(collapseAfterLink(tr, selection.to, type).scrollIntoView());
-        return true;
-      },
+      // 选中文字粘贴 URL → 加链接;否则从代码编辑器复制来的内容按纯文本当 Markdown 解析(不用随附的高亮 HTML;见 milkdown-paste)
+      handlePaste: (view, event) => pasteUrlAsLink(ctx, view, event) || pasteEditorCopyAsMarkdown(ctx, view, event),
     },
   });
 }

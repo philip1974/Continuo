@@ -39,7 +39,14 @@ const NEW_COMMANDS: Record<string, readonly [string, string | null]> = {
 
 const ZOOM_COMMANDS = new Set(['workbench.action.zoomIn', 'workbench.action.zoomOut', 'workbench.action.zoomReset']);
 // 显示输出 / 显示调试后来补上 VSCode 默认键 ⇧⌘U / ⇧⌘D(见 src/__tests__/workbench-vscode-default-keys/)
-const KEYED_COMMANDS = new Set([...ZOOM_COMMANDS, 'workbench.view.output', 'workbench.view.debug']);
+// 复制路径 / 复制相对路径补上 VSCode 默认键 ⌥⌘C / ⇧⌥⌘C(见 src/__tests__/explorer-commands/ 第 6 条)
+const KEYED_COMMANDS = new Set([
+  ...ZOOM_COMMANDS,
+  'workbench.view.output',
+  'workbench.view.debug',
+  'copyFilePath',
+  'copyRelativeFilePath',
+]);
 
 describe('常用动作注册为命令', () => {
   it('核心插件注册全部新命令:三语标题 + 分类,无默认键', () => {

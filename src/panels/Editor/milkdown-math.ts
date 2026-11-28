@@ -20,6 +20,7 @@ import { codeBlockConfig } from '@milkdown/kit/component/code-block';
 import { codeBlockSchema } from '@milkdown/kit/preset/commonmark';
 import { $nodeSchema, $remark } from '@milkdown/kit/utils';
 import { renderMathInto, renderMathPreview } from './katex-render';
+import { codeBlockLanguageFromDom } from './milkdown-paste';
 
 export const MATH_INLINE_ID = 'math_inline';
 
@@ -533,6 +534,14 @@ const codeBlockMathSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
   return {
     ...base,
     attrs: { ...base.attrs, math: { default: null } },
+    // 粘贴网页 HTML 的代码块语言按常见网页约定取(见 milkdown-paste codeBlockLanguageFromDom)
+    parseDOM: [
+      {
+        tag: 'pre',
+        preserveWhitespace: 'full',
+        getAttrs: (dom) => (dom instanceof HTMLElement ? { language: codeBlockLanguageFromDom(dom) } : false),
+      },
+    ],
     parseMarkdown: {
       match: base.parseMarkdown.match,
       runner: (state, node, type) => {

@@ -63,6 +63,12 @@ import type { IDockviewPanel } from 'dockview-react';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { activePanelInDocument, popoutGroupOfDocument } from '@/shell/dock/group-mru';
 import { getCommandDocument } from '@/shell/dock/popout-documents';
+import { isExplorerTreeFocused } from '@/panels/Explorer/tree-keyboard';
+import {
+  COPY_FILE_PATH_COMMAND_ID,
+  COPY_RELATIVE_FILE_PATH_COMMAND_ID,
+  requestExplorer,
+} from '@/panels/Explorer/explorer-requests';
 import { coApi } from '@/lib/co-api';
 import { notifyFailure } from '@/notifications/notify-thrown-error';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
@@ -552,6 +558,36 @@ function copyActiveFilePath(relative: boolean): void {
   void copyToClipboardOrNotify(text, t('panels.explorer.copy_path_failed'));
 }
 
+/**
+ * 复制路径 / 复制相对路径的默认键(VSCode fileCommands.ts COPY_PATH_COMMAND_ID / COPY_RELATIVE_PATH_COMMAND_ID):
+ * - 编辑器之外(when !editorFocus):mac ⌥⌘C / ⇧⌥⌘C,Linux Ctrl+Alt+C / Ctrl+Shift+Alt+C;Windows 复制路径 Shift+Alt+C(编辑器里也是,
+ *   VSCode 两条规则同键 → 不带条件),复制相对路径是和弦 Ctrl+K Ctrl+Shift+C(不支持和弦 → 不给默认键)。
+ * - 编辑器里 mac / Linux 是和弦 ⌘K ⌥⌘C / ⌘K ⇧⌥⌘C(不支持 → 编辑器里不响应;⌥⌘C 留给查找的区分大小写)。
+ * 终端里只有带 ⌘ 的按键让出(VSCode commandsToSkipShell 默认列表不含这两条,见 terminal-hotkeys TERMINAL_KEPT_COMMAND_IDS)。
+ * BDD: src/__tests__/explorer-commands/
+ */
+export function copyPathCommandKeys(
+  platform: Platform,
+  windows: boolean,
+): Record<'copyFilePath' | 'copyRelativeFilePath', Pick<CommandSpec, 'id' | 'hotkey' | 'when'>> {
+  if (platform !== 'mac' && windows) {
+    return {
+      copyFilePath: { id: COPY_FILE_PATH_COMMAND_ID, hotkey: 'shift+alt+c' },
+      copyRelativeFilePath: { id: COPY_RELATIVE_FILE_PATH_COMMAND_ID },
+    };
+  }
+  return {
+    copyFilePath: { id: COPY_FILE_PATH_COMMAND_ID, hotkey: 'mod+alt+c', when: '!editorFocus' },
+    copyRelativeFilePath: { id: COPY_RELATIVE_FILE_PATH_COMMAND_ID, hotkey: 'mod+shift+alt+c', when: '!editorFocus' },
+  };
+}
+
+/** 资源管理器文件树获焦 → 复制其焦点项 / 多选项(同右键菜单);否则复制活动文件(VSCode getMultiSelectedResources)。 */
+function copyFocusedPath(relative: boolean): void {
+  if (isExplorerTreeFocused(getCommandDocument())) requestExplorer({ kind: 'copyPath', relative });
+  else copyActiveFilePath(relative);
+}
+
 /** 在系统文件管理器中显示活动文件(文件已删除的 orphaned tab 无处可显示 → no-op)。 */
 function revealActiveFile(): void {
   const tab = activeGroupTab();
@@ -854,20 +890,20 @@ export function editorCommandSpecs(platform: Platform, windows: boolean = isWind
       }),
     ),
     {
-      id: 'copyFilePath',
+      ...copyPathCommandKeys(platform, windows).copyFilePath,
       title: 'Copy Path of Active File',
       titleKey: 'commands.file.copy_path.title',
       category: 'File',
       categoryKey: 'commands.file.category',
-      fn: () => copyActiveFilePath(false),
+      fn: () => copyFocusedPath(false),
     },
     {
-      id: 'copyRelativeFilePath',
+      ...copyPathCommandKeys(platform, windows).copyRelativeFilePath,
       title: 'Copy Relative Path of Active File',
       titleKey: 'commands.file.copy_relative_path.title',
       category: 'File',
       categoryKey: 'commands.file.category',
-      fn: () => copyActiveFilePath(true),
+      fn: () => copyFocusedPath(true),
     },
     {
       id: 'revealFileInOS',

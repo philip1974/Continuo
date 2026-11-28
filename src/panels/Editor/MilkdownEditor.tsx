@@ -75,6 +75,7 @@ import { configureMarkdownStyle } from './milkdown-markdown-style';
 import { configureSourceBlocks } from './milkdown-source-blocks';
 import { configureMarkdownMath } from './milkdown-math';
 import { markdownWritingKeys } from './milkdown-writing-keys';
+import { imagePasteSchema, pasteHistoryBoundary } from './milkdown-paste';
 import {
   escapeRegExp,
   forgetMarkdownFindSession,
@@ -456,6 +457,9 @@ function CrepeEditor({
     const sourceBlocks = configureSourceBlocks(crepe, defaultValue);
     configureMarkdownMath(crepe);
     crepe.editor.use(markdownWritingKeys);
+    // 粘贴前后断开撤销;粘贴网页 HTML 时图片 title 不取 alt(代码块语言见 milkdown-math 的代码块 schema)。BDD: src/__tests__/editor-clipboard/
+    crepe.editor.use(pasteHistoryBoundary);
+    crepe.editor.use(imagePasteSchema);
 
     // Markdown 图片:image 节点换成自定义视图 —— 相对路径按文档目录解析、经受控通道(仅工作区内)加载,失败给 alt 占位;
     // 只换 DOM 视图,src 原样留在文档里(序列化不变)。按 slice 名 'nodeView' 注册(@milkdown/kit 非直接依赖,

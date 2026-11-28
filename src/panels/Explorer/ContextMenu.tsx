@@ -17,7 +17,8 @@ import { coApp } from '@/plugins/co-app';
 import { PluginRenderBoundary } from '@/plugins/PluginRenderBoundary';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
 import { isSortedBy } from '@/lib/is-sorted-by';
-import { hotkeyText } from '@/lib/hotkey-label';
+import { commandHotkeyText, hotkeyText } from '@/lib/hotkey-label';
+import { COPY_FILE_PATH_COMMAND_ID, COPY_RELATIVE_FILE_PATH_COMMAND_ID } from './explorer-requests';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import { FIND_IN_FOLDER_HOTKEY, OPEN_TO_SIDE_HOTKEY, TREE_KEY_HOTKEYS, trashHotkey } from './tree-keyboard';
 
@@ -342,12 +343,18 @@ function ContextMenuContent({
             <Menu.Separator className={sepCls} />
 
             {/* 路径剪贴板段:多选时复制全部(\n 拼接,VSCode 同款) */}
-            <CtxItem onSelect={() => actions.onCopyPath(actionTargets)} trailing={countTrailing}>
+            {/* 右侧键位 = 命令当前生效绑定(VSCode 资源管理器右键「复制路径 ⌥⌘C」) */}
+            <CtxItem
+              onSelect={() => actions.onCopyPath(actionTargets)}
+              trailing={countTrailing}
+              shortcut={commandHotkeyText(coApp.commands.get(COPY_FILE_PATH_COMMAND_ID))}
+            >
               {t('panels.explorer.ctx.copy_path')}
             </CtxItem>
             <CtxItem
               onSelect={() => actions.onCopyRelativePath(actionTargets)}
               trailing={countTrailing}
+              shortcut={commandHotkeyText(coApp.commands.get(COPY_RELATIVE_FILE_PATH_COMMAND_ID))}
             >
               {t('panels.explorer.ctx.copy_relative_path')}
             </CtxItem>

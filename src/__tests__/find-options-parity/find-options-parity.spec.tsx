@@ -95,6 +95,17 @@ describe('在文件中查找(⇧⌘F)', () => {
     expect(useSearchStore.getState().matchCase).toBe(false);
   });
 
+  it('选项切换键不再冒泡到 document(同键的全局命令 —— 编辑器之外 ⌥⌘C 复制路径 —— 不再同时执行)', () => {
+    render(<SearchPanel />);
+    const box = screen.getByRole('textbox', { name: t('panels.search.query_label') });
+    const onDoc = vi.fn();
+    document.addEventListener('keydown', onDoc);
+    fireEvent.keyDown(box, optionKey('c', false));
+    fireEvent.keyDown(box, { key: 'x', code: 'KeyX' });
+    document.removeEventListener('keydown', onDoc);
+    expect(onDoc).toHaveBeenCalledTimes(1);
+  });
+
   it('选项按钮用共享名称,tooltip 带快捷键', () => {
     render(<SearchPanel />);
     expect(screen.getByRole('group', { name: t('find.options_group') })).toBeTruthy();
@@ -133,6 +144,15 @@ describe('终端 / Markdown 查找条', () => {
     expect(api.setOptions).toHaveBeenLastCalledWith({ regex: false, caseSensitive: true, wholeWord: false });
     fireEvent.keyDown(screen.getByRole('button', { name: LABEL.regex() }), optionKey('w', false));
     expect(api.setOptions).toHaveBeenLastCalledWith({ regex: false, caseSensitive: false, wholeWord: true });
+  });
+
+  it('选项切换键不再冒泡到 document', () => {
+    render(<TerminalSearchBar searchApi={makeApi()} onClose={vi.fn()} />);
+    const onDoc = vi.fn();
+    document.addEventListener('keydown', onDoc);
+    fireEvent.keyDown(screen.getByRole('textbox'), optionKey('c', false));
+    document.removeEventListener('keydown', onDoc);
+    expect(onDoc).not.toHaveBeenCalled();
   });
 
   it('选项按钮用共享名称,tooltip 带快捷键', () => {

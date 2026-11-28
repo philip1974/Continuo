@@ -453,6 +453,10 @@ export const TERMINAL_KEPT_COMMAND_IDS: ReadonlySet<string> = new Set([
   // BDD: src/__tests__/editor-tab-management/
   ...WORKBENCH_OPEN_EDITOR_AT_INDEX_COMMAND_IDS,
   ...WORKBENCH_MOVE_EDITOR_COMMAND_IDS,
+  // 复制路径 / 复制相对路径(Windows Shift+Alt+C、Linux Ctrl+Alt+C 照常进 shell;mac ⌥⌘C 带 ⌘ → 让出,复制活动文件路径)
+  // BDD: src/__tests__/explorer-commands/
+  'copyFilePath',
+  'copyRelativeFilePath',
 ]);
 
 /** 按键胜出的是终端自己处理的命令(见 TERMINAL_KEPT_COMMAND_IDS):交给 xterm,不冒泡到全局分发。 */

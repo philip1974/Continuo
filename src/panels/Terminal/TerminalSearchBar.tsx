@@ -140,6 +140,8 @@ export function TerminalSearchBar({
         const option = event.key === 'Escape' ? null : matchFindOptionHotkey(event.nativeEvent);
         if (option) {
           event.preventDefault();
+          // 截住冒泡:同键的全局命令(编辑器之外 ⌥⌘C = 复制路径)不再执行
+          event.stopPropagation();
           searchApi.setOptions(toggleOption(searchApi.options, option));
           return;
         }

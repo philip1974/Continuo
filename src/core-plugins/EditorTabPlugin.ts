@@ -7,6 +7,7 @@ import { Plugin } from '@/plugins/Plugin';
 import {
   AUTO_SAVE_DELAY_MS,
   AUTO_SAVE_MARKDOWN_ENABLED,
+  EDITOR_COPY_WITH_SYNTAX_HIGHLIGHTING,
   EDITOR_DECORATIONS_BADGES,
   EDITOR_DECORATIONS_COLORS,
   EDITOR_DETECT_INDENTATION,
@@ -48,6 +49,7 @@ export default class EditorTabPlugin extends Plugin {
     this.addSettingItem(EDITOR_SCROLL_BEYOND_LAST_LINE);
     this.addSettingItem(EDITOR_GUIDES_INDENTATION);
     this.addSettingItem(EDITOR_OCCURRENCES_HIGHLIGHT);
+    this.addSettingItem(EDITOR_COPY_WITH_SYNTAX_HIGHLIGHTING);
 
     // ── Indentation(BDD: src/__tests__/editor-indentation/)──
     this.addSettingItem(EDITOR_TAB_SIZE);

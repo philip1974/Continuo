@@ -141,6 +141,23 @@ export const EDITOR_GUIDES_INDENTATION: CoreSettingSpec<boolean> = {
 export type EditorOccurrencesHighlight = 'off' | 'singleFile';
 
 /**
+ * 复制时带语法高亮(VSCode editor.copyWithSyntaxHighlighting,默认开):代码编辑器与 Markdown 源码模式复制时另写一份带内联配色的
+ * HTML(粘贴到文档 / 邮件里保留代码颜色);关掉只写纯文本。BDD: src/__tests__/editor-clipboard/
+ */
+export const EDITOR_COPY_WITH_SYNTAX_HIGHLIGHTING: CoreSettingSpec<boolean> = {
+  id: 'editor.copyWithSyntaxHighlighting',
+  category: 'editor',
+  group: 'appearance',
+  groupKey: 'settings.group.appearance',
+  title: 'Copy with syntax highlighting',
+  titleKey: 'settings.editor.copy_with_syntax_highlighting',
+  descriptionKey: 'settings.editor.copy_with_syntax_highlighting.desc',
+  type: 'boolean',
+  default: true,
+  priority: 3.8,
+};
+
+/**
  * 光标处单词的其它出现处高亮(VSCode editor.occurrencesHighlight,默认 singleFile;VSCode 另有实验性的 multiFile 跨文件高亮,
  * 这里不提供)。BDD: src/__tests__/editor-occurrences-highlight/
  */
