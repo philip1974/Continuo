@@ -78,11 +78,13 @@ function ConfirmDialogBody({
     >
       <h2
         id={titleId}
-        className="mb-2 text-sm font-medium text-fg"
+        // [overflow-wrap:anywhere]:标题 / 说明里的长文件名、长路径(无空格)放不下时在词内折行,不越出对话框
+        //(VSCode 对话框 word-wrap: break-word);韩文其余文字仍按词断行(继承根元素 keep-all)。
+        className="mb-2 text-sm font-medium text-fg [overflow-wrap:anywhere]"
       >
         {title}
       </h2>
-      <div id={descriptionId} className="mb-5 text-xs leading-relaxed text-fg-muted">
+      <div id={descriptionId} className="mb-5 text-xs leading-relaxed text-fg-muted [overflow-wrap:anywhere]">
         {description}
       </div>
       <div className="flex flex-wrap justify-end gap-2">

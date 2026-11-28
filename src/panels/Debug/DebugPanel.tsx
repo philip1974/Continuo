@@ -383,7 +383,7 @@ function ConsoleSection({
               <div
                 key={line.id}
                 data-category={line.category}
-                className={`min-w-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere] ${CONSOLE_LINE_CLASS[line.category] ?? 'text-fg'}`}
+                className={`min-w-0 whitespace-pre-wrap break-all ${CONSOLE_LINE_CLASS[line.category] ?? 'text-fg'}`}
               >
                 {line.category === 'input' ? `› ${line.text}` : line.text.replace(/\n$/, '')}
               </div>

@@ -8,7 +8,7 @@ import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { activateDockPanel } from '@/shell/dock/wrap-panel-close';
 import { focusPanelContent } from '@/shell/dock/panel-focus';
 import { editorGroupsInWindowOf, mainEditorGroupOrder } from '@/shell/dock/editor-group-order';
-import { editorGroupInDocument } from '@/shell/dock/group-mru';
+import { activePanelInDocument, editorGroupInDocument } from '@/shell/dock/group-mru';
 import { getCommandDocument } from '@/shell/dock/popout-documents';
 import {
   editorGroupIdsOf,
@@ -18,7 +18,7 @@ import {
   useEditorStore,
 } from '@/stores/editor.store';
 import { tWithFallback } from '@/i18n/translate';
-import { nextEditorGroupId } from '../../../electron/shared/editor-group-id';
+import { isEditorGroupId, nextEditorGroupId } from '../../../electron/shared/editor-group-id';
 import {
   markdownScrollTopOf,
   saveCodeEditorViewState,
@@ -38,6 +38,21 @@ export function commandEditorGroupId(): string | undefined {
   const active = useEditorStore.getState().activeGroupId;
   const api = getDockApi();
   return api ? editorGroupInDocument(api, getCommandDocument(), active) : active;
+}
+
+/**
+ * tab 级命令(移动编辑器、按序号打开、下一个 / 上一个编辑器)作用的组:同 commandEditorGroupId,但触发窗口的活动 dock 面板不是编辑器组
+ *(设置页 / 冲突比较页等)且该编辑器组被它挡住(不可见)时 → undefined(命令 no-op),不去动用户看不见的文件。VSCode 里设置 / 比较页
+ * 本身是编辑器,这些命令作用于它;Continuo 里它们是 dock 面板,不归编辑器组管。活动面板在别的组(编辑器组仍可见,如焦点在旁边的
+ * 终端)→ 照旧作用于该编辑器组(VSCode:焦点在面板区终端时同样作用于活动编辑器组)。
+ */
+export function visibleCommandEditorGroupId(): string | undefined {
+  const groupId = commandEditorGroupId();
+  const api = getDockApi();
+  if (groupId === undefined || !api) return groupId;
+  const active = activePanelInDocument(api, getCommandDocument());
+  if (!active || isEditorGroupId(active.id)) return groupId;
+  return api.getPanel(groupId)?.api.isVisible === false ? undefined : groupId;
 }
 
 /** 命令只用 right / down;left / up 供把资源管理器的文件拖到组的左 / 上边缘(VSCode 按落点四向拆分)。 */
@@ -162,10 +177,11 @@ export type MoveEditorTarget = 'next' | 'previous' | 'first' | 'last' | 'left' |
 /**
  * 移动编辑器(VSCode moveActiveEditor):'left' / 'right' = 组内左移 / 右移一位(到头不动);'next' / 'previous' / 'first' / 'last' = 移到
  * 所在窗口按空间顺序的下一个 / 上一个 / 第一个 / 最后一个组。没有下一个(上一个)组 → 向右(左)拆出新组再移过去;第一个 / 最后一个
- * 就是本组 → 不动(VSCode 同)。跨组后目标组成为活动组、编辑器获焦。缺省 = 触发窗口的编辑器组的活动 tab。返回是否移动了。
+ * 就是本组 → 不动(VSCode 同)。跨组后目标组成为活动组、编辑器获焦。缺省 = 触发窗口的编辑器组的活动 tab(该组被设置页等非编辑器面板
+ * 挡住 → 不动,见 visibleCommandEditorGroupId)。返回是否移动了。
  */
 export function moveEditor(to: MoveEditorTarget, opts: { readonly groupId?: string; readonly tabId?: string } = {}): boolean {
-  const from = opts.groupId ?? commandEditorGroupId();
+  const from = opts.groupId ?? visibleCommandEditorGroupId();
   if (from === undefined) return false;
   const store = useEditorStore.getState();
   const tabId = opts.tabId ?? groupActiveTabIdOf(store, from);

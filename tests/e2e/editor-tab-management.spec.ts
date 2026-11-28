@@ -1,5 +1,5 @@
 // 编辑器 tab / 组管理(对齐 VSCode):⌃⌘→ 移到下一组保持光标与脏内容、固定 tab 后「关闭其他」保留且重启后仍固定、⌥⌘→ 跨组、
-// 关组后焦点到最近使用的组、⌃1 / ⌃9 按序号直达、关闭含脏文件的组弹确认(取消 / 不保存 / 保存)。
+// 关组后焦点到最近使用的组、⌃1 / ⌃9 按序号直达、关闭含脏文件的组弹确认(取消 / 不保存 / 保存)、设置页挡住编辑器组时 tab 级键不动藏在后面的文件。
 // BDD: src/__tests__/editor-tab-management/、src/__tests__/editor-groups/(close-dirty)
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -12,6 +12,7 @@ import {
   EDITOR_TABS,
 } from './helpers/editor';
 import { openTreeItem } from './helpers/explorer';
+import { openSettings, SETTINGS_NAV } from './helpers/settings';
 import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
@@ -214,6 +215,25 @@ test('⌃1 / ⌃3 按序号直达,⌃9 不存在第 9 个 → 不动,⌘9 / ⌃0
   await win.keyboard.press(K.atIndex(1));
   await win.keyboard.press(K.lastAlt);
   await expect.poll(() => activeTitle(group(win, 0))).toBe('c.ts');
+});
+
+test('设置页挡在编辑器组前面:⌃⌘→ / ⌃⌘← / ⌃1 / ⌥⌘→ 不动藏在后面的文件,设置页仍在前面', async () => {
+  test.setTimeout(90_000);
+  const [ud] = workspace();
+  const win = await launch(ud);
+  await openFiles(win, ['a.ts', 'b.ts', 'c.ts']);
+  await focusEditor(group(win, 0));
+  await openSettings(win);
+  const nav = win.getByRole('navigation', { name: SETTINGS_NAV });
+  await expect(groups(win)).toHaveCount(0); // 编辑器组被设置页挡住(同一 dock 组里不渲染)
+  for (const key of [K.moveNext, K.movePrev, K.atIndex(1), K.nextEditor, K.last]) await win.keyboard.press(key);
+  await expect(nav).toBeVisible();
+  // ⌘W 照旧关闭设置页本身(行为不变),编辑器组回到前面:组数、tab 顺序与活动 tab 都没变
+  await win.keyboard.press(`${K.mod}+w`);
+  await expect(nav).toHaveCount(0);
+  await expect(groups(win)).toHaveCount(1);
+  expect(await tabTitles(group(win, 0))).toEqual(['a.ts', 'b.ts', 'c.ts']);
+  expect(await activeTitle(group(win, 0))).toBe('c.ts');
 });
 
 test('dock tab × 关闭含脏文件的组:取消 → 组不关;不保存 → 组关闭、文件不写盘;保存 → 写盘后组关闭', async () => {

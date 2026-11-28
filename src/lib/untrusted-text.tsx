@@ -60,8 +60,8 @@ export function UntrustedBlock({ text, label }: { readonly text: string; readonl
       tabIndex={0}
       className="mt-1 max-h-32 overflow-auto rounded border border-line bg-panel-soft px-2 py-1 outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
     >
-      {/* [overflow-wrap:anywhere]:韩文界面 :lang(ko) 的未分层 word-break:keep-all 压过 break-all,长串仍须折行 */}
-      <code className="block whitespace-pre-wrap break-all [overflow-wrap:anywhere] font-mono text-fg">{visibleUntrustedBlockText(text)}</code>
+      {/* break-all:长串(命令 / 路径)任意处折行;韩文界面根元素继承下来的 keep-all 被元素自己的 break-all 覆盖(theme.css)。 */}
+      <code className="block whitespace-pre-wrap break-all font-mono text-fg">{visibleUntrustedBlockText(text)}</code>
     </ScrollArea>
   );
 }

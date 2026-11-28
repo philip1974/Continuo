@@ -56,10 +56,12 @@
   gap: 6px;
 }
 
+/* 长路径 / 长文件名(无空格)任意处折行,不撑破 toast(VSCode 通知 word-wrap: break-word)。用 overflow-wrap 而不设
+ * word-break:韩文界面继承根元素的 keep-all(按词断行,见 theme.css),只有放不下的长串才在词内断开。 */
 .toast__message {
   flex: 1 1 auto;
   min-width: 0;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* 有操作按钮时:正文与按钮行竖排(按钮在正文下方,左对齐)。 */

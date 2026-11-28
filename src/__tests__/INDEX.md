@@ -851,6 +851,7 @@
 
 ## [编辑器 tab 与编辑器组管理(移动 / 固定 / 跨组切换 / 组 MRU / 组管理命令 / 按序号直达)](./editor-tab-management/README.md)
 
+- [`hidden-group-tab-commands.spec.ts`](./editor-tab-management/hidden-group-tab-commands.spec.ts)
 - [`pinned-tab-header.spec.tsx`](./editor-tab-management/pinned-tab-header.spec.tsx)
 - [`tab-management-commands.spec.ts`](./editor-tab-management/tab-management-commands.spec.ts)
 - [`tab-management-persist.spec.ts`](./editor-tab-management/tab-management-persist.spec.ts)
@@ -1341,6 +1342,10 @@
 ## [local-storage-record-guard](./local-storage-record-guard/)
 
 - [`local-storage-record-guard.spec.ts`](./local-storage-record-guard/local-storage-record-guard.spec.ts)
+
+## [long-text-wrap(长路径 / 长文件名在对话框与 toast 里折行,韩文界面也一样)](./long-text-wrap/README.md)
+
+- [`long-text-wrap.spec.tsx`](./long-text-wrap/long-text-wrap.spec.tsx)
 
 ## [M4 Continuo adopt host](./m4-continuo-adopt-host/README.md)
 

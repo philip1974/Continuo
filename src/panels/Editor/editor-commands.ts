@@ -48,6 +48,7 @@ import {
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 import {
   commandEditorGroupId,
+  visibleCommandEditorGroupId,
   editorGroupsInWindow,
   focusEditorGroup,
   joinEditorGroups,
@@ -552,7 +553,7 @@ function revealActiveFile(): void {
  * 打开时不带 preserveFocus,焦点随之进编辑器);组内 tab 数 < 2 → no-op。
  */
 export function openAdjacentEditorInGroup(delta: 1 | -1, groupId?: string): void {
-  const gid = groupId ?? commandEditorGroupId();
+  const gid = groupId ?? visibleCommandEditorGroupId();
   if (gid === undefined) return;
   const s = useEditorStore.getState();
   const tabs = groupTabsOf(s, gid);
@@ -570,7 +571,7 @@ export function openAdjacentEditorInGroup(delta: 1 | -1, groupId?: string): void
  * 非空组的第一个(最后一个)编辑器,首尾相接(只有一个非空组时即组内循环)。焦点随之进编辑器。
  */
 export function openAdjacentEditor(delta: 1 | -1, groupId?: string): void {
-  const gid = groupId ?? commandEditorGroupId();
+  const gid = groupId ?? visibleCommandEditorGroupId();
   if (gid === undefined) return;
   const s = useEditorStore.getState();
   const tabs = groupTabsOf(s, gid);
@@ -598,7 +599,7 @@ export function openAdjacentEditor(delta: 1 | -1, groupId?: string): void {
 
 /** 按序号打开触发窗口的编辑器组里第 n 个(1 起)编辑器;n = Infinity → 最后一个。不存在 → no-op。 */
 export function openEditorAtIndex(n: number): void {
-  const gid = commandEditorGroupId();
+  const gid = visibleCommandEditorGroupId();
   if (gid === undefined) return;
   const tabs = groupTabsOf(useEditorStore.getState(), gid);
   const tab = n === Infinity ? tabs.at(-1) : tabs[n - 1];

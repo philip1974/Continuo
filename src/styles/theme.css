@@ -257,9 +257,15 @@
 }
 
 /* 韩文按词(어절)断行:默认 word-break: normal 会在词中间换行(「설정을 변경하/면」)。<html lang> 由
- * setLocale 随界面语言写入(src/i18n/translate.ts)。 */
-:lang(ko) {
-  word-break: keep-all;
+ * setLocale 随界面语言写入(src/i18n/translate.ts)。
+ * 只设在根元素、靠继承下传(同 VSCode 把 :lang() 字体设在 .monaco-workbench 上),并放 base 层:任何元素自己写的 word-break
+ *(Tailwind break-all、Toast.css 等)都能覆盖它,且对其子树生效。此前写成未分层的 :lang(ko) —— 匹配每个元素、压过一切分层规则,
+ * break-all 失效,长路径 / 长文件名撑破授权弹窗与 toast。keep-all 不影响非 CJK 文字:长的无空格串仍要靠 overflow-wrap 折行。
+ * BDD:src/__tests__/long-text-wrap/ */
+@layer base {
+  :root:lang(ko) {
+    word-break: keep-all;
+  }
 }
 
 /* ── 全局 scrollbar(参考 stitch_desktop_design_reviewer 原型)──────────
