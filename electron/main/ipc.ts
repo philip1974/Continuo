@@ -127,6 +127,7 @@ import {
   sanitizeReadLayout,
 } from './lib/layout-read-guard';
 import { countPopoutGroups, notePopoutRestore } from './services/popout-restore-focus.service';
+import { notePopoutWindowModes, restorablePopoutWindowModes, splitPopoutWindowModes } from './popout-window-state';
 
 // Agent Terminal MCP 授权应答 schema 见 ./agent-auth-schema(单列以便测试 import,E146)。
 
@@ -164,7 +165,11 @@ export function registerIpc(deps: WindowIpcDeps): void {
       const layout = sanitizeReadLayout(entry?.layout ?? null);
       // 恢复的 popout 子窗不抢主窗焦点:登记该窗口接下来将恢复的 popout 数(见 popout-restore-focus.service)。
       const senderId = (event.sender as { id?: unknown }).id;
-      if (typeof senderId === 'number') notePopoutRestore(senderId, countPopoutGroups(layout));
+      if (typeof senderId === 'number') {
+        notePopoutRestore(senderId, countPopoutGroups(layout));
+        // 最大化 / 全屏的 popout:恢复开窗时按位置认领,建窗后套用(见 popout-window-state)。
+        notePopoutWindowModes(senderId, restorablePopoutWindowModes(layout, entry?.popoutWindowModes));
+      }
       return layout;
     },
   );
@@ -177,7 +182,8 @@ export function registerIpc(deps: WindowIpcDeps): void {
 
       // json 已由 safeHandleWithCtx 用 LayoutSchema 解析过,这里不再二次 parse(passthrough 对象会被
       // 再拷贝一遍,且发生在下方字节上限检查之前)。
-      const layout = json;
+      // popout 组上的 windowMode(最大化 / 全屏)不进布局:存窗口段 popoutWindowModes(→ 旁挂文件),见 popout-window-state。
+      const { layout, modes } = splitPopoutWindowModes(json);
       // 边界(E89,E67 对偶):LayoutSchema 是 .passthrough() 无序列化大小上限。畸形 renderer/
       // dockview 状态可写入超大 layout → explorer.json 撑爆 → 下次 loadExplorer 命中 16MiB
       // 上限(E67)拒读 → 布局/窗口/会话恢复整体失效 + 写路径 fail-closed 卡死。写盘前按序列化
@@ -210,13 +216,17 @@ export function registerIpc(deps: WindowIpcDeps): void {
         const payload =
           (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
         const entry = ensureWindowEntry(payload, seq);
+        const sameModes = JSON.stringify(entry.popoutWindowModes ?? []) === JSON.stringify(modes);
         if (
           entry.layout !== undefined &&
-          JSON.stringify(entry.layout) === serialized
+          JSON.stringify(entry.layout) === serialized &&
+          sameModes
         ) {
           return;
         }
         entry.layout = layout;
+        if (modes.length > 0) entry.popoutWindowModes = modes;
+        else delete entry.popoutWindowModes;
         await writeExplorerFile(explorerFile, payload);
       });
     },

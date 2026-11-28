@@ -64,6 +64,8 @@ describe('窗口段 → 快照', () => {
       layout: { version: 1, grid: {} },
       lastClosedAt: 5,
       windowState: { bounds: { x: 0, y: 0, width: 800, height: 600 } },
+      // popout 子窗的最大化 / 全屏属于窗口(同 windowState),不进快照
+      popoutWindowModes: [{ id: '2', mode: 'maximized', position: { left: 1, top: 2, width: 500, height: 400 } }],
     };
     expect(snapshotOfWindowEntry(entry)).toEqual({
       workspace: { root: '/ws2' },

@@ -17,6 +17,7 @@ import { focusTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { stripTerminalPanelsFromLayout } from './strip-terminal-layout';
 import { popoutPositionsRelativeToWindow } from './popout-restore-position';
+import { onPopoutWindowStateChange, withPopoutWindowStates } from './popout-window-state';
 import { trackPopoutRestore, whenPopoutRestoreSettled } from './popout-restore-settle';
 import { makeJsonSafe } from '../../../electron/shared/make-json-safe';
 import { useDockReconciler } from './DockReconciler';
@@ -159,7 +160,8 @@ async function writeDockLayoutSnapshot(
     // 数据;读端 sanitize 仍是兜底防线,处理历史 explorer.json 与竞态)。仅含终端(无非终端
     // panel)→ strip 返 null,此时写无 grid 的空布局(payload = {version:1}),终端绝不进持久化;
     // 读端 sanitize 对无 grid 布局返 null → 静默走默认布局(与此前读端剥离后的恢复行为一致)。
-    const raw = api.toJSON();
+    // 最大化 / 全屏的 popout 存普通矩形 + 状态(dockview 存的是铺满屏幕的尺寸),见 popout-window-state。
+    const raw = withPopoutWindowStates(api.toJSON(), api);
     const cleaned = (stripTerminalPanelsFromLayout(raw) ?? {}) as unknown;
     // dockview toJSON 在某些瞬时状态会产出非有限 size 等非 JSON-safe 值,写端 assertJsonValue(E119)
     // 会整份拒写(BAD_INPUT)→ 布局永远无法落盘。写盘前清洗成 JSON-safe(剔除非有限数/undefined,
@@ -351,6 +353,13 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
           persist();
           setEmpty(event.api);
         }),
+        // popout 子窗最大化 / 还原 / 全屏不一定触发 dockview 布局变更,但写出的布局(普通矩形 + 状态)变了 → 同样标脏落盘。
+        {
+          dispose: onPopoutWindowStateChange(() => {
+            layoutVersions.set(event.api, (layoutVersions.get(event.api) ?? 0) + 1);
+            persist();
+          }),
+        },
         // 防 closing-store 残留:panel 真被 removed 后从 set 摘掉,
         // 避免后续同 id panel 一上来就走 EXIT 动画。
         // terminal panel:同时走 handleTerminalPanelRemoved 反向通知 main

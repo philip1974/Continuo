@@ -178,6 +178,11 @@ vi.mock('@/stores/debug.store', () => ({
   startDebugStoreSync: vi.fn(),
 }));
 
+// init() 订阅 popout 子窗窗口状态(coApi.window.onPopoutState),同上桩掉。
+vi.mock('@/shell/dock/popout-window-state', () => ({
+  installPopoutWindowStateTracking: vi.fn(),
+}));
+
 // init() 启动工作区信任状态同步(订阅 coApi.workspaceTrust),同上桩掉。
 vi.mock('@/stores/workspace-trust.store', () => ({
   startWorkspaceTrustSync: vi.fn(),

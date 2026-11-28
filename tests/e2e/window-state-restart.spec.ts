@@ -195,6 +195,83 @@ test('popout 子窗只移动不改尺寸:新位置落盘,重启后回到该位�
     .toBe(moved.x);
 });
 
+// 第六十九轮 A 组审计:popout 最大化 / 全屏时退出,重启恢复成铺满屏幕的普通窗口、原尺寸丢失。VSCode 辅助窗口存 bounds + mode。
+// BDD: src/__tests__/window-state-restore/popout-window-mode.spec.ts
+for (const mode of ['maximized', 'fullscreen'] as const) {
+  test(`popout 子窗${mode === 'maximized' ? '最大化' : '全屏'}时退出:重启恢复该状态,还原后回到原来的普通尺寸`, async () => {
+    test.setTimeout(150_000);
+    let { app: a, main } = await launch();
+    await main.getByRole('button', { name: DOCK_POPOUT }).click();
+    await expect.poll(() => a.windows().length, { timeout: 10_000 }).toBe(2);
+    const normal = await a.evaluate(({ BrowserWindow, screen }) => {
+      const wa = screen.getPrimaryDisplay().workArea;
+      const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('popout=1'))!;
+      w.setContentBounds({ x: wa.x + 260, y: wa.y + 110, width: 620, height: 460 });
+      return w.getContentBounds();
+    });
+    type Persisted = {
+      windows?: Array<{
+        windowSeq: number;
+        popoutWindowModes?: Array<{ mode: string }>;
+        layout?: { popoutGroups?: Array<{ position?: { left?: number; width?: number; height?: number }; windowMode?: unknown }> };
+      }>;
+    };
+    const persistedPos = (file: unknown) => {
+      const pos = (file as Persisted).windows?.find((w) => w.windowSeq === 0)?.layout?.popoutGroups?.[0]?.position;
+      return pos ? { left: pos.left, width: pos.width, height: pos.height } : null;
+    };
+    const normalPos = { left: normal.x, width: normal.width, height: normal.height };
+    await expect.poll(() => persistedPos(readPersistedExplorer(userData)), { timeout: 10_000 }).toEqual(normalPos);
+
+    const popout = () =>
+      a.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('popout=1'));
+        return w ? { maximized: w.isMaximized(), fullscreen: w.isFullScreen(), content: w.getContentBounds() } : null;
+      });
+    const enter = (m: typeof mode) =>
+      a.evaluate(({ BrowserWindow }, m) => {
+        const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('popout=1'))!;
+        if (m === 'maximized') w.maximize();
+        else w.setFullScreen(true);
+      }, m);
+    const inMode = async () => {
+      const p = await popout();
+      return p ? (mode === 'maximized' ? p.maximized : p.fullscreen) : null;
+    };
+    await enter(mode);
+    await expect.poll(inMode, { timeout: 10_000 }).toBe(true);
+    // 状态进旁挂文件;explorer.json(0.2.15 读的)布局里仍是普通矩形、不带 windowMode
+    await expect
+      .poll(() => (readPersistedExplorer(userData) as Persisted).windows?.find((w) => w.windowSeq === 0)?.popoutWindowModes?.[0]?.mode, {
+        timeout: 10_000,
+      })
+      .toBe(mode);
+    const legacy = JSON.parse(readFileSync(path.join(userData, 'explorer.json'), 'utf8')) as Persisted;
+    expect(persistedPos(legacy)).toEqual(normalPos);
+    const legacyEntry = legacy.windows?.find((w) => w.windowSeq === 0);
+    expect(legacyEntry?.popoutWindowModes).toBeUndefined();
+    expect(legacyEntry?.layout?.popoutGroups?.[0]?.windowMode).toBeUndefined();
+
+    await quit(a);
+    ({ app: a, main } = await launch());
+    await expect.poll(inMode, { timeout: 20_000 }).toBe(true);
+    // 还原 → 回到原来的普通尺寸
+    await a.evaluate(({ BrowserWindow }, m) => {
+      const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('popout=1'))!;
+      if (m === 'maximized') w.unmaximize();
+      else w.setFullScreen(false);
+    }, mode);
+    await expect.poll(inMode, { timeout: 10_000 }).toBe(false);
+    await expect.poll(async () => (await popout())?.content, { timeout: 10_000 }).toEqual(normal);
+    // 还原后再退出:普通状态落盘(不再带最大化 / 全屏)
+    await expect
+      .poll(() => (readPersistedExplorer(userData) as Persisted).windows?.find((w) => w.windowSeq === 0)?.popoutWindowModes ?? null, {
+        timeout: 10_000,
+      })
+      .toBeNull();
+  });
+}
+
 test('设置面板弹出到 popout 后重启:主窗标题栏 / 窗口标题 / 状态栏取主窗的活动编辑器(不是 popout 里的面板)', async () => {
   test.setTimeout(120_000);
   let { app: a, main } = await launch();

@@ -72,6 +72,12 @@ import { createKeyedCounter } from './lib/keyed-counter';
 import { statDirGated } from './lib/dir-stat-gate';
 import { makeWindowResourceCleanup } from './window-resource-cleanup';
 import { forwardPopoutMoves } from './popout-move-forward';
+import {
+  applyPopoutWindowMode,
+  claimPopoutWindowMode,
+  forwardPopoutWindowState,
+  takeClaimedPopoutWindowMode,
+} from './popout-window-state';
 import { makeQuitCleanupGuard } from './quit-cleanup-guard';
 import { resolveUserDataPath } from './user-data-path';
 import { PLUGINS_CHANNELS, PROTOCOL_SCHEME } from '../shared/plugins-channels';
@@ -626,7 +632,7 @@ function displayWorkAreas(): Rect[] {
 /**
  * @param openerId 发起 window.open 的 webContents id:重启恢复中的 popout(layout:read 登记的名额)以不抢焦点方式显示。
  */
-function windowOpenHandler({ url, features }: HandlerDetails, openerId?: number): WindowOpenHandlerResponse {
+function windowOpenHandler({ url, features, frameName }: HandlerDetails, openerId?: number): WindowOpenHandlerResponse {
   // 边界(E190,E179/E152 同族外链长度):window.open url 的类型/长度前置闸,先于 new URL 解析与
   // shell.openExternal。否则超长 url 让主进程先做大字符串 URL 解析,并可能把巨大 URL 交给系统协议
   // 处理器(绕过 shell.openExternal IPC 的 2048 上限与 Markdown 外链上限)。对齐共享 MAX_EXTERNAL_URL_LEN。
@@ -649,6 +655,8 @@ function windowOpenHandler({ url, features }: HandlerDetails, openerId?: number)
     const bounds = popoutWindowBounds(features, displayWorkAreas());
     // 重启恢复出来的子窗先不显示,did-create-window 里 showInactive(主窗保持焦点);用户主动弹出的照常获焦。
     const restoring = openerId !== undefined && takePopoutRestoreSlot(openerId);
+    // 恢复中的子窗按 features 位置认领上次的最大化 / 全屏(建窗后套用,见 did-create-window)。
+    if (restoring) claimPopoutWindowMode(openerId, frameName, features);
     return {
       action: 'allow',
       overrideBrowserWindowOptions: {
@@ -939,10 +947,14 @@ function destroyPopoutsOf(rootWebContentsId: number): void {
 app.on('web-contents-created', (_evt, contents) => {
   contents.setWindowOpenHandler((details) => windowOpenHandler(details, contents.id));
   // 重启恢复的 popout 以 show:false 建出(见 windowOpenHandler)→ 不抢焦点地显示,主窗保持键盘焦点。
-  contents.on('did-create-window', (child) => {
+  contents.on('did-create-window', (child, { frameName }) => {
     popoutOpenerIds.set(child, contents.id);
     forwardPopoutMoves(child, contents);
+    // 先订阅(建窗时是普通状态,量窗框、推一次普通矩形),再套用恢复的最大化 / 全屏。
+    forwardPopoutWindowState(child, contents);
+    const mode = takeClaimedPopoutWindowMode(contents.id, frameName);
     if (!child.isDestroyed() && !child.isVisible()) child.showInactive();
+    if (!child.isDestroyed()) applyPopoutWindowMode(child, mode);
     // popout 子窗聚焦 = 它的主窗口在活动(重启后焦点回到这个主窗口)。
     child.on('focus', () => {
       const owner = contents.isDestroyed() ? null : BrowserWindow.fromWebContents(contents);

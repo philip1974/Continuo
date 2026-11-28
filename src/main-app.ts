@@ -32,6 +32,7 @@ import { captureLmApi, coApi } from './lib/co-api';
 import { isPopoutWindow } from './lib/popout-mode';
 import { prefetchDockLayout } from './shell/dock/layout-prefetch';
 import { installPopoutWindowMoveHook } from './shell/dock/popout-window-move';
+import { installPopoutWindowStateTracking } from './shell/dock/popout-window-state';
 import { useUpdateStore } from './marketplace/update-store';
 import { useKeybindingsStore } from './plugins/keybindings/keybindings-store';
 import {
@@ -184,6 +185,9 @@ export async function init(): Promise<void> {
   startDebugStoreSync();
   // 工作区信任状态(状态栏受限模式项 / 授权弹窗提示 / git 装饰刷新):须早于 App 上报 root(main 收到 root 即推送)。
   startWorkspaceTrustSync();
+  // popout 子窗最大化 / 全屏状态(main 推给打开子窗的主窗):写布局时存普通矩形 + 状态,须早于 DockShell 恢复 popout。
+  // BDD: src/__tests__/window-state-restore/popout-window-mode.spec.ts
+  installPopoutWindowStateTracking();
 
   // M-Plugin v5 Phase 4:plugin import 之前清掉 globalThis.fetch +
   // navigator.clipboard,plugin 直接调 raw API 抛 TypeError。

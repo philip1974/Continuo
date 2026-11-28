@@ -128,7 +128,8 @@ export function scopeWorkspaceSnapshot<T extends WorkspaceSnapshot | WorkspaceSn
 export function snapshotOfWindowEntry(entry: WindowEntryV3): WorkspaceSnapshot | null {
   const root = entry.workspace.root;
   if (root === null) return null;
-  const { windowSeq: _seq, lastClosedAt: _closed, windowState: _state, workspace: _ws, ...rest } = entry;
+  // popout 子窗的最大化 / 全屏属于窗口(同 windowState),不随文件夹快照走。
+  const { windowSeq: _seq, lastClosedAt: _closed, windowState: _state, popoutWindowModes: _modes, workspace: _ws, ...rest } = entry;
   return scopeWorkspaceSnapshot({ workspace: { root }, ...rest });
 }
 

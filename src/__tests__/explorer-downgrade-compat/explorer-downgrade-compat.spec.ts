@@ -56,6 +56,7 @@ function fullPayload(): ExplorerPayloadV3 {
         layout: { grid: { root: {} }, panels: {} },
         lastClosedAt: null,
         windowState: { bounds: { x: 10, y: 20, width: 1200, height: 800 }, isMaximized: true },
+        popoutWindowModes: [{ id: '3', mode: 'fullscreen', position: { left: 300, top: 120, width: 640, height: 480 } }],
       },
       {
         windowSeq: 2,

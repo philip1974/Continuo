@@ -292,6 +292,27 @@ const WindowStateSchema = z
   .strict();
 export type PersistedWindowState = z.infer<typeof WindowStateSchema>;
 
+/** popout 子窗状态(每项:popout 组 id、状态、写出时的 position;上限只挡畸形值 —— dockview 组 id 是短数字串)。 */
+const POPOUT_WINDOW_MODES_MAX = 64;
+const PopoutWindowModesSchema = z
+  .array(
+    z
+      .object({
+        id: z.string().min(1).max(256),
+        mode: z.enum(['maximized', 'fullscreen']),
+        position: z
+          .object({
+            left: z.number().finite().min(-WINDOW_COORD_MAX).max(WINDOW_COORD_MAX),
+            top: z.number().finite().min(-WINDOW_COORD_MAX).max(WINDOW_COORD_MAX),
+            width: z.number().finite().positive().max(WINDOW_COORD_MAX),
+            height: z.number().finite().positive().max(WINDOW_COORD_MAX),
+          })
+          .strict(),
+      })
+      .strict(),
+  )
+  .max(POPOUT_WINDOW_MODES_MAX);
+
 /**
  * main-owned 窗口字段(renderer 不能写;写入合并时保留盘上值,explorer:read 返回前剥离)。字段清单与 schema 由同一个
  * shape 派生 —— 此前常量、schema extend、写入合并三处各写一遍,新增字段时合并漏保留即每次 renderer 写盘把它抹掉。
@@ -301,6 +322,11 @@ const MAIN_OWNED_WINDOW_SHAPE = {
   lastClosedAt: z.number().int().nonnegative().nullable().optional(),
   /** 窗口几何(关窗 / 退出时 main 记录,建窗时按显示器校验后恢复);缺省 = 新窗口默认尺寸。 */
   windowState: WindowStateSchema.optional(),
+  /**
+   * 该窗口 popout 子窗的最大化 / 全屏状态(layout:write 从布局 popout 组的 `windowMode` 摘出;布局里存的是普通矩形)。
+   * 新增字段 → 旁挂 explorer-ext.json。BDD: src/__tests__/window-state-restore/popout-window-mode.spec.ts
+   */
+  popoutWindowModes: PopoutWindowModesSchema.optional(),
 };
 export const MAIN_OWNED_WINDOW_FIELDS = Object.keys(MAIN_OWNED_WINDOW_SHAPE) as readonly (keyof typeof MAIN_OWNED_WINDOW_SHAPE)[];
 

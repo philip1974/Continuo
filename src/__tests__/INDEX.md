@@ -2591,6 +2591,7 @@
 - [`popout-restore-focus.spec.ts`](./window-state-restore/popout-restore-focus.spec.ts)
 - [`popout-restore-position.spec.ts`](./window-state-restore/popout-restore-position.spec.ts)
 - [`popout-restore-settle.spec.ts`](./window-state-restore/popout-restore-settle.spec.ts)
+- [`popout-window-mode.spec.ts`](./window-state-restore/popout-window-mode.spec.ts)
 - [`restore-focus.spec.tsx`](./window-state-restore/restore-focus.spec.tsx)
 - [`window-state-persist.spec.ts`](./window-state-restore/window-state-persist.spec.ts)
 - [`window-state.spec.ts`](./window-state-restore/window-state.spec.ts)

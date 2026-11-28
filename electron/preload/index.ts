@@ -683,6 +683,12 @@ const api = {
       subscribeIpc(WINDOW_CHANNELS.POPOUT_MOVED, (_event, payload: unknown) => {
         if (typeof payload === 'string') cb(payload);
       }),
+    /**
+     * 订阅本窗口打开的 dockview popout 子窗的窗口状态(最大化 / 全屏 / 普通矩形;payload 原样转交,renderer 用
+     * isPopoutWindowStatePayload 校验);返回 unsubscribe。BDD: src/__tests__/window-state-restore/popout-window-mode.spec.ts
+     */
+    onPopoutState: (cb: (payload: unknown) => void): (() => void) =>
+      subscribeIpc(WINDOW_CHANNELS.POPOUT_STATE, (_event, payload: unknown) => cb(payload)),
     /** 关闭本窗口(经 main win.close(),走关窗脏确认)。⌘W 已无可关的编辑器 / 面板时调用(对齐 VSCode)。 */
     close: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.CLOSE, {}),
     /** 激活本窗口(主窗 renderer 把面板 / 选择器打开在主窗、而系统焦点在 popout 子窗时调用)。 */

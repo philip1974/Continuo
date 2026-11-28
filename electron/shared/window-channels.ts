@@ -97,7 +97,41 @@ export const WINDOW_CHANNELS = {
    * BDD: src/__tests__/popout-window-move/
    */
   POPOUT_MOVED: 'window:popout-moved',
+  /**
+   * main → renderer(打开该子窗的主窗):dockview popout 子窗的窗口状态变了(最大化 / 还原 / 全屏 / 退出全屏 / 改尺寸 / 移动;
+   * 建窗时也推一次),payload PopoutWindowStatePayload。renderer 写布局时最大化 / 全屏的子窗存普通矩形 + 状态,重启恢复对应状态。
+   * BDD: src/__tests__/window-state-restore/popout-window-mode.spec.ts
+   */
+  POPOUT_STATE: 'window:popout-state',
 } as const;
+
+/** popout 子窗的窗口状态(同 VSCode AuxiliaryWindowMode;普通以外的两种才持久化)。 */
+export type PopoutWindowMode = 'maximized' | 'fullscreen';
+
+/** popout 子窗当前状态:mode + 普通矩形(dockview position 的口径:窗口左上角屏幕坐标 + 内容尺寸)。 */
+export interface PopoutWindowState {
+  readonly mode: 'normal' | PopoutWindowMode;
+  readonly bounds: { readonly left: number; readonly top: number; readonly width: number; readonly height: number };
+}
+
+/** POPOUT_STATE 的 payload:name = 子窗 window.open 名。 */
+export interface PopoutWindowStatePayload {
+  readonly name: string;
+  readonly state: PopoutWindowState;
+}
+
+/** POPOUT_STATE payload 校验(renderer 侧;preload 不校验)。 */
+export function isPopoutWindowStatePayload(raw: unknown): raw is PopoutWindowStatePayload {
+  if (typeof raw !== 'object' || raw === null) return false;
+  const p = raw as Record<string, unknown>;
+  if (typeof p['name'] !== 'string' || typeof p['state'] !== 'object' || p['state'] === null) return false;
+  const st = p['state'] as Record<string, unknown>;
+  if (st['mode'] !== 'normal' && st['mode'] !== 'maximized' && st['mode'] !== 'fullscreen') return false;
+  const b = st['bounds'];
+  if (typeof b !== 'object' || b === null) return false;
+  const r = b as Record<string, unknown>;
+  return ['left', 'top', 'width', 'height'].every((k) => typeof r[k] === 'number' && Number.isFinite(r[k]));
+}
 
 /**
  * renderer 装在 globalThis 上的订阅函数名:构建期改写后的 dockview `onDidWindowMoveEnd(window)` 经它订阅「该 popout 被移动」
