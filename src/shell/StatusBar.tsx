@@ -41,6 +41,7 @@ import { GOTO_LINE_COMMAND } from '@/panels/Editor/editor-commands';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { useRegisteredCommandHotkeyText, withHotkey } from '@/lib/hotkey-label';
 import type { TextEncodingId } from '../../electron/shared/text-encoding';
+import { RestrictedModeStatusItem } from './workspace-trust/WorkspaceTrust';
 
 /** MCP 复制按钮在窄状态栏下的图标(lucide copy 字形;只在容器 < xl 时显示,替代文字)。 */
 const MCP_COPY_ICON = (
@@ -445,6 +446,10 @@ export function StatusBar() {
       className="@container flex h-statusbar shrink-0 items-center justify-between gap-3 border-t border-line bg-panel px-1.5 text-2xs text-fg-dim select-none"
     >
       <div className="flex min-w-0 items-center gap-0.5 self-stretch overflow-hidden">
+        {/* 工作区信任:未受信任时最左侧显示「受限模式」(VSCode status.workspaceTrust 位于左侧最前),点击打开管理。 */}
+        <RestrictedModeStatusItem
+          className={`${STATUS_ITEM_CLASS} transition-colors hover:bg-hover hover:text-fg focus-visible:-outline-offset-1`}
+        />
         {root ? (
           <span className="truncate px-1.5" title={root}>
             {basenameForChrome(root)}

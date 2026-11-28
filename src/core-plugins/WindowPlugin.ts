@@ -14,6 +14,7 @@ import { windowCommandSpecs } from '@/shell/window-commands';
 import { switchWindowCommandSpec } from '@/plugins/switch-window/switch-window-command';
 import { dockCommandSpecs } from '@/shell/dock/dock-panel-actions';
 import { themeCommandSpecs } from '@/plugins/theme-picker/theme-commands';
+import { manageWorkspaceTrustCommandSpec } from '@/shell/workspace-trust/WorkspaceTrust';
 
 export default class WindowPlugin extends Plugin {
   onload(): void {
@@ -83,5 +84,7 @@ export default class WindowPlugin extends Plugin {
     for (const spec of dockCommandSpecs()) this.addCommand(spec);
     // 首选项:颜色主题 / 在浅色和深色主题之间切换(BDD: src/__tests__/theme-commands/)
     for (const spec of themeCommandSpecs()) this.addCommand(spec);
+    // 工作区: 管理工作区信任(VSCode workbench.trust.manage;BDD: src/__tests__/workspace-trust/)
+    this.addCommand(manageWorkspaceTrustCommandSpec());
   }
 }

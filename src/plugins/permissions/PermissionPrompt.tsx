@@ -15,6 +15,7 @@ import {
   type PromptGrantGuard,
 } from '@/lib/use-prompt-grant-guard';
 import { PromptGrantHint } from '@/lib/prompt-grant-hint';
+import { UntrustedWorkspaceNote } from '@/shell/workspace-trust/WorkspaceTrust';
 import { UNTRUSTED_PATH_MAX_CHARS, UntrustedText } from '@/lib/untrusted-text';
 import { usePluginDisplayName } from '../use-user-plugin-list';
 
@@ -159,6 +160,8 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
           <span className="text-fg">{t('permissions.prompt.note_partial')}</span>
           {t('permissions.prompt.note_suffix')}
         </p>
+        {/* 工作区信任:本窗口文件夹未受信任(受限模式)时提示(BDD: src/__tests__/workspace-trust/)。 */}
+        <UntrustedWorkspaceNote />
       </div>
       <ul className="mb-1 space-y-1">
         {pending.perms.map((perm) => (
@@ -237,6 +240,7 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
       {/* a11y:插件 id 与申请的路径 / 模式列表经 aria-describedby 关联(同 manifest 分支)。 */}
       <div id={descriptionId}>
         <PluginIdLine pluginId={scope.pluginId} />
+        <UntrustedWorkspaceNote />
         <ul className="mb-1 space-y-1 text-xs">
           {scope.scopes.map((s, i) => (
             <li

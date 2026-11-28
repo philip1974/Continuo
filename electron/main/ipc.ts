@@ -32,6 +32,7 @@ import { registerFsIpc } from './ipc/fs.ipc';
 import { registerSearchIpc } from './ipc/search.ipc';
 import { registerTsLanguageIpc } from './ipc/ts-language.ipc';
 import { registerGitIpc } from './ipc/git.ipc';
+import { registerWorkspaceTrustIpc } from './ipc/workspace-trust.ipc';
 import { registerTerminalIpc } from './ipc/terminal.ipc';
 import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
@@ -294,6 +295,7 @@ export function registerIpc(deps: WindowIpcDeps): void {
   registerTsLanguageIpc();
 
   // 资源管理器 git 状态装饰 git.*
+  registerWorkspaceTrustIpc();
   registerGitIpc();
 
   // 终端 terminal.*(Step T2)

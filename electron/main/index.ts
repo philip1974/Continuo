@@ -132,6 +132,7 @@ import {
   getWorkspaceRoot as getWindowWorkspaceRoot,
   setWorkspaceRoot,
 } from './services/window-workspace-roots.service';
+import { getWorkspaceTrust } from './ipc/workspace-trust.ipc';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
 import { primePluginsWatcherBaseline } from './ipc/plugins.ipc';
 import {
@@ -828,6 +829,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     // 先同步登记为关闭中,再退出活跃集:两者之间不能留出让其他窗口 LRU 摘掉本段的窗口期。
     closingSeqRefs.inc(seq);
     clearWindow(win.id);
+    getWorkspaceTrust()?.clearWindow(win.id);
     // 关窗当刻(同步)取:是否退出关窗、还剩哪些主窗口 —— 写盘在 mutex 里异步执行,届时状态可能已变。
     const userClosedDuringQuit = quitCommitted;
     const remainingSeqs = [...getActiveSeqs()];

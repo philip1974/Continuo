@@ -3,6 +3,7 @@ import { coApi } from '@/lib/co-api';
 import { debounce, type DebouncedFn } from '@/lib/debounce';
 import { isSameOrInsidePath, pathEquals } from '@/lib/path-cross';
 import { useEditorStore } from '@/stores/editor.store';
+import { useWorkspaceTrustStore } from '@/stores/workspace-trust.store';
 import { buildGitDecorationIndex, type GitDecorationIndex } from '../git-decorations';
 
 /** 文件变化 / 保存 / 窗口获焦后的刷新防抖;持续变化(如构建输出)下至多每 2s 一次。 */
@@ -132,6 +133,13 @@ function createSource(root: string): Source {
       if (savedSomething(s.tabs, prev.tabs)) refresh();
     }),
   );
+  // 工作区信任变化(信任 / 不信任 / 移除信任条目):main 按信任把关 git(受限模式不跑 git、回 null),这里只是重查 ——
+  // 信任后装饰即时出现、不信任后即时消失,无需重载窗口(BDD: src/__tests__/workspace-trust/)。
+  unsubs.push(
+    useWorkspaceTrustStore.subscribe((s, prev) => {
+      if (s.state !== prev.state && s.state !== null && s.state.root !== null && pathEquals(s.state.root, root)) refresh();
+    }),
+  );
   window.addEventListener('focus', refresh);
   const source: Source = {
     root,
@@ -183,7 +191,7 @@ function catchUp(source: Source): void {
 /**
  * 窗口级共享的 git 状态(VSCode git 扩展的 status 刷新同思路;资源管理器、编辑器 tab、搜索结果共用):同一工作区根只有一个
  * 数据源 —— 首个使用方登记时取一次;根内的 fs 变化(复用资源管理器的 fs watch 广播,含仅内容变化)、编辑器保存、窗口获焦后
- * 防抖刷新。单飞:在途时再触发只记一次,完成后补跑。只要还有一个可见的使用方就照常刷新;全部不可见期间只记脏,任一方再次
+ * 防抖刷新;本根的工作区信任状态变化后同样刷新(受限模式下 main 不跑 git、回 null)。单飞:在途时再触发只记一次,完成后补跑。只要还有一个可见的使用方就照常刷新;全部不可见期间只记脏,任一方再次
  * 可见时补一次。最后一个使用方离开即停止监听、丢弃快照。enabled=false(该处装饰全关)→ 本使用方不登记、返回 null。
  * 非仓库 / 未装 git / 失败 → null(静默)。git 在 main 异步执行(超时 + 并发上限),这里只建索引。查询带上根,main 登记的根
  * 与之不符 → STALE,按 GIT_STALE_RETRY_MS 有限次重试(换根后装饰不必等获焦 / 文件变化)。

@@ -19,6 +19,7 @@ import { useQuickOpenHotkey } from '@/plugins/quick-open/useQuickOpenHotkey';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
 import { PluginFailureNotifier } from '@/plugins/PluginFailureNotifier';
 import { AgentAuthPrompt } from './AgentAuthPrompt';
+import { WorkspaceTrustModal } from './workspace-trust/WorkspaceTrust';
 import { coApp } from '@/plugins/co-app';
 import { coApi } from '@/lib/co-api';
 import { isPopoutWindow } from '@/lib/popout-mode';
@@ -187,6 +188,7 @@ function MainApp() {
       <PickerModals commands={coApp.commands} />
       <PermissionPrompt />
       <AgentAuthPrompt />
+      <WorkspaceTrustModal />
       {/* 插件激活 / 渲染失败主动 error 通知(BDD: plugin-failure-notify) */}
       <PluginFailureNotifier />
       {showSplash && <Splash />}

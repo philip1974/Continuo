@@ -70,6 +70,7 @@ const mocks = vi.hoisted(() => {
     initExplorerPersistence: vi.fn(async (..._args: unknown[]) => undefined),
     startPluginFsScopeRequestBridge: vi.fn(),
     startDebugStoreSync: vi.fn(),
+    startWorkspaceTrustSync: vi.fn(),
     pluginsOnPermissionsChanged: vi.fn(),
     updateRefresh: vi.fn(),
     reviewsRefresh: vi.fn(),
@@ -184,6 +185,11 @@ vi.mock('@/marketplace/update-store', () => ({
 // init() 启动 debug 事件同步(订阅 coApi.debug);本用例只关心 locale,与其它启动桥一样桩掉。
 vi.mock('@/stores/debug.store', () => ({
   startDebugStoreSync: mocks.startDebugStoreSync,
+}));
+
+// init() 启动工作区信任状态同步(订阅 coApi.workspaceTrust),同上桩掉。
+vi.mock('@/stores/workspace-trust.store', () => ({
+  startWorkspaceTrustSync: mocks.startWorkspaceTrustSync,
 }));
 
 vi.mock('@/plugins/permissions/usePluginFsScopeRequests', () => ({
@@ -305,6 +311,7 @@ describe('renderer init() 启动 IPC 并发', () => {
     expect(mocks.startPluginMcpInvokeBridge).not.toHaveBeenCalled();
     expect(mocks.startPluginFsScopeRequestBridge).not.toHaveBeenCalled();
     expect(mocks.startDebugStoreSync).not.toHaveBeenCalled();
+    expect(mocks.startWorkspaceTrustSync).not.toHaveBeenCalled();
     expect(mocks.updateRefresh).not.toHaveBeenCalled();
 
     mocks.popout.value = false;
@@ -323,6 +330,7 @@ describe('renderer init() 启动 IPC 并发', () => {
     expect(mocks.startPluginMcpInvokeBridge).toHaveBeenCalledTimes(1);
     expect(mocks.startPluginFsScopeRequestBridge).toHaveBeenCalledTimes(1);
     expect(mocks.startDebugStoreSync).toHaveBeenCalledTimes(1);
+    expect(mocks.startWorkspaceTrustSync).toHaveBeenCalledTimes(1);
     expect(mocks.updateRefresh).toHaveBeenCalledTimes(1);
   });
 });

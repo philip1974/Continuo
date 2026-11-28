@@ -47,6 +47,12 @@ import {
 } from '../shared/ts-language';
 import { GIT_CHANNELS, type GitStatusResult } from '../shared/git-status';
 import {
+  WORKSPACE_TRUST_CHANNELS,
+  isWorkspaceTrustState,
+  type WorkspaceTrustInfo,
+  type WorkspaceTrustState,
+} from '../shared/workspace-trust';
+import {
   SESSION_UPDATE_CWD_CHANNEL,
   TERMINAL_CHANNELS,
   type TerminalHistorySnapshot,
@@ -225,6 +231,21 @@ const api = {
    */
   git: {
     status: (root: string): Promise<IpcResult<GitStatusResult>> => ipcRenderer.invoke(GIT_CHANNELS.STATUS, { root }),
+  },
+  /**
+   * 工作区信任(BDD: src/__tests__/workspace-trust/):判定与授予在 main。requestTrust 只请 main 弹原生信任对话框(用户决定),
+   * 没有直接置信任的入口;removeFolder 只收紧。onChanged:本窗口当前根的信任状态(畸形 payload 丢弃)。
+   */
+  workspaceTrust: {
+    getInfo: (): Promise<IpcResult<WorkspaceTrustInfo>> => ipcRenderer.invoke(WORKSPACE_TRUST_CHANNELS.GET_INFO),
+    requestTrust: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke(WORKSPACE_TRUST_CHANNELS.REQUEST_TRUST),
+    removeFolder: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(WORKSPACE_TRUST_CHANNELS.REMOVE_FOLDER, { path }),
+    onChanged: (cb: (state: WorkspaceTrustState) => void): (() => void) =>
+      subscribeIpc(
+        WORKSPACE_TRUST_CHANNELS.CHANGED,
+        guardedListener(isWorkspaceTrustState, '[workspace-trust] dropped malformed changed payload', cb),
+      ),
   },
   /**
    * 在文件中查找(workspace-search):根由 main 取自本窗口工作区(root = renderer 当前的根,只用于比对,不符 → STALE);

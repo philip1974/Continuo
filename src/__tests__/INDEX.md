@@ -2584,6 +2584,13 @@
 - [`snapshot-lifecycle.spec.ts`](./workspace-snapshot/snapshot-lifecycle.spec.ts)
 - [`snapshot-store.spec.ts`](./workspace-snapshot/snapshot-store.spec.ts)
 
+## [workspace-trust(工作区信任 / 受限模式,最小版)](./workspace-trust/README.md)
+
+- [`git-gate.spec.ts`](./workspace-trust/git-gate.spec.ts)
+- [`restricted-mode-ui.spec.tsx`](./workspace-trust/restricted-mode-ui.spec.tsx)
+- [`workspace-trust-ipc.spec.ts`](./workspace-trust/workspace-trust-ipc.spec.ts)
+- [`workspace-trust-service.spec.ts`](./workspace-trust/workspace-trust-service.spec.ts)
+
 ## [workspace-window-dedupe(同一文件夹只在一个窗口打开)](./workspace-window-dedupe/README.md)
 
 - [`find-window-with-workspace.spec.ts`](./workspace-window-dedupe/find-window-with-workspace.spec.ts)

@@ -178,6 +178,11 @@ vi.mock('@/stores/debug.store', () => ({
   startDebugStoreSync: vi.fn(),
 }));
 
+// init() 启动工作区信任状态同步(订阅 coApi.workspaceTrust),同上桩掉。
+vi.mock('@/stores/workspace-trust.store', () => ({
+  startWorkspaceTrustSync: vi.fn(),
+}));
+
 vi.mock('@/marketplace/reviews-store', () => ({
   useReviewsStore: {
     getState: () => ({ refresh: mocks.reviewsRefresh }),

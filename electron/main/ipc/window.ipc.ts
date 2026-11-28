@@ -49,6 +49,7 @@ import { setMenuChecked } from '../menu-checked';
 import { getWindowTheme, setWindowTheme } from '../services/window-theme.service';
 import { setWindowZoomLevel } from '../services/window-zoom.service';
 import { menuCommandTargetWindow } from '../lib/menu-command';
+import { getWorkspaceTrust } from './workspace-trust.ipc';
 
 function summarizePath(p: string): string {
   return p.length > 60 ? p.slice(0, 50) + '...' : p;
@@ -307,6 +308,8 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
     }
     if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
     setWorkspaceRoot(win.id, root);
+    // 工作区信任:求新根的信任状态并推给本窗口,未信任且没问过 → 弹信任对话框(BDD: src/__tests__/workspace-trust/)
+    getWorkspaceTrust()?.setWindowRoot(win.id, root);
   });
   // 本窗口要打开文件夹前问一句:已在别的主窗口打开 → 聚焦它、返回 true(发起方不再改自己的 root)。发起方当前打开的
   // 就是这个文件夹时返回 false(保持原行为),即使别的窗口也开着同一目录。
