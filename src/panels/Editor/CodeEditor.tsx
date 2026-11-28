@@ -203,6 +203,9 @@ export function pickLanguage(
  * 不一致(切走期间别处改了内容)→ 新建 state,只把旧光标 / 选区收进新文档范围(滚动由 scrollTo 快照自动收进范围)。
  */
 /** 留存的状态的文档是否就是 value(按 value 的换行风格拼接比较)。 */
+/** editor.lineNumbers=false → .cm-editor 带 cm-no-gutters(主题据此隐藏行号 gutter)。 */
+const lineNumbersAttrs = (show: boolean): Extension => (show ? [] : EditorView.editorAttributes.of({ class: 'cm-no-gutters' }));
+
 function sameDoc(state: EditorState, value: string, eol: '\r\n' | '\n'): boolean {
   return state.doc.sliceString(0, state.doc.length, eol) === value;
 }
@@ -294,6 +297,14 @@ export function CodeEditor({
   const appliedGuidesRef = useRef(latestGuidesRef.current);
   // 缩进(indentUnit + tabSize):打开时按设置 / 内容推断,之后随状态栏缩进项 / 命令 / 设置变化 reconfigure(BDD: src/__tests__/editor-indentation/)。
   const indentCompartment = useRef(new Compartment());
+  // 关闭行号(editor.lineNumbers=false):经 editorAttributes 给 .cm-editor 声明 cm-no-gutters 类,随设置 reconfigure。
+  // 不能手动 classList.toggle —— CodeMirror 在编辑器属性变化(cm-focused、断点 gutter 的 cm-breakpoints-allowed)时整串重写 class,
+  // 手加的类被抹掉,行号又出现。BDD: src/__tests__/51-debug-breakpoint-ui/
+  const lineNumbersCompartment = useRef(new Compartment());
+  const lineNumbers = useSettingValue(EDITOR_LINE_NUMBERS.id, EDITOR_LINE_NUMBERS.default);
+  const latestLineNumbersRef = useRef(lineNumbers);
+  latestLineNumbersRef.current = lineNumbers;
+  const appliedLineNumbersRef = useRef(lineNumbers);
   const indentation = useTabIndentation(tabId);
   // 打开时的缩进默认值(经 useSettingValue 取:按 spec 规整;设置之后的变化由 installIndentationSync 统一重定)
   const indentSettings = {
@@ -354,6 +365,7 @@ export function CodeEditor({
     appliedWrapRef.current = latestWrapRef.current;
     appliedScrollBeyondRef.current = latestScrollBeyondRef.current;
     appliedGuidesRef.current = latestGuidesRef.current;
+    appliedLineNumbersRef.current = latestLineNumbersRef.current;
     appliedIndentRef.current = ensureTabIndentation(tabId, fileName, value, indentSettings);
 
     const publishSelectionStatus = (state: EditorState) =>
@@ -381,6 +393,7 @@ export function CodeEditor({
       scrollPastEndCompartment.current.of(appliedScrollBeyondRef.current ? scrollPastEnd() : []),
       // 回车自动缩进 / Tab / ⇧Tab / ⌘] / ⌘[ 都按文档缩进(4 空格文件缩 4 格,tab 文件插 tab;此前写死 CodeMirror 默认 2 空格)
       indentCompartment.current.of(indentationExtension(appliedIndentRef.current)),
+      lineNumbersCompartment.current.of(lineNumbersAttrs(appliedLineNumbersRef.current)),
       // 缩进参考线按上面的文档缩进计级(Markdown 源码模式同样显示,VSCode 同)
       guidesCompartment.current.of(editorGuides(appliedGuidesRef.current)),
       debugDecorationsExtension(),
@@ -440,10 +453,9 @@ export function CodeEditor({
         // 16px 给视觉呼吸,无行号时(lineNumbers=false)整体往内缩。
         '.cm-content': { padding: '12px 16px', fontSize: 'inherit' },
         '.cm-gutters': { border: 'none', fontSize: 'inherit' },
-        // editor.lineNumbers=false 时:.cm-editor 加 .cm-no-gutters,
-        // 只隐藏 CodeMirror 自带行号/fold gutter,保留独立 debug 断点 gutter。
+        // editor.lineNumbers=false 时(.cm-editor 带 .cm-no-gutters)只隐藏行号:VSCode lineNumbers: off 同样只去掉行号,
+        // 折叠控件(editor.folding)与断点所在的 glyph margin 是独立选项,照常显示。
         '&.cm-no-gutters .cm-lineNumbers': { display: 'none !important' },
-        '&.cm-no-gutters .cm-foldGutter': { display: 'none !important' },
       }),
     ];
 
@@ -613,7 +625,6 @@ export function CodeEditor({
   // 外层 div 设 fontSize,内部 .cm-editor / .cm-content / .cm-gutters
   // 都 inherit。改 settings 字号 → React 重渲外层 → CodeMirror 立即跟新。
   const fontSize = useSettingValue(EDITOR_FONT_SIZE.id, EDITOR_FONT_SIZE.default);
-  const lineNumbers = useSettingValue(EDITOR_LINE_NUMBERS.id, EDITOR_LINE_NUMBERS.default);
   const fontFamily = useSettingValue(EDITOR_FONT_FAMILY.id, EDITOR_FONT_FAMILY.default);
   const lineHeight = useSettingValue(EDITOR_LINE_HEIGHT.id, EDITOR_LINE_HEIGHT.default);
 
@@ -659,11 +670,11 @@ export function CodeEditor({
     view.dispatch({ effects: indentCompartment.current.reconfigure(indentationExtension(indentation)) });
   }, [indentation]);
 
-  // editor.lineNumbers 变化 → 同步到 .cm-editor 的 className
   useEffect(() => {
     const view = viewRef.current;
-    if (!view) return;
-    view.dom.classList.toggle('cm-no-gutters', !lineNumbers);
+    if (!view || appliedLineNumbersRef.current === lineNumbers) return;
+    appliedLineNumbersRef.current = lineNumbers;
+    view.dispatch({ effects: lineNumbersCompartment.current.reconfigure(lineNumbersAttrs(lineNumbers)) });
   }, [lineNumbers]);
 
   return (

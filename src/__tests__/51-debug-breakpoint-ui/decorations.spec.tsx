@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // topic-51 Phase 3 Op1/Op2:CodeMirror debug decorations stay internal to renderer.
 
-import { EditorState, type Extension } from '@codemirror/state';
+import { EditorState, StateEffect, type Extension } from '@codemirror/state';
 import { EditorView, lineNumbers } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -87,7 +87,8 @@ describe('topic51 Phase3 Op1/Op2 · debug decorations', () => {
     expect(view.dom.querySelector('.cm-debug-breakpoint-marker')).toBeTruthy();
   });
 
-  it('CodeEditor hides line-number/fold gutters but keeps breakpoint gutter when line numbers are off', () => {
+  // VSCode editor.lineNumbers: off 只隐藏行号;折叠控件(editor.folding)与断点所在的 glyph margin(editor.glyphMargin)是独立选项,照常显示。
+  it('CodeEditor 关闭行号时只隐藏行号 gutter,折叠与断点 gutter 照常显示', () => {
     lineNumbersSetting = false;
     render(<CodeEditor tabId="t1" value="one\ntwo\nthree\n" fileName="a.ts" />);
     const view = views.get('t1') as EditorView;
@@ -98,14 +99,45 @@ describe('topic51 Phase3 Op1/Op2 · debug decorations', () => {
     const foldGutter = view.dom.querySelector('.cm-foldGutter') as HTMLElement;
     const breakpointGutter = view.dom.querySelector('.cm-breakpoint-gutter') as HTMLElement;
 
-    expect(view.dom.classList.contains('cm-no-gutters')).toBe(true);
     expect(lineNumberGutter).toBeTruthy();
     expect(foldGutter).toBeTruthy();
     expect(breakpointGutter).toBeTruthy();
     expect(getComputedStyle(lineNumberGutter).display).toBe('none');
-    expect(getComputedStyle(foldGutter).display).toBe('none');
+    expect(getComputedStyle(foldGutter).display).not.toBe('none');
     expect(getComputedStyle(breakpointGutter).display).not.toBe('none');
     expect(view.dom.querySelector('.cm-debug-breakpoint-marker')).toBeTruthy();
+  });
+
+  // 回归:CodeMirror 在编辑器属性变化(获得焦点的 cm-focused、断点 gutter 的 cm-breakpoints-allowed 等)时整串重写 .cm-editor 的
+  // class,手动 classList 加的类会被抹掉 → 行号又出现。隐藏行号须经 EditorView.editorAttributes 声明。
+  it('关闭行号后编辑器属性变化(焦点 / 其它扩展改 class)不会让行号重新出现', () => {
+    lineNumbersSetting = false;
+    render(<CodeEditor tabId="t1" value="one\ntwo\nthree\n" fileName="a.ts" />);
+    const view = views.get('t1') as EditorView;
+    const lineNumberGutter = (): HTMLElement => view.dom.querySelector('.cm-lineNumbers') as HTMLElement;
+    expect(getComputedStyle(lineNumberGutter()).display).toBe('none');
+
+    view.dispatch({ effects: StateEffect.appendConfig.of(EditorView.editorAttributes.of({ class: 'cm-test-attr' })) });
+
+    expect(view.dom.classList.contains('cm-test-attr')).toBe(true);
+    expect(getComputedStyle(lineNumberGutter()).display).toBe('none');
+  });
+
+  it('行号设置开 / 关切换随即生效(不重建编辑器)', () => {
+    lineNumbersSetting = false;
+    const { rerender } = render(<CodeEditor tabId="t1" value="one\ntwo\nthree\n" fileName="a.ts" />);
+    const view = views.get('t1') as EditorView;
+    const lineNumberGutter = (): HTMLElement => view.dom.querySelector('.cm-lineNumbers') as HTMLElement;
+    expect(getComputedStyle(lineNumberGutter()).display).toBe('none');
+
+    lineNumbersSetting = true;
+    rerender(<CodeEditor tabId="t1" value="one\ntwo\nthree\n" fileName="a.ts" />);
+    expect(views.get('t1')).toBe(view);
+    expect(getComputedStyle(lineNumberGutter()).display).not.toBe('none');
+
+    lineNumbersSetting = false;
+    rerender(<CodeEditor tabId="t1" value="one\ntwo\nthree\n" fileName="a.ts" />);
+    expect(getComputedStyle(lineNumberGutter()).display).toBe('none');
   });
 
   // VSCode:执行行黄底(editor.stackFrameHighlightBackground)+ glyph margin 黄色箭头;光标在执行行上时当前行背景不盖住它。
