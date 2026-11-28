@@ -137,6 +137,10 @@ export const MENU_COMMAND_IDS = [
   'workbench.action.files.saveAs',
   'workbench.action.files.saveAll',
   'workbench.action.toggleAutoSave',
+  'workbench.action.reopenClosedEditor',
+  'workbench.action.files.revert',
+  'workbench.action.closeActiveEditor',
+  'workbench.action.closeFolder',
   // 首选项(macOS 应用菜单;其它平台 文件 → 首选项)
   'settings.toggle',
   'workbench.action.openGlobalKeybindings',
@@ -161,6 +165,7 @@ export const MENU_COMMAND_IDS = [
   // 显示
   'workbench.action.showCommands',
   'workbench.view.explorer',
+  'workbench.view.debug',
   'workbench.view.output',
   'workbench.action.terminal.toggleTerminal',
   'explorer.toggleSidebar',
@@ -168,12 +173,19 @@ export const MENU_COMMAND_IDS = [
   'workbench.action.zoomReset',
   'workbench.action.zoomIn',
   'workbench.action.zoomOut',
+  'workbench.action.splitEditor',
+  'workbench.action.splitEditorDown',
   // 转到
   'workbench.action.navigateBack',
   'workbench.action.navigateForward',
   'workbench.action.quickOpen',
   'workbench.action.gotoSymbol',
   'workbench.action.gotoLine',
+  'editor.action.jumpToBracket',
+  'editor.action.marker.nextInFiles',
+  'workbench.action.focusFirstEditorGroup',
+  'workbench.action.focusSecondEditorGroup',
+  'workbench.action.focusThirdEditorGroup',
   'workbench.action.nextEditor',
   'workbench.action.previousEditor',
   // 终端

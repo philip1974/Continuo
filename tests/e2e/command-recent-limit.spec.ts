@@ -5,7 +5,7 @@ import { SETTINGS, CLOSE_SETTINGS } from './helpers/settings';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 import { dispatchModKey } from './helpers/hotkeys';
 
-const SETTINGS_TITLE = /(切换设置|Toggle Settings|설정 토글)/;
+const SETTINGS_TITLE = /(打开设置|Open Settings|설정 열기)/;
 
 test('多次执行同命令 → recent 不重复 + 该命令始终置顶', async ({
   window,

@@ -1,13 +1,13 @@
-// Dockview group header 「更多操作」菜单 → 列出 panel 类型 → 点击 addPanel.
+// Dockview group header 「打开视图…」菜单 → 列出 panel 类型 → 点击 addPanel.
 import { test, expect } from './fixtures/with-workspace';
 import { DOCK_POPOUT, TERMINAL_INPUT } from './helpers/editor';
 import { dockHeaderMoreActionsButton } from './helpers/explorer';
 import { TERMINAL_TAB } from './helpers/settings';
 
-test('点 「更多操作」 → 菜单列出 panel 类型 + 点 Terminal 添加 panel', async ({
+test('点 「打开视图…」 → 菜单列出 panel 类型 + 点 Terminal 添加 panel', async ({
   window,
 }) => {
-  // HeaderActions 「More actions」按钮 aria-label="More actions"
+  // HeaderActions 「打开视图…」按钮(aria-label = title)
   const moreBtn = dockHeaderMoreActionsButton(window);
   await expect(moreBtn).toBeVisible({ timeout: 10_000 });
   await moreBtn.click();

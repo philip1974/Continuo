@@ -66,8 +66,8 @@ describe('i18n 文案语言纯净', () => {
     expect(cjk).toEqual([]);
   });
 
-  it('点名回归:zh「切换设置」「切换资源管理器侧栏」「在命令面板中搜索执行」', () => {
-    expect(zh['commands.settings.toggle.title']).toBe('切换设置');
+  it('点名回归:zh「打开设置」「切换资源管理器侧栏」「在命令面板中搜索执行」', () => {
+    expect(zh['commands.preferences.open_settings.title']).toBe('打开设置');
     expect(zh['settings.explorer.toggle_sidebar']).toBe('切换资源管理器侧栏');
     expect(zh['keybindings.palette_hint']).toContain('命令面板');
   });

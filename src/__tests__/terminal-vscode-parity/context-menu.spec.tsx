@@ -6,6 +6,9 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { TerminalContextMenu, type TerminalContextMenuActions } from '../../panels/Terminal/TerminalContextMenu';
 import { isTerminalContextMenuKey } from '../../panels/Terminal/terminal-hotkeys';
 import { setLocale } from '../../i18n';
+import { coApp } from '../../plugins/co-app';
+import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
+import { useKeybindingsStore } from '../../plugins/keybindings/keybindings-store';
 
 function actions(over: Partial<TerminalContextMenuActions> = {}): TerminalContextMenuActions {
   return {
@@ -73,6 +76,36 @@ describe('终端右键菜单', () => {
         expect(cat[`panels.terminal.ctx.${k}`]).toBeTruthy();
       }
     }
+  });
+});
+
+describe('「清除终端」右侧显示键位(VSCode 终端右键同显示 ⌘K)', () => {
+  let original: CommandRegistry;
+  beforeEach(() => {
+    original = coApp.commands;
+    const commands = new CommandRegistry('other');
+    commands.register({ id: 'terminal.clear', title: 'Clear', hotkey: 'mod+k', fn: vi.fn() });
+    (coApp as { commands: CommandRegistry }).commands = commands;
+    useKeybindingsStore.setState({ overrides: {} });
+  });
+  afterEach(() => {
+    (coApp as { commands: CommandRegistry }).commands = original;
+    useKeybindingsStore.setState({ overrides: {} });
+  });
+  const shortcut = () =>
+    screen.getByRole('menuitem', { name: '清除终端' }).querySelector('.wm-menu-item__shortcut')?.textContent ?? null;
+
+  it('取当前生效绑定:默认 Ctrl+K(jsdom 非 mac);改键跟随;解绑不显示', () => {
+    open(actions());
+    expect(shortcut()).toBe('Ctrl+K');
+    cleanup();
+    useKeybindingsStore.setState({ overrides: { 'terminal.clear': 'mod+alt+k' } });
+    open(actions());
+    expect(shortcut()).toBe('Ctrl+Alt+K');
+    cleanup();
+    useKeybindingsStore.setState({ overrides: { 'terminal.clear': '' } });
+    open(actions());
+    expect(shortcut()).toBeNull();
   });
 });
 

@@ -3,7 +3,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/electron-app';
 import { waitForAppReady, waitForTestHooks } from './helpers/app-ready';
-import { EXPLORER_MORE_ACTIONS } from './helpers/explorer';
+import { DOCK_OPEN_VIEW } from './helpers/explorer';
 import { OUTPUT_EMPTY, OUTPUT_PANEL } from './helpers/output';
 import { COMMAND_LIST, commandPaletteInput, openCommandPalette } from './helpers/palette';
 import { dispatchModKey } from './helpers/hotkeys';
@@ -15,7 +15,7 @@ const focusInOutput = (window: Page) =>
 
 test('dock「⋯」→ 输出:焦点进新输出面板', async ({ window }) => {
   await waitForAppReady(window);
-  const moreBtn = window.getByRole('button', { name: EXPLORER_MORE_ACTIONS }).last();
+  const moreBtn = window.getByRole('button', { name: DOCK_OPEN_VIEW }).last();
   await moreBtn.click();
   await window.getByRole('menu').last().getByRole('menuitem', { name: OUTPUT_PANEL }).click();
   await expect(window.getByText(OUTPUT_EMPTY)).toBeVisible({ timeout: 10_000 });

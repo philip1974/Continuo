@@ -18,6 +18,7 @@ import { setLocale, t } from '@/i18n';
 import { IconSidebar } from '@/shell/IconSidebar';
 import { HeaderActions } from '@/shell/dock/HeaderActions';
 import { EditorHeader } from '@/panels/Editor/EditorHeader';
+import { SharedTab } from '@/shell/motion/SharedTab';
 import { ContextMenu, type ContextMenuActions } from '@/panels/Explorer/ContextMenu';
 import { useEditorStore, type EditorTab } from '@/stores/editor.store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
@@ -33,6 +34,9 @@ function registerCommands(): void {
     ['settings.toggle', 'mod+,'],
     ['terminal.new', 'mod+t'],
     ['workbench.action.findInFiles', 'mod+shift+f'],
+    ['workbench.view.debug', 'mod+shift+d'],
+    ['workbench.view.output', 'mod+shift+u'],
+    ['workbench.action.closeActiveEditor', 'mod+w'],
   ] as const) {
     commands.register({ id, title: id, hotkey, fn: noop });
   }
@@ -158,10 +162,12 @@ describe('资源管理器右键菜单', () => {
   });
 });
 
-describe('组「更多操作」菜单', () => {
-  it('终端 / 搜索 / 设置右侧显示打开命令的键位,其它面板无', () => {
+describe('组「打开视图…」菜单', () => {
+  it('终端 / 搜索 / 设置 / 调试 / 输出右侧显示打开命令的键位(与显示菜单 / 命令面板一致),其它面板无;按钮名同 VSCode「打开视图…」', () => {
     const panels = new PanelRegistry();
-    for (const type of ['terminal', 'search', 'settings', 'output']) panels.register({ type, title: type, factory: () => null });
+    for (const type of ['terminal', 'search', 'settings', 'debug', 'output', 'editor']) {
+      panels.register({ type, title: type, factory: () => null });
+    }
     (coApp as { panels: PanelRegistry }).panels = panels;
     const props = {
       containerApi: { addPanel: vi.fn(), getPanel: vi.fn(() => undefined), addPopoutGroup: vi.fn() },
@@ -169,10 +175,61 @@ describe('组「更多操作」菜单', () => {
       activePanel: { id: 'p1' },
     } as unknown as Parameters<typeof HeaderActions>[0];
     render(<HeaderActions {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: t('panels.explorer.btn.more_actions') }));
+    fireEvent.click(screen.getByRole('button', { name: t('shell.dock.open_view') }));
     expect(shortcutOf(menuItem('terminal'))).toBe('Ctrl+T');
     expect(shortcutOf(menuItem('search'))).toBe('Ctrl+Shift+F');
     expect(shortcutOf(menuItem('settings'))).toBe('Ctrl+,');
-    expect(shortcutOf(menuItem('output'))).toBeNull();
+    expect(shortcutOf(menuItem('debug'))).toBe('Ctrl+Shift+D');
+    expect(shortcutOf(menuItem('output'))).toBe('Ctrl+Shift+U');
+    expect(shortcutOf(menuItem('editor'))).toBeNull();
+    const trigger = screen.getByRole('button', { name: '打开视图…' });
+    expect(trigger.getAttribute('title')).toBe('打开视图…');
+  });
+});
+
+describe('tab 关闭按钮 ✕ 的悬停提示「关闭 (⌘W)」(VSCode tab 关闭动作:名称 + 当前生效键位)', () => {
+  const closeOf = (tab: Element) => tab.querySelector<HTMLElement>('[role=button]')!;
+
+  it('编辑器文件 tab:每个 tab 的 ✕ title「关闭 (Ctrl+W)」,可访问名称仍含文件名;改键 / 解绑跟随', () => {
+    useEditorStore.setState({ tabs: [editorTab('/w/a.ts'), editorTab('/w/b.ts')], activeTabId: '/w/a.ts', mode: 'edit' });
+    render(<EditorHeader onCloseRequest={vi.fn()} />);
+    const tabs = Array.from(document.querySelectorAll<HTMLElement>('[role=tab]'));
+    expect(tabs.map((el) => closeOf(el).getAttribute('title'))).toEqual(['关闭 (Ctrl+W)', '关闭 (Ctrl+W)']);
+    expect(closeOf(tabs[1]!).getAttribute('aria-label')).toBe(t('shell.tab.close', { title: 'b.ts' }));
+    act(() => useKeybindingsStore.setState({ overrides: { 'workbench.action.closeActiveEditor': 'mod+shift+w' } }));
+    expect(closeOf(tabs[0]!).getAttribute('title')).toBe('关闭 (Ctrl+Shift+W)');
+    act(() => useKeybindingsStore.setState({ overrides: { 'workbench.action.closeActiveEditor': '' } }));
+    expect(closeOf(tabs[0]!).getAttribute('title')).toBe('关闭');
+  });
+
+  it('dock 面板 tab:✕ title「关闭 (Ctrl+W)」,可访问名称「关闭 {标题}」;右键「关闭」右侧 Ctrl+W;改键跟随', () => {
+    const api = {
+      id: 'p1',
+      title: '终端',
+      isActive: true,
+      isVisible: true,
+      group: { id: 'g1', api: { isMaximized: () => false }, panels: [{ id: 'p1', api: { id: 'p1', close: vi.fn() } }] },
+      close: vi.fn(),
+      setActive: vi.fn(),
+      onDidActiveChange: () => ({ dispose: vi.fn() }),
+      onDidTitleChange: () => ({ dispose: vi.fn() }),
+      onDidVisibilityChange: () => ({ dispose: vi.fn() }),
+      onDidGroupChange: () => ({ dispose: vi.fn() }),
+    };
+    const props = {
+      api,
+      containerApi: { onDidMaximizedGroupChange: () => ({ dispose: vi.fn() }), exitMaximizedGroup: vi.fn() },
+      params: {},
+    } as unknown as Parameters<typeof SharedTab>[0];
+    render(<SharedTab {...props} />);
+    const tab = screen.getByRole('tab');
+    const close = tab.querySelector<HTMLElement>('[data-tab-close]')!;
+    expect(close.getAttribute('title')).toBe('关闭 (Ctrl+W)');
+    expect(close.getAttribute('aria-label')).toBe(t('shell.tab.close', { title: '终端' }));
+    fireEvent.contextMenu(tab);
+    expect(shortcutOf(menuItem(t('shell.tab.ctx.close')))).toBe('Ctrl+W');
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    act(() => useKeybindingsStore.setState({ overrides: { 'workbench.action.closeActiveEditor': 'mod+alt+w' } }));
+    expect(close.getAttribute('title')).toBe('关闭 (Ctrl+Alt+W)');
   });
 });

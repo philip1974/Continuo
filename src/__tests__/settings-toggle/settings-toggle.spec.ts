@@ -72,13 +72,14 @@ describe('settings.toggle · 命令注册', () => {
     expect(ids).toContain('settings.toggle');
   });
 
-  it('hotkey=mod+, / category=Settings', () => {
+  it('hotkey=mod+, / category=Preferences(VSCode「Preferences: Open Settings」)', () => {
     bootCorePlugins();
     const cmd = coApp.commands
       .getAll()
       .find((c) => c.id === 'settings.toggle')!;
     expect(cmd.hotkey).toBe('mod+,');
-    expect(cmd.category).toBe('Settings');
+    expect(cmd.category).toBe('Preferences');
+    expect(cmd.title).toBe('Open Settings');
   });
 });
 

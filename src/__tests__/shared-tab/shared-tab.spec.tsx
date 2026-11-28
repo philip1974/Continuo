@@ -520,12 +520,13 @@ describe('SharedTab — 鼠标点击后焦点回到面板内容(VSCode:点 tab =
     expect(focus).not.toHaveBeenCalled();
   });
 
-  it('关闭 / 退出缩放图标按钮有 title 悬停提示(与可访问名一致)', () => {
+  it('关闭 / 退出缩放图标按钮有 title 悬停提示:关闭为动作名(+ ⌘W 键位,见 hotkey-hints),退出缩放与可访问名一致', () => {
     const api = makeApi({ title: 'Hello' });
     api.group.api.isMaximized = () => true;
     const { container } = renderTab(api);
     const closeBtn = container.querySelector('[role=button][aria-label="关闭 Hello"]') as HTMLElement;
-    expect(closeBtn.getAttribute('title')).toBe('关闭 Hello');
+    // 本用例未注册「关闭编辑器」命令 → 只有动作名
+    expect(closeBtn.getAttribute('title')).toBe('关闭');
     const zoomBtn = container.querySelector('[data-testid="tab-maximize-indicator"]') as HTMLButtonElement;
     expect(zoomBtn.getAttribute('title')).toBe(zoomBtn.getAttribute('aria-label'));
     expect(zoomBtn.getAttribute('title')).toBeTruthy();

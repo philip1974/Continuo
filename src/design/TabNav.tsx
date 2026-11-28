@@ -54,6 +54,11 @@ export interface TabNavItemProps {
    * 依赖;未提供时回退英文默认 `Close {title}` / `Close tab`(同 dirtyLabel 模式)。
    */
   readonly closeLabel?: string;
+  /**
+   * Hover tooltip of the close affordance (e.g. VSCode「Close (⌘W)」with the caller's current keybinding). Caller supplies the
+   * localized text (design layer has no i18n). Defaults to no tooltip.
+   */
+  readonly closeTitle?: string;
   /** Applies a dimmed treatment for inactive or exited tabs. Defaults to `false`. */
   readonly muted?: boolean;
   /** Prevents selecting or closing this tab. Defaults to `false`. */
@@ -141,6 +146,7 @@ export function TabNavItem({
   onDoubleClick,
   dirtyLabel,
   closeLabel: closeLabelProp,
+  closeTitle,
   draggable = false,
   onDragStart,
   onDragEnd,
@@ -253,6 +259,7 @@ export function TabNavItem({
           role="button"
           className="wm-tab-nav-item__close"
           aria-label={closeLabel}
+          title={closeTitle}
           aria-disabled={disabled || undefined}
           // 按下不抢焦点:点背景 tab 的 × 时焦点留在原处(如活动编辑器),不落到所在的 tab 上(VSCode 同)。
           onPointerDown={preventFocusSteal}

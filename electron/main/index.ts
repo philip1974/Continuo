@@ -6,6 +6,7 @@ import { installFileRequestGuard } from './lib/file-request-policy';
 import { showOpenDialogRemembering } from './lib/open-dialog';
 import { appMenuTemplate, type AppMenuActions } from './app-menu';
 import { installAppMenuE2eHook } from './app-menu-e2e';
+import { openHelpLink, showAboutDialog } from './help-links';
 import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL, type FlushRequestPayload } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
@@ -984,6 +985,14 @@ const appMenuActions: AppMenuActions = {
   },
   reloadWindow: (win, ignoreCache) => {
     void reloadMainWindow(win, ignoreCache);
+  },
+  openHelpLink: (url) => {
+    openHelpLink(url);
+  },
+  showAbout: (win) => {
+    showAboutDialog(getMainT(), win).catch((err: unknown) => {
+      console.warn('[about] showMessageBox failed', err);
+    });
   },
 };
 

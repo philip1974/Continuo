@@ -4,12 +4,13 @@ import { SETTINGS } from './helpers/settings';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 import { dispatchModKey } from './helpers/hotkeys';
 
-const SETTINGS_TITLE = /(切换设置|Toggle Settings|설정 토글)/;
+const SETTINGS_TITLE = /(打开设置|Open Settings|설정 열기)/;
 
+// 跨字符(非连续)命中「首选项: 打开设置 / Preferences: Open Settings / 기본 설정: 설정 열기」
 function sparseSettingsQuery(settingsLabel: string): string {
-  if (settingsLabel === '설정') return '설토';
-  if (settingsLabel === '设置') return '设s';
-  return 'ss';
+  if (settingsLabel === '설정') return '설열';
+  if (settingsLabel === '设置') return '打设';
+  return 'opse';
 }
 
 test('本地化 Settings 查询能匹配 settings.toggle 命令', async ({

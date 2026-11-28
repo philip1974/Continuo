@@ -47,6 +47,11 @@ export interface CommandSpec {
   /** i18n key for category（topic-19）。同 titleKey。 */
   readonly categoryKey?: string;
   /**
+   * 搜索关键词的 i18n key(空格分隔的同义说法,如「快捷键」之于「打开键盘快捷方式」;同设置项 keywordsKey):命令面板按标题 / 英文原名都
+   * 没命中时,查询的每个词都出现在关键词(当前语言 + 英文)里也列出该命令。不显示。BDD: src/__tests__/command-discoverability/
+   */
+  readonly keywordsKey?: string;
+  /**
    * 按键的上下文条件(VSCode keybinding when 的极简版):'editorTextFocus' = 只在按键落在代码编辑器正文里时分发;
    * 'terminalFocus' = 只在按键落在终端输入区里时分发(BDD: src/__tests__/terminal-focus-cycle/)。
    * 同一层内带条件的绑定排在无条件的之前(编辑器里 ⇧⌘Enter 是在上方插入行,其它地方仍是终端缩放);只在条件不成立时
@@ -111,6 +116,7 @@ function validateCommandSpec(spec: CommandSpec): void {
   assertOptionalSpecString(TAG, 'titleKey', spec.titleKey, SPEC_ID_MAX);
   assertOptionalSpecString(TAG, 'category', spec.category, SPEC_ID_MAX);
   assertOptionalSpecString(TAG, 'categoryKey', spec.categoryKey, SPEC_ID_MAX);
+  assertOptionalSpecString(TAG, 'keywordsKey', spec.keywordsKey, SPEC_ID_MAX);
   assertOptionalSpecString(TAG, 'hotkey', spec.hotkey, CMD_HOTKEY_MAX);
   if (spec.when !== undefined && !isCommandWhen(spec.when)) {
     throw new Error(`[command-registry] unknown when: "${String(spec.when)}"`);

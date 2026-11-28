@@ -16,6 +16,11 @@ import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { requestTerminalRename } from '@/panels/Terminal/terminal-rename-request';
 import { sessionIdFromPanel } from '@/shell/dock/terminal-panel-id';
 import { groupSizeMenuEntries, toggleExpandGroup } from '@/shell/dock/group-sizes';
+import { commandHotkeyText, useRegisteredCommandHotkeyText, withHotkey } from '@/lib/hotkey-label';
+import { coApp } from '@/plugins/co-app';
+
+/** ⌘W 关闭活动 tab 的命令(tab ✕ 悬停提示与右键「关闭」显示其当前生效键位)。 */
+const CLOSE_ACTIVE_EDITOR_COMMAND_ID = 'workbench.action.closeActiveEditor';
 import {
   panelTitleLayoutId,
   tabIndicatorLayoutId,
@@ -116,6 +121,11 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
   // a11y:tab 名称只取标题(aria-labelledby),不按内容把关闭 / 退出最大化按钮的名称拼进来(对齐 VSCode tab)。
   const titleId = useId();
   const isMaximized = useIsThisGroupMaximized(api, containerApi);
+  // ✕ 悬停提示「关闭 (⌘W)」(VSCode tab 关闭按钮:动作名 + 当前生效键位,改键跟随)
+  const closeTooltip = withHotkey(
+    t('shell.tab.close_tooltip'),
+    useRegisteredCommandHotkeyText(coApp.commands, CLOSE_ACTIVE_EDITOR_COMMAND_ID),
+  );
   const groupId = api.group.id;
   const isMiddleDown = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -329,7 +339,13 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
     return [
       ...rename,
       // 关闭类项可能弹关闭确认(终端运行中程序;opensDialog:焦点先回 tab 再执行,确认框拿到初始焦点)
-      { label: t('shell.tab.ctx.close'), onSelect: close('close'), opensDialog: true },
+      // 右侧键位取当前生效绑定(菜单打开时构建;同编辑器 tab 右键「关闭 ⌘W」)
+      {
+        label: t('shell.tab.ctx.close'),
+        onSelect: close('close'),
+        shortcut: commandHotkeyText(coApp.commands.get(CLOSE_ACTIVE_EDITOR_COMMAND_ID)),
+        opensDialog: true,
+      },
       { label: t('shell.tab.ctx.close_others'), onSelect: close('others'), disabled: panels.length <= 1, opensDialog: true },
       { label: t('shell.tab.ctx.close_right'), onSelect: close('right'), disabled: index >= panels.length - 1, opensDialog: true },
       'separator',
@@ -397,7 +413,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
         // a11y(A105):icon-only 关闭按钮可访问名须本地化(原硬编码英文 `Close ${title}`,
         // zh/ko 界面 SR 读英文);含 title 区分多 tab。
         aria-label={t('shell.tab.close', { title })}
-        title={t('shell.tab.close', { title })}
+        title={closeTooltip}
         // 极窄组(dockview.css 容器查询)隐藏,让出宽度给标题;仍可 ⌘W / 中键 / Delete 关闭。
         data-tab-close=""
         onPointerDown={(e) => e.preventDefault()}

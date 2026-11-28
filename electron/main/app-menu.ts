@@ -7,6 +7,7 @@ import { app, BrowserWindow, type KeyboardEvent, type MenuItemConstructorOptions
 import { runEditUndoRedo, sendMenuCommand } from './lib/menu-command';
 import { menuAcceleratorOf } from './menu-keybindings';
 import { menuCheckedOf } from './menu-checked';
+import { HELP_LINKS, PRODUCT_NAME } from './help-links';
 import type { MenuCheckboxId, MenuCommandId } from '../shared/window-channels';
 import type { MainT } from './i18n';
 import type { TranslationKey } from '../shared/i18n-locales/en';
@@ -16,6 +17,10 @@ export interface AppMenuActions {
   readonly newWindow: () => void;
   readonly openFolderInNewWindow: () => void;
   readonly reloadWindow: (win: BrowserWindow, ignoreCache: boolean) => void;
+  /** 帮助菜单的外链(文档 / 发行说明 / 报告问题,见 help-links;只开 https)。 */
+  readonly openHelpLink: (url: string) => void;
+  /** Windows / Linux 帮助 → 关于:版本信息对话框(VSCode ShowAboutDialogAction;macOS 用应用菜单的 role about)。 */
+  readonly showAbout: (win: BrowserWindow | undefined) => void;
 }
 
 /** 菜单命令 → 显示的 accelerator(缺省取 renderer 推送的生效键位)。 */
@@ -78,6 +83,8 @@ export function appMenuTemplate(
       click: () => actions.openFolderInNewWindow(),
     },
     command('workbench.action.openRecent', 'menu.file.open_recent'),
+    // VSCode 在「打开最近 ▸」子菜单首项;这里「打开最近」是文件夹选择器,紧随其后放同组
+    command('workbench.action.reopenClosedEditor', 'menu.file.reopen_closed_editor'),
     SEPARATOR,
     // 保存 / 另存为… / 全部保存(VSCode 文件菜单同组;BDD: src/__tests__/editor-save-as/)
     command('workbench.action.files.save', 'menu.file.save'),
@@ -94,6 +101,10 @@ export function appMenuTemplate(
     // 其它平台没有应用菜单:首选项放 File 菜单(VSCode:File → Preferences)。
     ...(isMac ? [] : [SEPARATOR, preferencesItem]),
     SEPARATOR,
+    // VSCode 文件菜单 6_close 组:还原文件 / 关闭编辑器 / 关闭文件夹 / 关闭窗口(fileActions.contribution、workspaceActions)
+    command('workbench.action.files.revert', 'menu.file.revert'),
+    command('workbench.action.closeActiveEditor', 'menu.file.close_editor'),
+    command('workbench.action.closeFolder', 'menu.file.close_folder'),
     // 关窗口 = ⇧⌘W / Ctrl+Shift+W(对齐 VSCode workbench.action.closeWindow)。⌘W / Ctrl+W 归 renderer 的
     // 「关闭编辑器」命令(workbench.action.closeActiveEditor:关当前文件 tab / 面板,无可关的才关窗口)。
     // 不用 mac 的 { role: 'close' }:它自带 ⌘W,一按直接关整个窗口并杀掉窗内全部终端。
@@ -180,8 +191,19 @@ export function appMenuTemplate(
   const viewSubmenu: Item[] = [
     command('workbench.action.showCommands', 'menu.view.command_palette'),
     SEPARATOR,
+    // 编辑器布局 ▸(VSCode MenubarLayoutMenu 1_split:只有本项目已有的向右 / 向下拆分)
+    {
+      label: t('menu.view.editor_layout'),
+      submenu: [
+        command('workbench.action.splitEditor', 'menu.view.split_right'),
+        command('workbench.action.splitEditorDown', 'menu.view.split_down'),
+      ],
+    },
+    SEPARATOR,
+    // VSCode 3_views:资源管理器 / 搜索 / 运行(workbench.view.debug)
     command('workbench.view.explorer', 'menu.view.explorer'),
     command('workbench.action.findInFiles', 'menu.view.search'),
+    command('workbench.view.debug', 'menu.view.run'),
     command('workbench.action.terminal.toggleTerminal', 'menu.view.terminal'),
     command('workbench.view.output', 'menu.view.output'),
     SEPARATOR,
@@ -219,10 +241,25 @@ export function appMenuTemplate(
     SEPARATOR,
     command('workbench.action.quickOpen', 'menu.go.go_to_file'),
     command('workbench.action.gotoSymbol', 'menu.go.go_to_symbol'),
+    // VSCode 4_symbol_nav / 5_infile_nav / 6_problem_nav
+    command('editor.action.revealDefinition', 'menu.go.go_to_definition'),
+    SEPARATOR,
     command('workbench.action.gotoLine', 'menu.go.go_to_line'),
+    command('editor.action.jumpToBracket', 'menu.go.go_to_bracket'),
+    SEPARATOR,
+    command('editor.action.marker.nextInFiles', 'menu.go.next_problem'),
     SEPARATOR,
     command('workbench.action.nextEditor', 'menu.go.next_editor'),
     command('workbench.action.previousEditor', 'menu.go.previous_editor'),
+    // 切换组 ▸(VSCode MenubarSwitchGroupMenu 1_focus_index:只有本项目已有的第 1 / 2 / 3 组)
+    {
+      label: t('menu.go.switch_group'),
+      submenu: [
+        command('workbench.action.focusFirstEditorGroup', 'menu.go.group_1'),
+        command('workbench.action.focusSecondEditorGroup', 'menu.go.group_2'),
+        command('workbench.action.focusThirdEditorGroup', 'menu.go.group_3'),
+      ],
+    },
   ];
 
   const terminalSubmenu: Item[] = [
@@ -231,10 +268,29 @@ export function appMenuTemplate(
     command('workbench.action.terminal.toggleTerminal', 'menu.terminal.toggle_terminal'),
   ];
 
-  // 帮助:显示所有命令、键盘快捷方式参考(VSCode 打开 PDF 速查表;这里打开设置的快捷键页)。
+  // 帮助(VSCode MenubarHelpMenu):1_welcome 显示所有命令 / 文档 / 发行说明;2_reference 键盘快捷方式参考(VSCode 打开 PDF 速查表,
+  // 这里打开设置的快捷键页);3_feedback 报告问题;z_about 关于(仅 Windows / Linux,macOS 在应用菜单)。外链见 help-links。
+  const link = (labelKey: TranslationKey, url: string): Item => ({
+    label: t(labelKey),
+    click: () => actions.openHelpLink(url),
+  });
   const helpSubmenu: Item[] = [
     command('workbench.action.showCommands', 'menu.help.show_all_commands'),
+    link('menu.help.documentation', HELP_LINKS.documentation),
+    link('menu.help.release_notes', HELP_LINKS.releaseNotes),
+    SEPARATOR,
     command('workbench.action.openGlobalKeybindings', 'menu.help.keyboard_shortcuts_reference'),
+    SEPARATOR,
+    link('menu.help.report_issue', HELP_LINKS.reportIssue),
+    ...(isMac
+      ? []
+      : [
+          SEPARATOR,
+          {
+            label: t('menu.app.about', { name: PRODUCT_NAME }),
+            click: (_item, win) => actions.showAbout(win instanceof BrowserWindow ? win : undefined),
+          } satisfies Item,
+        ]),
   ];
 
   // 同 Electron 默认 windowMenu;其它平台不带 role close(其 Ctrl+W 直接关整窗,关窗口在 File 菜单 ⇧Ctrl+W)。

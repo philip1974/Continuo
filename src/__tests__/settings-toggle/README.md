@@ -32,7 +32,7 @@
 ### 命令注册
 
 * `coApp.commands.getAll()` 含 id=`settings.toggle`
-* `category='Settings'`、`hotkey='mod+,'`
+* `category='Preferences'`、`title='Open Settings'`(命令面板「首选项: 打开设置」,VSCode workbench.action.openSettings 说法,见 `entry-discoverability`)、`hotkey='mod+,'`
 
 ### dock 未就绪
 

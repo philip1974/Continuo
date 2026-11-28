@@ -22,6 +22,8 @@ export const EXPLORER_COPY_PATH = /^(复制路径|Copy Path|경로 복사)(?:\s+
 export const EXPLORER_COPY_RELATIVE_PATH =
   /^(复制相对路径|Copy Relative Path|상대 경로 복사)(?:\s+.+)?$/;
 export const EXPLORER_MORE_ACTIONS = /^(更多操作|More actions|추가 작업)$/;
+/** dock 组头「打开视图…」菜单按钮(VSCode workbench.action.openView 同名)。 */
+export const DOCK_OPEN_VIEW = /^(打开视图…|Open View…|뷰 열기…)$/;
 export const EXPLORER_HIDE = /^(隐藏资源管理器|Hide Explorer|탐색기 숨기기)$/;
 export const EXPLORER_SHOW = /^(显示资源管理器|Show Explorer|탐색기 표시)$/;
 export const EXPLORER_TOGGLE =
@@ -130,6 +132,6 @@ export function explorerMoreActionsButton(window: Page): Locator {
 export function dockHeaderMoreActionsButton(window: Page): Locator {
   return window
     .locator('.dockview-theme-abyss')
-    .getByRole('button', { name: EXPLORER_MORE_ACTIONS })
+    .getByRole('button', { name: DOCK_OPEN_VIEW })
     .last();
 }

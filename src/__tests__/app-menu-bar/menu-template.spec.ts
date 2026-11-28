@@ -30,7 +30,7 @@ import { coApp } from '@/plugins/co-app';
 type Item = MenuItemConstructorOptions;
 
 const t = (key: string): string => key;
-const actions: AppMenuActions = { newWindow: vi.fn(), openFolderInNewWindow: vi.fn(), reloadWindow: vi.fn() };
+const actions: AppMenuActions = { newWindow: vi.fn(), openFolderInNewWindow: vi.fn(), reloadWindow: vi.fn(), openHelpLink: vi.fn(), showAbout: vi.fn() };
 
 function template(isMac: boolean, acc?: (id: string) => string | undefined): Item[] {
   return appMenuTemplate(t as never, actions, isMac, acc);
@@ -94,7 +94,7 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
     ]);
   });
 
-  it('文件:新建文本文件 / … / 打开最近的文件夹… / 保存 / 另存为… / 全部保存 / 自动保存', () => {
+  it('文件:新建文本文件 / … / 打开最近的文件夹… / 重新打开已关闭的编辑器 / 保存 / … / 自动保存 / 还原文件 / 关闭编辑器 / 关闭文件夹 / 关闭窗口', () => {
     const file = commandsOf(submenu(template(true), 'menu.file.label'));
     expect(file).toEqual([
       'workbench.action.files.newUntitledFile',
@@ -102,10 +102,15 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
       'workbench.action.files.openFolder',
       'menu.file.open_folder_in_new_window',
       'workbench.action.openRecent',
+      'workbench.action.reopenClosedEditor',
       'workbench.action.files.save',
       'workbench.action.files.saveAs',
       'workbench.action.files.saveAll',
       'workbench.action.toggleAutoSave',
+      // VSCode 6_close 组
+      'workbench.action.files.revert',
+      'workbench.action.closeActiveEditor',
+      'workbench.action.closeFolder',
       'menu.file.close_window',
     ]);
   });
@@ -160,17 +165,23 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
       'editor.action.addSelectionToNextFindMatch',
       'editor.action.selectHighlights',
     ]);
-    expect(commandsOf(submenu(top, 'menu.view.label')).slice(0, 7)).toEqual([
+    expect(commandsOf(submenu(top, 'menu.view.label')).slice(0, 9)).toEqual([
       'workbench.action.showCommands',
+      'menu.view.editor_layout',
       'workbench.view.explorer',
       'workbench.action.findInFiles',
+      'workbench.view.debug',
       'workbench.action.terminal.toggleTerminal',
       'workbench.view.output',
       'explorer.toggleSidebar',
       'editor.action.toggleWordWrap',
     ]);
+    expect(commandsOf(submenu(submenu(top, 'menu.view.label'), 'menu.view.editor_layout'))).toEqual([
+      'workbench.action.splitEditor',
+      'workbench.action.splitEditorDown',
+    ]);
     // 外观相关保留
-    expect(commandsOf(submenu(top, 'menu.view.label')).slice(7)).toEqual([
+    expect(commandsOf(submenu(top, 'menu.view.label')).slice(9)).toEqual([
       'menu.view.reload',
       'menu.view.force_reload',
       'toggleDevTools',
@@ -184,9 +195,18 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
       'workbench.action.navigateForward',
       'workbench.action.quickOpen',
       'workbench.action.gotoSymbol',
+      'editor.action.revealDefinition',
       'workbench.action.gotoLine',
+      'editor.action.jumpToBracket',
+      'editor.action.marker.nextInFiles',
       'workbench.action.nextEditor',
       'workbench.action.previousEditor',
+      'menu.go.switch_group',
+    ]);
+    expect(commandsOf(submenu(submenu(top, 'menu.go.label'), 'menu.go.switch_group'))).toEqual([
+      'workbench.action.focusFirstEditorGroup',
+      'workbench.action.focusSecondEditorGroup',
+      'workbench.action.focusThirdEditorGroup',
     ]);
     expect(commandsOf(submenu(top, 'menu.terminal.label'))).toEqual([
       'terminal.new',
@@ -195,15 +215,20 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
     ]);
     expect(commandsOf(submenu(top, 'menu.help.label'))).toEqual([
       'workbench.action.showCommands',
+      'menu.help.documentation',
+      'menu.help.release_notes',
       'workbench.action.openGlobalKeybindings',
+      'menu.help.report_issue',
     ]);
   });
 
   it('菜单用到的命令都已登记为菜单命令、并在命令注册表里注册(编辑器右键菜单专用的除外)', () => {
     bootCorePlugins();
     const used = new Set(flatten(template(true)).map(commandOf).filter((id): id is string => id !== undefined));
-    const contextOnly = new Set<string>(EDITOR_CONTEXT_MENU_COMMAND_IDS);
-    expect([...used].sort()).toEqual([...MENU_COMMAND_IDS].filter((id) => !contextOnly.has(id)).sort());
+    const contextMenu = new Set<string>(EDITOR_CONTEXT_MENU_COMMAND_IDS);
+    // 菜单栏用到的都已登记;登记的除编辑器右键菜单的(其中「转到定义」菜单栏也有)外都在菜单栏里
+    for (const id of used) expect(MENU_COMMAND_IDS as readonly string[], id).toContain(id);
+    expect(MENU_COMMAND_IDS.filter((id) => !used.has(id) && !contextMenu.has(id))).toEqual([]);
     for (const id of MENU_COMMAND_IDS) expect(coApp.commands.get(id), id).toBeDefined();
   });
 

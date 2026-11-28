@@ -53,6 +53,7 @@ export default class KeybindingsTabPlugin extends Plugin {
       titleKey: 'commands.preferences.open_keybindings.title',
       category: 'Preferences',
       categoryKey: 'commands.preferences.category',
+      keywordsKey: 'commands.preferences.open_keybindings.keywords',
       fn: () => openKeybindingsSettings(),
     });
   }

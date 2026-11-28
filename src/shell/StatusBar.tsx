@@ -39,6 +39,7 @@ import { useTabIndentation } from '@/panels/Editor/editor-indentation';
 import { selectionStatusLabel, useEditorSelectionStatus } from '@/panels/Editor/editor-selection-status';
 import { GOTO_LINE_COMMAND } from '@/panels/Editor/editor-commands';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
+import { useRegisteredCommandHotkeyText, withHotkey } from '@/lib/hotkey-label';
 import type { TextEncodingId } from '../../electron/shared/text-encoding';
 
 /** MCP 复制按钮在窄状态栏下的图标(lucide copy 字形;只在容器 < xl 时显示,替代文字)。 */
@@ -337,6 +338,28 @@ const EditorSelectionItem = memo(function EditorSelectionItem({ tabId, groupId }
   );
 });
 
+/** 切换侧栏的命令(状态栏「侧栏已隐藏」点击执行;提示显示其当前生效键位)。 */
+const TOGGLE_SIDEBAR_COMMAND_ID = 'explorer.toggleSidebar';
+
+/**
+ * 「侧栏已隐藏」:点击显示侧栏(同 ⌘B,经命令注册表执行),悬停「显示侧栏 (⌘B)」(键位随改绑)。可访问名 = 可见文字,
+ * 动作说明在 title(作可访问描述,同 MCP 复制按钮)。
+ */
+function SidebarHiddenItem({ label, showLabel }: { readonly label: string; readonly showLabel: string }) {
+  const hotkey = useRegisteredCommandHotkeyText(coApp.commands, TOGGLE_SIDEBAR_COMMAND_ID);
+  return (
+    // native button:24px 状态栏内的行内文本按钮(同 MCP 复制按钮);颜色走语义 token。
+    <button
+      type="button"
+      onClick={() => void runRegisteredCommand(coApp.commands, TOGGLE_SIDEBAR_COMMAND_ID, showLabel)}
+      title={withHotkey(showLabel, hotkey)}
+      className={STATUS_ITEM_BUTTON_CLASS}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function StatusBar() {
   const t = useT();
   const root = useWorkspaceStore((s) => s.root);
@@ -425,9 +448,7 @@ export function StatusBar() {
         ) : (
           <span className="whitespace-nowrap px-1.5">{t('statusbar.no_workspace')}</span>
         )}
-        {!sidebarOpen && (
-          <span className="truncate px-1.5">{t('statusbar.sidebar_hidden')}</span>
-        )}
+        {!sidebarOpen && <SidebarHiddenItem label={t('statusbar.sidebar_hidden')} showLabel={t('statusbar.show_sidebar')} />}
         {/* 插件贡献的左侧 statusBar items(race R56:render 时 live 复查) */}
         {leftItems.map((item) => (
           <PluginStatusItem key={item.id} item={item} />

@@ -68,7 +68,7 @@ describe('topic-19 core-plugins titleKey hits catalog', () => {
       'commands.window.open_folder.title',
     );
     expect(findCmd('settings.toggle')?.titleKey).toBe(
-      'commands.settings.toggle.title',
+      'commands.preferences.open_settings.title',
     );
     expect(findCmd('explorer.toggleSidebar')?.titleKey).toBe(
       'settings.explorer.toggle_sidebar',

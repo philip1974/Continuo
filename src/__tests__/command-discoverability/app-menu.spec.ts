@@ -32,6 +32,8 @@ const actions: AppMenuActions = {
   newWindow: vi.fn(),
   openFolderInNewWindow: vi.fn(),
   reloadWindow: vi.fn(),
+  openHelpLink: vi.fn(),
+  showAbout: vi.fn(),
 };
 
 function template(isMac: boolean): Item[] {

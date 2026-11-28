@@ -69,11 +69,11 @@ describe('HeaderActions — popout', () => {
     expect(src).toContain('const POPOUT_ICON = (');
     expect(src).toMatch(/^const MORE_ACTIONS_ICON = \(?</m);
     expect(src).toContain('const popoutLabel = t(');
-    expect(src).toContain('const moreActionsLabel = t(');
+    expect(src).toContain('const openViewLabel = t(');
     expect(src).toContain('aria-label={popoutLabel}');
     expect(src).toContain('title={popoutLabel}');
-    expect(src).toContain('aria-label={moreActionsLabel}');
-    expect(src).toContain('title={moreActionsLabel}');
+    expect(src).toContain('aria-label={openViewLabel}');
+    expect(src).toContain('title={openViewLabel}');
     expect(src).toContain('{POPOUT_ICON}');
     expect(src).toContain('{MORE_ACTIONS_ICON}');
   });
@@ -168,7 +168,7 @@ describe('HeaderActions — popout 被拦截', () => {
   });
 });
 
-describe('HeaderActions — 更多操作菜单', () => {
+describe('HeaderActions — 「打开视图…」菜单', () => {
   it('默认 open=false → 不渲染 menu', () => {
     const props = makeProps();
     render(
@@ -184,7 +184,7 @@ describe('HeaderActions — 更多操作菜单', () => {
       <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
     );
     const moreBtn = container.querySelector(
-      `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+      `button[aria-label="${t('shell.dock.open_view')}"]`,
     ) as HTMLButtonElement;
     expect(moreBtn.getAttribute('aria-haspopup')).toBe('menu');
     expect(moreBtn.getAttribute('aria-expanded')).toBe('false');
@@ -211,7 +211,7 @@ describe('HeaderActions — 更多操作菜单', () => {
     );
     fireEvent.click(
       container.querySelector(
-        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+        `button[aria-label="${t('shell.dock.open_view')}"]`,
       ) as HTMLButtonElement,
     );
     const menu = document.querySelector('[role=menu]');
@@ -229,7 +229,7 @@ describe('HeaderActions — 更多操作菜单', () => {
     );
     fireEvent.click(
       container.querySelector(
-        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+        `button[aria-label="${t('shell.dock.open_view')}"]`,
       ) as HTMLButtonElement,
     );
     const items = Array.from(document.querySelectorAll('[role=menuitem]')).map((el) => el.textContent);
@@ -249,7 +249,7 @@ describe('HeaderActions — 更多操作菜单', () => {
     );
     fireEvent.click(
       container.querySelector(
-        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+        `button[aria-label="${t('shell.dock.open_view')}"]`,
       ) as HTMLButtonElement,
     );
     const item = document.querySelector('[role=menuitem]') as HTMLElement;
@@ -280,7 +280,7 @@ describe('HeaderActions — 更多操作菜单', () => {
       <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
     );
     const more = container.querySelector(
-      `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+      `button[aria-label="${t('shell.dock.open_view')}"]`,
     ) as HTMLButtonElement;
     fireEvent.click(more);
     fireEvent.click(document.querySelector('[role=menuitem]') as HTMLElement);
@@ -313,7 +313,7 @@ describe('HeaderActions — 更多操作菜单', () => {
       );
       fireEvent.click(
         container.querySelector(
-          `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+          `button[aria-label="${t('shell.dock.open_view')}"]`,
         ) as HTMLButtonElement,
       );
       fireEvent.click(document.querySelector('[role=menuitem]') as HTMLElement);
@@ -323,7 +323,7 @@ describe('HeaderActions — 更多操作菜单', () => {
       expect(document.querySelector('[role=menu]')).toBeNull();
       // 失败分支焦点还给触发按钮(不落到 body)
       expect(document.activeElement?.getAttribute('aria-label')).toBe(
-        t('panels.explorer.btn.more_actions'),
+        t('shell.dock.open_view'),
       );
     } finally {
       notifyError.mockRestore();
@@ -339,13 +339,13 @@ describe('HeaderActions — 更多操作菜单', () => {
     );
     fireEvent.click(
       container.querySelector(
-        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+        `button[aria-label="${t('shell.dock.open_view')}"]`,
       ) as HTMLButtonElement,
     );
     fireEvent.click(document.querySelector('[role=menuitem]') as HTMLElement);
     await vi.waitFor(() => expect(document.querySelector('[role=menu]')).toBeNull());
     expect(document.activeElement?.getAttribute('aria-label')).toBe(
-      t('panels.explorer.btn.more_actions'),
+      t('shell.dock.open_view'),
     );
   });
 
@@ -359,7 +359,7 @@ describe('HeaderActions — 更多操作菜单', () => {
     );
     fireEvent.click(
       container.querySelector(
-        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+        `button[aria-label="${t('shell.dock.open_view')}"]`,
       ) as HTMLButtonElement,
     );
     const item = document.querySelector('[role=menuitem]') as HTMLElement;
@@ -383,7 +383,7 @@ describe('HeaderActions — 更多操作菜单', () => {
     );
     fireEvent.click(
       container.querySelector(
-        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+        `button[aria-label="${t('shell.dock.open_view')}"]`,
       ) as HTMLButtonElement,
     );
     expect(document.querySelector('[role=menu]')).not.toBeNull();
@@ -403,7 +403,7 @@ describe('HeaderActions — 更多操作菜单', () => {
     );
     fireEvent.click(
       container.querySelector(
-        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+        `button[aria-label="${t('shell.dock.open_view')}"]`,
       ) as HTMLButtonElement,
     );
     expect(document.querySelector('[role=menu]')!.textContent).not.toContain(
@@ -453,7 +453,7 @@ describe('HeaderActions — 单例面板类型', () => {
   function openMenuAndPick(container: HTMLElement, label: string): void {
     fireEvent.click(
       container.querySelector(
-        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+        `button[aria-label="${t('shell.dock.open_view')}"]`,
       ) as HTMLButtonElement,
     );
     const item = [...document.querySelectorAll('[role=menuitem]')].find(

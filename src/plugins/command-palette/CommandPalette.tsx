@@ -50,6 +50,8 @@ export interface DisplayCommand {
   readonly aliasLabel?: string;
   /** 英文原名的预小写匹配源(同 matchSourceLower 的拼法)。 */
   readonly aliasSourceLower?: string;
+  /** 搜索关键词(CommandSpec.keywordsKey,当前语言 + 英文)的预小写文本;无关键词 → undefined。 */
+  readonly keywordsLower?: string;
 }
 
 /** 匹配源原文(未小写):`分类 标题`,无分类时只有标题。打分(matchSourceLower)与行内高亮共用这一拼法。 */
@@ -100,6 +102,9 @@ export function buildDisplayCommands(
         aliasSourceLower = lowerIfNeeded(enSource);
       }
     }
+    const keywords = cmd.keywordsKey
+      ? `${tk(cmd.keywordsKey, '')} ${english ? english(cmd.keywordsKey, '') : ''}`.trim()
+      : '';
     out[i] = {
       cmd,
       displayTitle,
@@ -109,6 +114,7 @@ export function buildDisplayCommands(
       // 对 displayCategory/title 组成的 target 重复 toLowerCase。
       matchSourceLower: lowerIfNeeded(source),
       ...(aliasLabel === undefined ? {} : { aliasLabel, aliasSourceLower }),
+      ...(keywords === '' ? {} : { keywordsLower: lowerIfNeeded(keywords) }),
     };
   }
   return out;
@@ -126,7 +132,20 @@ function aliasSourceLower(d: DisplayCommand): string {
   return d.aliasSourceLower!;
 }
 
-/** 先按本地化文本 fuzzy,再对其余带英文原名的项按英文 fuzzy,英文命中排在本地化命中之后。 */
+/**
+ * 关键词命中(keywordsKey):查询按空白拆词,每个词都是关键词文本的子串(同设置搜索按词匹配;不用 fuzzy —— 子序列在一串同义词里
+ * 几乎总能凑出来)。
+ */
+function matchesKeywords(d: DisplayCommand, words: readonly string[]): boolean {
+  const keywords = d.keywordsLower;
+  if (keywords === undefined || words.length === 0) return false;
+  for (const w of words) if (!keywords.includes(w)) return false;
+  return true;
+}
+
+/**
+ * 先按本地化文本 fuzzy,再对其余带英文原名的项按英文 fuzzy,英文命中排在本地化命中之后;最后是只靠搜索关键词命中的项。
+ */
 export function searchDisplayCommands(items: readonly DisplayCommand[], query: string): CommandSearchResult {
   const local = fuzzyFilter(items, query, matchSourceLower);
   let rest: DisplayCommand[] | null = null;
@@ -136,10 +155,23 @@ export function searchDisplayCommands(items: readonly DisplayCommand[], query: s
     localSet ??= new Set(local);
     if (!localSet.has(d)) (rest ??= []).push(d);
   }
-  if (rest === null) return { matches: local, aliasHits: NO_ALIAS_HITS };
-  const viaAlias = fuzzyFilter(rest, query, aliasSourceLower);
-  if (viaAlias.length === 0) return { matches: local, aliasHits: NO_ALIAS_HITS };
-  return { matches: [...local, ...viaAlias], aliasHits: new Set(viaAlias) };
+  const viaAlias = rest === null ? [] : fuzzyFilter(rest, query, aliasSourceLower);
+  const trimmedQuery = query.trim();
+  const words = trimmedQuery === '' ? [] : lowerIfNeeded(trimmedQuery).split(/\s+/);
+  let viaKeywords: DisplayCommand[] | null = null;
+  if (words.length > 0) {
+    let matched: Set<DisplayCommand> | null = null;
+    for (const d of items) {
+      if (!matchesKeywords(d, words)) continue;
+      matched ??= new Set([...local, ...viaAlias]);
+      if (!matched.has(d)) (viaKeywords ??= []).push(d);
+    }
+  }
+  if (viaAlias.length === 0 && viaKeywords === null) return { matches: local, aliasHits: NO_ALIAS_HITS };
+  return {
+    matches: [...local, ...viaAlias, ...(viaKeywords ?? [])],
+    aliasHits: viaAlias.length === 0 ? NO_ALIAS_HITS : new Set(viaAlias),
+  };
 }
 
 export function buildRecentCommandIds(recentList: readonly RecentEntry[]): string[] {

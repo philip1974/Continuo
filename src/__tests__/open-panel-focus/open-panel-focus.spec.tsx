@@ -177,7 +177,7 @@ describe('dock「⋯」菜单', () => {
         {...({ containerApi: api, group: term.group, activePanel: term } as unknown as Parameters<typeof HeaderActions>[0])}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: t('panels.explorer.btn.more_actions') }));
+    fireEvent.click(screen.getByRole('button', { name: t('shell.dock.open_view') }));
     await flush();
     fireEvent.click(screen.getByRole('menuitem', { name: /Output/ }));
     await flush();

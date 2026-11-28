@@ -27,7 +27,7 @@ import { ko } from '@shared/i18n-locales/ko';
 
 type Item = MenuItemConstructorOptions;
 const t = (key: string): string => key;
-const actions: AppMenuActions = { newWindow: vi.fn(), openFolderInNewWindow: vi.fn(), reloadWindow: vi.fn() };
+const actions: AppMenuActions = { newWindow: vi.fn(), openFolderInNewWindow: vi.fn(), reloadWindow: vi.fn(), openHelpLink: vi.fn(), showAbout: vi.fn() };
 const ID = 'workbench.action.toggleAutoSave';
 
 function fileMenu(isMac: boolean, checked?: (id: string) => boolean): Item[] {

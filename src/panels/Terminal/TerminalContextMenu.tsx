@@ -10,7 +10,7 @@ import { useT } from '@/i18n';
 import { CONTEXT_MENU_CONTENT_CLASS_NAME } from '@/lib/menu-surface';
 import { useRegisteredCommandHotkeyText } from '@/lib/hotkey-label';
 import { coApp } from '@/plugins/co-app';
-import { TERMINAL_SPLIT_COMMAND_ID } from './terminal-hotkeys';
+import { TERMINAL_CLEAR_COMMAND, TERMINAL_SPLIT_COMMAND_ID } from './terminal-hotkeys';
 
 export interface TerminalContextMenuActions {
   readonly hasSelection: () => boolean;
@@ -54,6 +54,8 @@ export function TerminalContextMenu({
 }) {
   const t = useT();
   const splitShortcut = useRegisteredCommandHotkeyText(coApp.commands, TERMINAL_SPLIT_COMMAND_ID);
+  // 「清除终端」右侧键位(VSCode 终端右键同显示 ⌘K;Windows / Linux 默认未绑定不显示),改键跟随
+  const clearShortcut = useRegisteredCommandHotkeyText(coApp.commands, TERMINAL_CLEAR_COMMAND.id);
   // 选了「拆分终端」:焦点要进新终端,关闭菜单时不把焦点交回本终端(否则本终端所在组重新变成活动组,新终端挂载时不再获焦)。
   const keepFocusAwayRef = useRef(false);
   // 打开时取一次:选区(mac 右键按下即选词,早于 contextmenu)与 portal 目标文档(popout 子窗的终端菜单画在子窗)。
@@ -97,7 +99,9 @@ export function TerminalContextMenu({
           <Item onSelect={actions.paste}>{t('panels.terminal.ctx.paste')}</Item>
           <Item onSelect={actions.selectAll}>{t('panels.terminal.ctx.select_all')}</Item>
           <Menu.Separator className="my-1 h-px bg-line" />
-          <Item onSelect={actions.clear}>{t('commands.terminal.clear.title')}</Item>
+          <Item onSelect={actions.clear} shortcut={clearShortcut}>
+            {t('commands.terminal.clear.title')}
+          </Item>
         </Menu.Content>
       </Menu.Portal>
     </Menu.Root>

@@ -5,14 +5,19 @@
 
 ## 行为
 
-- **活动栏**:「隐藏 / 显示资源管理器 (⌘B)」(`explorer.toggleSidebar`)、「设置 (⌘,)」(`settings.toggle`)。只改悬停 tooltip,
+- **活动栏**:「隐藏 / 显示资源管理器 (⌘B)」(`explorer.toggleSidebar`)、「搜索 (⇧⌘F)」、「运行和调试 (⇧⌘D)」(见
+  `entry-discoverability`)、「设置 (⌘,)」(`settings.toggle`)。只改悬停 tooltip,
   可访问名称仍是纯名称(design `NavRailButton` 的 `tooltip`)。改键后立即跟随(订阅快捷键 override 与命令注册表)。
 - **编辑器 tab 右键菜单**:「关闭」右侧 ⌘W(`workbench.action.closeActiveEditor`)、「向右拆分」右侧 ⌘\
   (`workbench.action.splitEditor`);菜单打开时取生效绑定。
 - **资源管理器右键菜单**:剪切 ⌘X、复制 ⌘C、粘贴 ⌘V、重命名 F2、移到废纸篓 ⌘⌫(Windows / Linux Del);与树内按键同一来源
   (`tree-keyboard` 的 `TREE_KEY_HOTKEYS` / `trashHotkey`,树内键不经快捷键设置)。多选时「移到废纸篓」先条目数再键位。
-- **组「更多操作」菜单**:终端 ⌘T(`terminal.new`)、搜索 ⇧⌘F(`workbench.action.findInFiles`)、设置 ⌘,(`settings.toggle`);
-  无对应命令的面板不显示。
+- **组「打开视图…」菜单**(按钮名同 VSCode `workbench.action.openView`「打开视图…」:内容是可打开的面板列表,不叫「更多操作」):
+  终端 ⌘T(`terminal.new`)、搜索 ⇧⌘F(`workbench.action.findInFiles`)、设置 ⌘,(`settings.toggle`)、调试 ⇧⌘D
+  (`workbench.view.debug`)、输出 ⇧⌘U(`workbench.view.output`);无对应命令的面板不显示。
+- **tab 关闭按钮 ✕**(编辑器文件 tab 与 dock 面板 tab):悬停「关闭 (⌘W)」(VSCode tab 关闭动作 = 名称 + 当前生效键位,
+  `workbench.action.closeActiveEditor`);可访问名称仍是「关闭 {标题}」。编辑器 tab 经 design `TabNavItem` 的 `closeTitle`(设计层通用,
+  文案由调用方传入)。dock 面板 tab 右键「关闭」右侧同样显示 ⌘W。
 - **查找选项**:见 `src/__tests__/find-options-parity/`(选项按钮 / 复选框 tooltip「区分大小写 (⌥⌘C)」)。
 - 菜单项键位放 design `MenuItem` 的 `shortcut` 槽:视觉显示、`aria-hidden`,不计入可访问名称(菜单项仍按名称念 / 匹配)。
 
@@ -26,7 +31,8 @@
 | `src/shell/IconSidebar.tsx` | 活动栏 tooltip |
 | `src/panels/Editor/EditorHeader.tsx` / `src/lib/TabContextMenu.tsx` | tab 右键菜单键位 |
 | `src/panels/Explorer/ContextMenu.tsx` / `tree-keyboard.ts` | 资源管理器右键菜单键位 |
-| `src/shell/dock/HeaderActions.tsx` | 组「更多操作」菜单键位 |
+| `src/shell/dock/HeaderActions.tsx` | 组「打开视图…」菜单键位 |
+| `src/design/TabNav.tsx` / `src/shell/motion/SharedTab.tsx` | tab ✕ 悬停提示 |
 
 ## Specs
 

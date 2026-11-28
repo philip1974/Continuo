@@ -3,7 +3,7 @@
 // 1. 子窗里经命令面板「关闭窗口」→ 只关子窗(组收回主窗),主窗与主窗终端都在 —— 此前 IPC 发起方是主窗,关掉整个主窗连同终端。
 // 2. 子窗里经命令面板「切换全屏」→ 子窗全屏、主窗不动 —— 此前切的是主窗。
 // 3. 子窗里经命令面板「重新加载窗口」→ 重载主窗(VSCode 辅助窗口同);子窗随主窗卸载关闭、随 dock 布局恢复。
-// 4. 只有终端的子窗里 F6 / ⇧F6 在 tab 栏 ↔ 终端之间切换,Tab 从 tab 到「更多操作」—— 此前焦点困在终端里。
+// 4. 只有终端的子窗里 F6 / ⇧F6 在 tab 栏 ↔ 终端之间切换,Tab 从 tab 到「打开视图…」—— 此前焦点困在终端里。
 // 5. 非活动组里正显示的 dock tab 也 aria-selected=true、在 Tab 顺序里(每组一个);强调条只在活动组。
 // Playwright 默认焦点模拟让每个窗口 document.hasFocus() 都为 true → 关掉它,用 BrowserWindow.focus() 真正切换窗口。
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { DOCK_POPOUT, TERMINAL_INPUT, TERMINAL_PANEL_TAB } from './helpers/editor';
-import { EXPLORER_MORE_ACTIONS, openTreeItem } from './helpers/explorer';
+import { DOCK_OPEN_VIEW, openTreeItem } from './helpers/explorer';
 import { COMMAND_SEARCH } from './helpers/palette';
 import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
@@ -174,7 +174,7 @@ test('子窗里经命令面板「重新加载窗口」→ 重载主窗;子窗随
   await expect(restored.locator('.dv-tab').filter({ hasText: OUTPUT_TAB })).toBeVisible({ timeout: 15_000 });
 });
 
-test('只有终端的子窗:F6 / ⇧F6 在 tab ↔ 终端之间切换,Tab 从 tab 到「更多操作」', async () => {
+test('只有终端的子窗:F6 / ⇧F6 在 tab ↔ 终端之间切换,Tab 从 tab 到「打开视图…」', async () => {
   test.setTimeout(120_000);
   const { app, win } = await launch();
   const term = await newTerminal(win);
@@ -194,7 +194,7 @@ test('只有终端的子窗:F6 / ⇧F6 在 tab ↔ 终端之间切换,Tab 从 ta
   await expect(childTab).toBeFocused();
 
   // tab 上 Tab → 本组标题栏的操作按钮(「更多操作」可达)
-  const more = groupOf(childTab).getByRole('button', { name: EXPLORER_MORE_ACTIONS });
+  const more = groupOf(childTab).getByRole('button', { name: DOCK_OPEN_VIEW });
   for (let i = 0; i < 4; i += 1) {
     if (await more.evaluate((el) => el === document.activeElement)) break;
     await child.keyboard.press('Tab');

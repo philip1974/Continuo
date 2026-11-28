@@ -17,12 +17,15 @@ import { commandHotkeyText } from '@/lib/hotkey-label';
 import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
 
 /**
- * 面板类型 → 打开它的命令(菜单项右侧显示该命令当前生效键位,VSCode 菜单同款):新建终端 ⌘T、在文件中查找 ⇧⌘F、设置 ⌘,。
+ * 面板类型 → 打开它的命令(菜单项右侧显示该命令当前生效键位,VSCode 菜单同款):新建终端 ⌘T、在文件中查找 ⇧⌘F、设置 ⌘,、
+ * 调试 ⇧⌘D、输出 ⇧⌘U(与命令面板 / 显示菜单同一命令,键位一致)。
  */
 const PANEL_OPEN_COMMAND: ReadonlyMap<string, string> = new Map([
   [TERMINAL_PANEL_TYPE, 'terminal.new'],
   [SEARCH_PANEL_ID, 'workbench.action.findInFiles'],
   ['settings', 'settings.toggle'],
+  ['debug', 'workbench.view.debug'],
+  ['output', 'workbench.view.output'],
 ]);
 
 const POPOUT_ICON = (
@@ -53,7 +56,8 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
     labelDockTablist(header?.querySelector('.dv-tabs-container'), tl('shell.tab.dock_tablist'));
   });
   const popoutLabel = t('shell.dock.popout_title');
-  const moreActionsLabel = t('panels.explorer.btn.more_actions');
+  // 菜单内容是可打开的面板列表 → 名称同 VSCode「打开视图…」(workbench.action.openView),不叫「更多操作」
+  const openViewLabel = t('shell.dock.open_view');
   // 动态读取已注册 panel 类型(含内置 + 未来第三方插件)
   const registeredPanels = useRegistry(coApp.panels);
   const panelChoices = useMemo(() => registeredPanels.filter((p) => p.hidden !== true), [registeredPanels]);
@@ -145,9 +149,9 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
       <IconButton
         ref={triggerRef}
         size="sm"
-        // aria-label 走 i18n(打磨 R38),复用 more_actions 键,与 hover title 一致
-        aria-label={moreActionsLabel}
-        title={moreActionsLabel}
+        // aria-label 走 i18n(打磨 R38),与 hover title 一致
+        aria-label={openViewLabel}
+        title={openViewLabel}
         // a11y(A7,A6 同族):菜单触发须告知 AT 弹 role=menu 及当前展开态。
         aria-haspopup="menu"
         aria-expanded={open}

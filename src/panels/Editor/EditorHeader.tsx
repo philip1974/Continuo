@@ -51,7 +51,7 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { tabLabelDescriptions } from './tab-label-description';
 import { CONTENT_FOCUS_TARGET_SELECTOR, focusContentTarget } from '@/lib/content-focus-target';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
-import { commandHotkeyText } from '@/lib/hotkey-label';
+import { commandHotkeyText, useRegisteredCommandHotkeyText, withHotkey } from '@/lib/hotkey-label';
 import { CLOSE_ACTIVE_EDITOR_COMMAND, SPLIT_EDITOR_COMMAND } from './editor-commands';
 import { useGitStatus } from '@/panels/Explorer/hooks/useGitStatus';
 import { fileGitDecoration, GIT_KIND_LABEL_KEY, GIT_KIND_TEXT_CLASS } from '@/panels/Explorer/git-decorations';
@@ -386,6 +386,10 @@ export const EditorHeader = memo(function EditorHeader({
         { label: t('shell.tab.ctx.close_saved'), onSelect: close('saved'), opensDialog: true },
         { label: t('shell.tab.ctx.close_all'), onSelect: close('all'), opensDialog: true },
         'separator',
+        // 预览 tab:「保持打开」(VSCode EditorTitleContext 3_preview keepEditor;⌘K Enter 是和弦,不显示键位)
+        ...(tab.preview
+          ? ([{ label: t('shell.tab.ctx.keep_open'), onSelect: () => pinTab(tab.id, groupId) }, 'separator'] satisfies TabMenuEntry[])
+          : []),
         {
           label: t('panels.explorer.ctx.copy_path'),
           onSelect: () => void copyToClipboardOrNotify(tab.filePath, copyFailed),
@@ -418,8 +422,9 @@ export const EditorHeader = memo(function EditorHeader({
         ...dockGroupSizeMenuEntries(groupId, t),
       ];
     },
-    [onCloseTabsRequest, tabsChrome, t, groupId],
+    [onCloseTabsRequest, tabsChrome, t, groupId, pinTab],
   );
+  const closeTitle = withHotkey(t('shell.tab.close_tooltip'), useRegisteredCommandHotkeyText(coApp.commands, CLOSE_ACTIVE_EDITOR_COMMAND.id));
 
   const tabBarDrop = useEditorTabBarDrop(groupId);
 
@@ -500,6 +505,8 @@ export const EditorHeader = memo(function EditorHeader({
               dirtyLabel={t('panels.editor.unsaved_indicator')}
               // a11y(A106):icon-only 关闭按钮可访问名本地化(design 层无 i18n,调用点注入)。
               closeLabel={t('shell.tab.close', { title: tabTitle })}
+              // 悬停提示「关闭 (⌘W)」(VSCode tab 关闭按钮:动作名 + 当前生效键位)
+              closeTitle={closeTitle}
               title={isUntitledPath(tab.filePath) ? tabTitle : gitLabel === null ? tab.filePath : `${tab.filePath} · ${gitLabel}`}
               onSelect={() => switchTab(tab.id)}
               onMouseSelect={focusEditorContent}

@@ -202,7 +202,7 @@ describe('菜单「显示」的缩放项是命令项', () => {
     const items = flatten(
       appMenuTemplate(
         (k) => k,
-        { newWindow: vi.fn(), openFolderInNewWindow: vi.fn(), reloadWindow: vi.fn() },
+        { newWindow: vi.fn(), openFolderInNewWindow: vi.fn(), reloadWindow: vi.fn(), openHelpLink: vi.fn(), showAbout: vi.fn() },
         true,
         (id) => (keys[id] ? hotkeyToAccelerator(keys[id]!, true) : undefined),
       ),

@@ -110,7 +110,7 @@ describe('新建搜索面板:主窗网格最左侧的独立组', () => {
     const { api } = dockWith('editor');
     const group = api.getPanel('editor')!.group as IDockviewGroupPanel;
     render(<HeaderActions {...({ containerApi: api, group, activePanel: group.activePanel } as unknown as Parameters<typeof HeaderActions>[0])} />);
-    fireEvent.click(screen.getByRole('button', { name: t('panels.explorer.btn.more_actions') }));
+    fireEvent.click(screen.getByRole('button', { name: t('shell.dock.open_view') }));
     await act(async () => {
       fireEvent.click(await screen.findByRole('menuitem', { name: /^(搜索|Search|검색)/ }));
     });

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { EditorHeader } from '../../panels/Editor/EditorHeader';
 import { createTab, groupPreviewTabIdOf, useEditorStore } from '../../stores/editor.store';
+import { setLocale, t } from '../../i18n';
 import { coApp } from '../../plugins/co-app';
 import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegistry';
 
@@ -63,5 +64,31 @@ describe('预览 tab 的显示', () => {
     render(<EditorHeader onCloseRequest={vi.fn()} />);
     act(() => useEditorStore.getState().updateContent(B, 'x'));
     expect(tabEl('b.ts').querySelector('.italic')).toBeNull();
+  });
+});
+
+describe('预览 tab 右键「保持打开」(VSCode EditorTitleContext 3_preview keepEditor)', () => {
+  const items = (): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>('[role=menuitem]'));
+  const labelOf = (el: HTMLElement): string => el.querySelector('.wm-menu-item__content')?.textContent ?? '';
+  beforeEach(() => setLocale('zh'));
+  afterEach(() => setLocale('en'));
+
+  it('预览 tab 右键:关闭类之后一组「保持打开」(无键位:VSCode ⌘K Enter 是和弦);点击 → 转常驻', () => {
+    render(<EditorHeader onCloseRequest={vi.fn()} onCloseTabsRequest={vi.fn()} />);
+    fireEvent.contextMenu(tabEl(/^b\.ts，预览$/));
+    const labels = items().map(labelOf);
+    const keepOpen = t('shell.tab.ctx.keep_open');
+    expect(keepOpen).toBe('保持打开');
+    expect(labels.indexOf(keepOpen)).toBe(labels.indexOf(t('shell.tab.ctx.close_all')) + 1);
+    const item = items().find((el) => labelOf(el) === keepOpen)!;
+    expect(item.querySelector('.wm-menu-item__shortcut')).toBeNull();
+    fireEvent.click(item);
+    expect(groupPreviewTabIdOf(useEditorStore.getState(), 'editor')).toBeUndefined();
+  });
+
+  it('常驻 tab 右键没有「保持打开」', () => {
+    render(<EditorHeader onCloseRequest={vi.fn()} onCloseTabsRequest={vi.fn()} />);
+    fireEvent.contextMenu(tabEl('a.ts'));
+    expect(items().map(labelOf)).not.toContain(t('shell.tab.ctx.keep_open'));
   });
 });

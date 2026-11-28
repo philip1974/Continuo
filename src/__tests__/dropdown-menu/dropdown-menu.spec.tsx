@@ -110,7 +110,7 @@ describe('dock 面板头部「⋯」菜单', () => {
     }) as unknown as Parameters<typeof HeaderActions>[0];
   const openMenu = async () => {
     render(<HeaderActions {...props()} />);
-    fireEvent.click(screen.getByRole('button', { name: t('panels.explorer.btn.more_actions') }));
+    fireEvent.click(screen.getByRole('button', { name: t('shell.dock.open_view') }));
     await frame();
     expect(screen.queryByRole('menu')).not.toBeNull();
     return screen.getByRole('button', { name: t('shell.dock.popout_title') });
@@ -136,7 +136,7 @@ describe('dock 面板头部「⋯」菜单', () => {
 
   it('点触发按钮本身仍是切换(按下不关,点击关)', async () => {
     await openMenu();
-    const trigger = screen.getByRole('button', { name: t('panels.explorer.btn.more_actions') });
+    const trigger = screen.getByRole('button', { name: t('shell.dock.open_view') });
     fireEvent.pointerDown(trigger);
     expect(screen.queryByRole('menu')).not.toBeNull();
     fireEvent.click(trigger);

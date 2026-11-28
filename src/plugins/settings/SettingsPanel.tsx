@@ -7,7 +7,8 @@
 // BDD: src/__tests__/settings-panel/
 
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Input } from '@/design';
+import { IconButton, Input, MenuItem } from '@/design';
+import { DropdownMenu } from '@/lib/dropdown-menu';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { isImeComposing } from '@/design/ime';
 import { clampSearchQuery, normalizeSearchQuery } from '@/lib/search-query';
@@ -190,6 +191,44 @@ function includesAllWords(haystack: string, words: readonly string[]): boolean {
 
 const NEVER_MODIFIED = (): boolean => false;
 
+/** 「已修改」过滤标签(VSCode MODIFIED_SETTING_TAG)与「设置 ID」过滤前缀(ID_SETTING_TAG)。 */
+export const MODIFIED_FILTER_TAG = '@modified';
+export const ID_FILTER_TAG = '@id:';
+
+/** 查询里是否已有该过滤标签(按空格拆词整词比较,VSCode createToggleAction)。 */
+export function hasSettingsQueryTag(query: string, tag: string): boolean {
+  return query.split(' ').includes(tag);
+}
+
+/** 过滤菜单的勾选项:查询里没有该标签 → 追加到末尾(空格分隔);已有 → 去掉(VSCode settingsSearchMenu createToggleAction)。 */
+export function toggleSettingsQueryTag(query: string, tag: string): string {
+  if (hasSettingsQueryTag(query, tag)) return query.split(' ').filter((word) => word !== tag).join(' ');
+  return appendSettingsQueryTag(query, tag);
+}
+
+/** 过滤菜单的普通项:把标签追加到查询末尾(VSCode doSearchWidgetAction;如 `@id:` 之后接着键入 id)。 */
+export function appendSettingsQueryTag(query: string, tag: string): string {
+  const trimmed = query.trimEnd();
+  return trimmed === '' ? tag : `${trimmed} ${tag}`;
+}
+
+/** Lucide list-filter(漏斗位的「筛选」图标,VSCode preferencesFilterIcon = codicon filter)。 */
+const FILTER_ICON = (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M22 3H2l8 9.46V19l4 2v-8.54z" />
+  </svg>
+);
+
 /**
  * @param isModified `@modified` 过滤用:该 id 是否已修改(有 override)。
  */
@@ -262,6 +301,16 @@ export function SettingsPanel({
   }, [tabs]);
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+  // 搜索框右侧「筛选设置」菜单(VSCode SettingsSearchFilterDropdownMenuActionViewItem):已修改(勾选切换 @modified)/ 设置 ID…
+  //(追加 @id:);选中后焦点回搜索框。
+  const filterTriggerRef = useRef<HTMLButtonElement>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const applyFilter = (next: string) => {
+    setQuery(clampSearchQuery(next));
+    setFilterOpen(false);
+    searchRef.current?.focus();
+  };
+  const filterLabel = t('settings.panel.filter');
   // 带查询打开(openSettingsWithQuery):挂载时 / 已打开时收到请求 → 取走、填入并聚焦搜索框(VSCode openSettings2 focusSearch)。
   const pendingSearchQuery = useSettingsStore((s) => s.pendingSearchQuery);
   useLayoutEffect(() => {
@@ -279,7 +328,7 @@ export function SettingsPanel({
 
   return (
     <div className="@container/settings flex h-full flex-col bg-canvas">
-      <div className="border-b border-line bg-panel-soft/50 p-3">
+      <div className="flex items-center gap-2 border-b border-line bg-panel-soft/50 p-3">
         <Input
           ref={searchRef}
           size="sm"
@@ -297,7 +346,35 @@ export function SettingsPanel({
           }}
           // 改 search 时回到搜索结果区,避免左侧 nav 视觉错位
           autoFocus
+          className="min-w-0 flex-1"
         />
+        <IconButton
+          ref={filterTriggerRef}
+          size="sm"
+          aria-label={filterLabel}
+          title={filterLabel}
+          aria-haspopup="menu"
+          aria-expanded={filterOpen}
+          onClick={() => setFilterOpen((v) => !v)}
+          className="shrink-0"
+        >
+          {FILTER_ICON}
+        </IconButton>
+        <DropdownMenu open={filterOpen} onOpenChange={setFilterOpen} triggerRef={filterTriggerRef}>
+          {() => (
+            <>
+              <MenuItem
+                checked={hasSettingsQueryTag(query, MODIFIED_FILTER_TAG)}
+                onClick={() => applyFilter(toggleSettingsQueryTag(query, MODIFIED_FILTER_TAG))}
+              >
+                {t('settings.panel.filter_modified')}
+              </MenuItem>
+              <MenuItem onClick={() => applyFilter(appendSettingsQueryTag(query, ID_FILTER_TAG))}>
+                {t('settings.panel.filter_id')}
+              </MenuItem>
+            </>
+          )}
+        </DropdownMenu>
       </div>
       <div className="flex min-h-0 flex-1">
         <nav ref={navRef} className={settingsNavClassName(inSearch)} aria-label={t('settings.panel.nav_aria')}>

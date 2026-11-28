@@ -4,7 +4,7 @@ import { SETTINGS } from './helpers/settings';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 import { dispatchModKey } from './helpers/hotkeys';
 
-const SETTINGS_TITLE = /(切换设置|Toggle Settings|설정 토글)/;
+const SETTINGS_TITLE = /(打开设置|Open Settings|설정 열기)/;
 
 test('执行 settings.toggle → 关 + 重开 → recent 第一项是 Settings 相关', async ({
   window,

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { EDITOR_MODE_EDIT, EDITOR_MODE_SOURCE, TERMINAL_INPUT, editorModeButton, openWorkspaceFile } from './helpers/editor';
-import { EXPLORER_MORE_ACTIONS } from './helpers/explorer';
+import { DOCK_OPEN_VIEW } from './helpers/explorer';
 import { TERMINAL_TAB } from './helpers/settings';
 import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
@@ -28,7 +28,7 @@ const editorDockTab = (win: Page): Locator =>
 /** 在编辑器所在组里经「更多操作」加一个终端(加入同组并成为活动面板,编辑器内容被 dockview 卸下)。 */
 async function addTerminalToEditorGroup(win: Page): Promise<void> {
   const group = win.locator('.dv-groupview').filter({ has: editorDockTab(win) }).first();
-  await group.getByRole('button', { name: EXPLORER_MORE_ACTIONS }).click();
+  await group.getByRole('button', { name: DOCK_OPEN_VIEW }).click();
   await win.getByRole('menu').last().getByRole('menuitem', { name: TERMINAL_TAB }).click();
   await expect(win.getByRole('textbox', { name: TERMINAL_INPUT })).toBeFocused({ timeout: 15_000 });
   // 终端与编辑器同组(同一 tab 条)

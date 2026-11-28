@@ -13,13 +13,13 @@
 | 菜单 | 命令项(命令 id) |
 |---|---|
 | 应用(macOS) | 首选项 ▸ 设置…(`settings.toggle`)、键盘快捷方式(`workbench.action.openGlobalKeybindings`);其余 role 项不变 |
-| 文件 | 新建窗口、打开文件夹…(`workbench.action.files.openFolder`)、在新窗口中打开文件夹…、打开最近的文件夹…(`workbench.action.openRecent`)、全部保存(`workbench.action.files.saveAll`)、自动保存(勾选项 `workbench.action.toggleAutoSave`,见 `files-auto-save`)、[Windows / Linux:首选项 ▸]、关闭窗口 |
+| 文件 | 新建窗口、打开文件夹…(`workbench.action.files.openFolder`)、在新窗口中打开文件夹…、打开最近的文件夹…(`workbench.action.openRecent`)、重新打开已关闭的编辑器、全部保存(`workbench.action.files.saveAll`)、自动保存(勾选项 `workbench.action.toggleAutoSave`,见 `files-auto-save`)、[Windows / Linux:首选项 ▸]、还原文件 / 关闭编辑器 / 关闭文件夹 / 关闭窗口(见 `entry-discoverability`) |
 | 编辑 | 撤销 / 重做(按焦点分派,见第 6 条)、剪切 / 复制 / 粘贴…(role 不变)、查找(`actions.find`)、替换(`editor.action.startFindReplaceAction`)、在文件中查找(`workbench.action.findInFiles`)、切换行注释 / 块注释(`editor.action.commentLine` / `blockComment`) |
 | 选择 | 全选(role)、展开行选择(`expandLineSelection`)、向上 / 向下复制一行、向上 / 向下移动一行、在上面 / 下面添加光标、添加下一个匹配项(`addSelectionToNextFindMatch`)、选择所有匹配项(`selectHighlights`) |
-| 显示 | 命令面板…(`workbench.action.showCommands`)、资源管理器(`workbench.view.explorer`)、搜索(`workbench.action.findInFiles`)、终端(`workbench.action.terminal.toggleTerminal`)、输出(`workbench.view.output`)、切换侧栏(`explorer.toggleSidebar`)、自动换行(`editor.action.toggleWordWrap`)、重置缩放 / 放大 / 缩小(`workbench.action.zoomReset` / `zoomIn` / `zoomOut`,所有窗口统一,见 `src/__tests__/window-zoom/`);重新加载 / 开发者工具 / 全屏不变 |
-| 转到 | 返回 / 前进(`navigateBack` / `navigateForward`)、转到文件…(`quickOpen`)、转到编辑器中的符号…(`gotoSymbol`)、转到行/列…(`gotoLine`)、下一个 / 上一个编辑器 |
+| 显示 | 命令面板…(`workbench.action.showCommands`)、编辑器布局 ▸ 向右 / 向下拆分、资源管理器(`workbench.view.explorer`)、搜索(`workbench.action.findInFiles`)、运行(`workbench.view.debug`)、终端(`workbench.action.terminal.toggleTerminal`)、输出(`workbench.view.output`)、切换侧栏(`explorer.toggleSidebar`)、自动换行(`editor.action.toggleWordWrap`)、重置缩放 / 放大 / 缩小(`workbench.action.zoomReset` / `zoomIn` / `zoomOut`,所有窗口统一,见 `src/__tests__/window-zoom/`);重新加载 / 开发者工具 / 全屏不变 |
+| 转到 | 返回 / 前进(`navigateBack` / `navigateForward`)、转到文件…(`quickOpen`)、转到编辑器中的符号…(`gotoSymbol`)、转到定义、转到行/列…(`gotoLine`)、转到括号、下一个问题、下一个 / 上一个编辑器、切换组 ▸ |
 | 终端 | 新建终端(`terminal.new`)、切换终端(`workbench.action.terminal.toggleTerminal`) |
-| 帮助(role help) | 显示所有命令、键盘快捷方式参考(= 打开键盘快捷方式;VSCode 打开 PDF 速查表) |
+| 帮助(role help) | 显示所有命令、文档、显示发行说明、键盘快捷方式参考(= 打开键盘快捷方式;VSCode 打开 PDF 速查表)、报告问题、[Windows / Linux:关于](外链与关于见 `entry-discoverability`) |
 
 - 每个标签三语齐全(`menu.*`),界面语言切换时菜单整体重建(既有 `setMenuRebuilder`)
 - 原生编辑项(cut / copy / selectAll…)保留 role;撤销 / 重做是自定义项(第 6 条)
@@ -82,8 +82,8 @@ VSCode 菜单的撤销 / 重做是 `undo` / `redo` 多实现命令(`UndoCommand.
 
 ## 与 VSCode 的差异
 
-- 只取关键入口;没有 打开最近 ▸ 子菜单(打开的是最近文件夹选择器)、Run 菜单、扩展 / 源代码管理等视图
-- 首选项 ▸ 设置 = `settings.toggle`(已显示时再点会关闭,与 ⌘, 一致)
+- 只取关键入口;没有 打开最近 ▸ 子菜单(打开的是最近文件夹选择器)、Run 菜单、扩展 / 源代码管理等视图(显示 ▸ 运行 = 调试视图)
+- 首选项 ▸ 设置 = `settings.toggle`(命令面板标题「首选项: 打开设置」;已显示时再点会关闭,与 ⌘, 一致)
 - 帮助 → 键盘快捷方式参考打开设置的快捷键页(VSCode 打开 PDF)
 - 选择菜单的「展开行选择」对应 `expandLineSelection`(VSCode 选择菜单是语法级「扩大选区」)
 - 编辑菜单保留「全选」(选择菜单也有)

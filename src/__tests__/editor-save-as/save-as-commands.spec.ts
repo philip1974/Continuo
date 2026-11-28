@@ -42,7 +42,7 @@ describe('命令与默认键(对齐 VSCode)', () => {
 
 describe('文件菜单', () => {
   const t = (key: string): string => key;
-  const actions = { newWindow: vi.fn(), openFolderInNewWindow: vi.fn(), reloadWindow: vi.fn() };
+  const actions = { newWindow: vi.fn(), openFolderInNewWindow: vi.fn(), reloadWindow: vi.fn(), openHelpLink: vi.fn(), showAbout: vi.fn() };
   const fileMenu = (): Item[] => {
     const m = appMenuTemplate(t as never, actions, true, () => undefined).find((x) => x.label === 'menu.file.label');
     return m!.submenu as Item[];

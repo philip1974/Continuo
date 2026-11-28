@@ -1,7 +1,7 @@
 # HeaderActions(Dockview group header 自定义按钮)
 
 行为契约:**Dockview header 右侧两个 IconButton:popout(弹出活动 panel 到独立窗口) +
-更多操作菜单(列出 PanelRegistry 全部 panel 类型,点击 addPanel 到当前 group)。
+「打开视图…」菜单(VSCode workbench.action.openView 同名;此前叫「更多操作」;列出 PanelRegistry 全部 panel 类型,点击 addPanel 到当前 group)。
 activePanel=null 时 popout 按钮 disabled;popout 窗口内(组 `group.api.location.type === 'popout'`)不显示 popout 按钮。点更多 → 切 menu;点 menu 外 pointerdown → 关菜单。**
 
 ## 模块
@@ -20,7 +20,7 @@ activePanel=null 时 popout 按钮 disabled;popout 窗口内(组 `group.api.loca
 - activePanel 有 → 点击调 containerApi.addPopoutGroup(activePanel, { popoutUrl })
 - addPopoutGroup reject **或** resolve false(弹窗被拦截)→ notify.error(`shell.dock.popout_failed`)
 
-### 更多操作菜单
+### 「打开视图…」菜单
 
 - 默认关闭(open=false)
 - 点击切换 open

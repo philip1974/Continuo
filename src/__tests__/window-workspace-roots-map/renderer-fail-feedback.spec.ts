@@ -198,7 +198,7 @@ describe('window-workspace-roots-map: renderer terminal create failure feedback'
     });
     const { getByRole } = renderHeaderActions();
 
-    fireEvent.click(getByRole('button', { name: t('panels.explorer.btn.more_actions') }));
+    fireEvent.click(getByRole('button', { name: t('shell.dock.open_view') }));
     const terminalItem = await waitFor(() =>
       getByRole('menuitem', { name: 'Terminal' }),
     );

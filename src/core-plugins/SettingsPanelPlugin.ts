@@ -1,6 +1,6 @@
 // 内置 Settings Panel 插件(v5 Phase 5,VSCode 同款)。
 //
-// 注册 'settings' panel 类型 + 命令 'settings.toggle'(⌘,)。命令是 toggle:
+// 注册 'settings' panel 类型 + 命令 'settings.toggle'(⌘,,标题「首选项: 打开设置」)。命令是 toggle:
 // 不存在 → 打开 + 收起侧栏;已 active → 关闭;已存在但非 active → 聚焦。
 //
 // BDD:
@@ -39,10 +39,13 @@ export default class SettingsPanelPlugin extends Plugin {
 
     this.addCommand({
       id: 'settings.toggle',
-      title: 'Toggle Settings',
-      titleKey: 'commands.settings.toggle.title',
-      category: 'Settings',
-      categoryKey: 'commands.settings.category',
+      // VSCode「Preferences: Open Settings」(workbench.action.openSettings,⌘,):标题 / 分类同 VSCode,便于按「打开设置」搜到;
+      // 行为仍是 toggle(已显示时再按关闭,见文件头)。
+      title: 'Open Settings',
+      titleKey: 'commands.preferences.open_settings.title',
+      category: 'Preferences',
+      categoryKey: 'commands.preferences.category',
+      keywordsKey: 'commands.preferences.open_settings.keywords',
       hotkey: 'mod+,',
       fn: () => toggleSettingsPanel(),
     });

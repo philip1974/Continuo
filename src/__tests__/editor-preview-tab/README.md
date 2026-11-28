@@ -30,7 +30,8 @@ tab 标题斜体;以预览方式再打开别的文件时**原位替换**它,不�
    (VSCode 连点两个文件只剩后一个预览 tab);常驻打开被超越时照旧只在后台加入。
 3. **常驻打开**:资源管理器双击 / Enter、新建文件、⌘P(含 `文件:行`)、搜索结果双击 / Enter —— 新 tab 常驻;文件已是预览 tab → 转常驻。
    其它打开方式(后退 / 前进、⇧⌘T、链接、终端链接、插件 `editor.openFile`、会话恢复):新 tab 常驻,已开着的不变。
-4. **转为常驻**:内容变脏(编辑)、保存(各组)、双击预览 tab、「保留编辑器」命令(`workbench.action.keepEditor`,三语标题,
+4. **转为常驻**:内容变脏(编辑)、保存(各组)、双击预览 tab、预览 tab 右键「保持打开」(VSCode `EditorTitleContext` `3_preview`
+   组 `keepEditor`「Keep Open」,紧跟关闭类之后;常驻 tab 不显示该项 —— VSCode 是置灰;⌘K Enter 为和弦,不显示键位)、「保留编辑器」命令(`workbench.action.keepEditor`,三语标题,
    无默认键,只进命令面板;作用于触发窗口的编辑器组的活动 tab)、资源管理器双击 / Enter、⌘P 打开该文件。
    在预览 tab 里滚动、移动光标不算(VSCode 同)。脏 tab 一定常驻,所以替换不会丢改动(替换前先回写编辑器里未上抛的输入)。
 5. **显示**:预览 tab 的标题斜体(`italic`,颜色 token 不变);tab 的可访问名称追加「，预览」(en `, preview` / ko `, 미리보기`;
@@ -55,5 +56,5 @@ tab 标题斜体;以预览方式再打开别的文件时**原位替换**它,不�
 - `editor-preview-open.spec.ts`:openFileByPath 的打开方式(预览 / 常驻 / 缺省、双击竞态)、设置开关、保留编辑器命令、保存即常驻
 - `editor-preview-entry-points.spec.tsx`:资源管理器单击 / 双击 / Enter、搜索结果单击与其它方式的打开选项
 - `editor-preview-navigation.spec.ts`:被替换的预览文件后退 / 前进、⇧⌘T 重新打开常驻
-- `editor-preview-header.spec.tsx`:斜体标题、双击 tab 转常驻、可访问名称不变
+- `editor-preview-header.spec.tsx`:斜体标题、双击 tab 转常驻、可访问名称不变、预览 tab 右键「保持打开」
 - `editor-preview-persist.spec.ts`:会话快照写出 / 恢复、旧数据

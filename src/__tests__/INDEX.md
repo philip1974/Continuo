@@ -878,6 +878,12 @@
 
 - [`empty-workspace.spec.tsx`](./empty-workspace/empty-workspace.spec.tsx)
 
+## [功能入口可发现性(对齐 VSCode 菜单 / 活动栏 / 命令面板 / 过滤菜单)](./entry-discoverability/README.md)
+
+- [`app-menu-entries.spec.ts`](./entry-discoverability/app-menu-entries.spec.ts)
+- [`palette-entries.spec.ts`](./entry-discoverability/palette-entries.spec.ts)
+- [`ui-entries.spec.tsx`](./entry-discoverability/ui-entries.spec.tsx)
+
 ## [event-bus(Continuo 自定义事件总线 + Plugin.registerEvent)](./event-bus/README.md)
 
 - [`event-bus.spec.ts`](./event-bus/event-bus.spec.ts)

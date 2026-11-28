@@ -9,7 +9,7 @@ export const QUICK_OPEN_SEARCH = /^(搜索文件|Search files|파일 검색)$/;
 export const QUICK_OPEN_PLACEHOLDER = /(搜索文件名|Search file name|파일 이름)/;
 export const QUICK_OPEN_NO_WORKSPACE =
   /(请先在资源管理器中打开工作区|Please open a workspace in Explorer first|먼저 탐색기에서 워크스페이스를 여세요)/;
-const SETTINGS_COMMAND_TITLE = /(切换设置|Toggle Settings|설정 토글)/;
+const SETTINGS_COMMAND_TITLE = /(打开设置|Open Settings|설정 열기)/;
 
 async function waitForShell(window: Page): Promise<void> {
   await expect(window.getByRole('button', { name: SETTINGS_BUTTON })).toBeVisible({
@@ -54,11 +54,11 @@ export function settingsCommandOption(window: Page): Locator {
 }
 
 /**
- * 命令面板里按英文原名筛出「切换设置」(非英文界面也按英文原名匹配)并返回该项。空查询的列表按标题排序、只渲染可见范围附近的行,
+ * 命令面板里按英文原名筛出「首选项: 打开设置」(非英文界面也按英文原名匹配)并返回该项。空查询的列表按标题排序、只渲染可见范围附近的行,
  * 新增命令会把它挤出渲染范围 —— 用例不依赖它在完整列表里的位置。
  */
 export async function filterToSettingsCommand(window: Page): Promise<Locator> {
-  await commandPaletteInput(window).fill('Toggle Settings');
+  await commandPaletteInput(window).fill('Open Settings');
   return settingsCommandOption(window);
 }
 

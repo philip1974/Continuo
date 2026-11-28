@@ -1,10 +1,10 @@
-// CommandPalette 列表项含本地化 category prefix:'Settings: Toggle Settings'.
+// CommandPalette 列表项含本地化 category prefix:'Preferences: Open Settings'(首选项: 打开设置).
 import { test, expect } from './fixtures/electron-app';
 import { SETTINGS } from './helpers/settings';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 
-const SETTINGS_CATEGORY = /(设置|Settings|설정)/;
-const SETTINGS_TITLE = /(切换设置|Toggle Settings|설정 토글)/;
+const SETTINGS_CATEGORY = /(首选项|Preferences|기본 설정)/;
+const SETTINGS_TITLE = /(打开设置|Open Settings|설정 열기)/;
 
 test('settings.toggle 命令显本地化 category 前缀 + title', async ({ window }) => {
   // 等就绪
@@ -28,7 +28,7 @@ test('settings.toggle 命令显本地化 category 前缀 + title', async ({ wind
   const input = window.getByRole('combobox', { name: COMMAND_SEARCH });
   await expect(input).toBeVisible();
   // 按英文原名筛出该项(空查询的列表只渲染可见范围附近的行,不依赖它在完整列表里的位置)
-  await input.fill('Toggle Settings');
+  await input.fill('Open Settings');
 
   const settingsOption = window
     .getByRole('listbox', { name: COMMAND_LIST })

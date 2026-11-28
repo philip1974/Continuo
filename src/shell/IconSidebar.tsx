@@ -1,5 +1,6 @@
 // 48px 竖向 Activity Bar(VSCode 风),Dockview 之外、main 之内。
-// 顶部:内置导航(Explorer)。中段:plugin 通过 ribbon 贡献的图标。
+// 顶部:内置导航(VSCode 活动栏默认顺序 资源管理器 / 搜索 / 源代码管理 / 运行和调试 / 扩展,取本项目有的:资源管理器、搜索、
+// 运行和调试)。中段:plugin 通过 ribbon 贡献的图标。
 // 底部:Settings 等元类(产品无账户体系,不放账户头像 chip)。
 // Explorer 按钮 toggle 左侧 Explorer Sidebar 显隐(active 状态显示左侧 accent bar);
 // Settings 按钮开关 Settings 面板。
@@ -12,7 +13,7 @@ import { coApp } from '@/plugins/co-app';
 import { PluginRenderBoundary } from '@/plugins/PluginRenderBoundary';
 import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
 import { useAvailableUpdates } from '@/marketplace/update-store';
-import { runContributedAction } from '@/lib/run-contributed-action';
+import { runContributedAction, runRegisteredCommand } from '@/lib/run-contributed-action';
 import { useT } from '@/i18n';
 import { useRegisteredCommandHotkeyText, withHotkey } from '@/lib/hotkey-label';
 
@@ -50,8 +51,55 @@ function SettingsGearIcon({ size }: { size: number }) {
   );
 }
 
+/** Lucide search(放大镜,stroke 风格同齿轮)。 */
+function SearchIcon({ size }: { size: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-4.3-4.3" />
+    </svg>
+  );
+}
+
+/** 运行和调试(仿 VSCode codicon debug-alt:播放三角 + 小虫;stroke 风格同齿轮)。 */
+function RunDebugIcon({ size }: { size: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 3.5v11l7.5-5.5z" />
+      <rect x="14" y="12" width="7" height="9" rx="3.5" />
+      <path d="M15.5 12l-1-1.5M19.5 12l1-1.5M14 16.5h-2M21 16.5h2" />
+    </svg>
+  );
+}
+
 const EXPLORER_ICON = <Folder width={ICON_SIZE} height={ICON_SIZE} />;
+const SEARCH_ICON = <SearchIcon size={ICON_SIZE} />;
+const RUN_DEBUG_ICON = <RunDebugIcon size={ICON_SIZE} />;
 const SETTINGS_ICON = <SettingsGearIcon size={ICON_SIZE} />;
+
+/** 活动栏「搜索」/「运行和调试」执行的命令(VSCode workbench.view.search ⇧⌘F / workbench.view.debug ⇧⌘D)。 */
+const ACTIVITY_SEARCH_COMMAND_ID = 'workbench.action.findInFiles';
+const ACTIVITY_DEBUG_COMMAND_ID = 'workbench.view.debug';
 
 export function IconSidebar() {
   const t = useT();
@@ -62,6 +110,8 @@ export function IconSidebar() {
   const updateCount = useAvailableUpdates().length;
   const toggleSidebarHotkey = useRegisteredCommandHotkeyText(coApp.commands, 'explorer.toggleSidebar');
   const settingsHotkey = useRegisteredCommandHotkeyText(coApp.commands, 'settings.toggle');
+  const searchHotkey = useRegisteredCommandHotkeyText(coApp.commands, ACTIVITY_SEARCH_COMMAND_ID);
+  const debugHotkey = useRegisteredCommandHotkeyText(coApp.commands, ACTIVITY_DEBUG_COMMAND_ID);
 
   const explorerLabel = sidebarOpen ? t('shell.iconbar.hide_explorer') : t('shell.iconbar.show_explorer');
   const explorerItem: IconBarItemConfig = {
@@ -72,6 +122,28 @@ export function IconSidebar() {
     onClick: toggleSidebar,
     active: sidebarOpen,
   };
+  // 打开 / 聚焦对应面板(与 ⇧⌘F / ⇧⌘D 同一命令;命令抛错弹 error toast)
+  const commandItem = (id: string, commandId: string, label: string, hotkey: string | undefined, node: React.ReactNode) => ({
+    id,
+    label,
+    tooltip: withHotkey(label, hotkey),
+    node,
+    onClick: () => void runRegisteredCommand(coApp.commands, commandId, label),
+  });
+  const searchItem: IconBarItemConfig = commandItem(
+    'search',
+    ACTIVITY_SEARCH_COMMAND_ID,
+    t('shell.iconbar.search'),
+    searchHotkey,
+    SEARCH_ICON,
+  );
+  const debugItem: IconBarItemConfig = commandItem(
+    'debug',
+    ACTIVITY_DEBUG_COMMAND_ID,
+    t('shell.iconbar.run_debug'),
+    debugHotkey,
+    RUN_DEBUG_ICON,
+  );
   const settingsUpdateTooltip =
     updateCount > 0
       ? t('shell.iconbar.updates_tooltip', { count: updateCount })
@@ -106,6 +178,8 @@ export function IconSidebar() {
     <aside className="flex w-12 shrink-0 flex-col items-center justify-between border-r border-line bg-panel py-2">
       <div className="flex flex-col items-center gap-1">
         {renderItem(explorerItem)}
+        {renderItem(searchItem)}
+        {renderItem(debugItem)}
         {ribbonActions.length > 0 && (
           <span
             className="my-1 h-px w-6 bg-line"
