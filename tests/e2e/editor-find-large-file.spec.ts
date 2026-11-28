@@ -3,7 +3,7 @@
 // 修前每键 ~560–600ms(计数在按键里同步整篇扫描,回车由 CodeMirror findNext 再整篇搜索)。
 // BDD: src/__tests__/editor-find-widget/
 import { expect, test, type Page } from '@playwright/test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { closeDiscardingUnsaved } from './helpers/close-app';
@@ -161,6 +161,85 @@ test('8 万行日志:选中只出现一次的词后 ⌘D / ⇧⌘L 每键 < 150m
       expect(addNext).toBeLessThan(KEY_BUDGET_MS);
       expect(selectAll).toBeLessThan(KEY_BUDGET_MS);
     } finally {
+      await closeDiscardingUnsaved(app);
+    }
+  } finally {
+    rmSync(ud, { recursive: true, force: true });
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+// 第七十轮:大文档里光标在词内按 ⇧⌘L / ⌘F2 —— 修前先派发「选中当前词」事务,后台分片扫描随即被任何事务(后台解析等)作废,
+// 只剩选中的那个词。修后直接用光标处单词开始扫描,扫描期间只看文档变化;日志在末尾持续追加时也能完成。
+// BDD: src/__tests__/editor-text-commands/ 第 6 条。8 万行 ≈ 8.4 MB。
+test('8 万行日志:光标在词内 ⇧⌘L 选中全部出现处(含持续追加时),⌘F2 同', async () => {
+  test.setTimeout(180_000);
+  const ud = mkdtempSync(path.join(tmpdir(), 'ui214-ud-'));
+  const ws = mkdtempSync(path.join(tmpdir(), 'ui214-ws-'));
+  let appender: ReturnType<typeof setInterval> | undefined;
+  try {
+    const WORD = 'tripword';
+    const lines = bigLog(80_000).split('\n');
+    for (const at of [10, 40_000, 79_990]) lines[at] = `${lines[at]} ${WORD} marker`;
+    const file = path.join(ws, 'big.log');
+    writeFileSync(file, lines.join('\n'));
+    seedExplorerJson(ud, { root: ws });
+    const app = await launchContinuo(ud);
+    try {
+      const win = await app.firstWindow();
+      await win.waitForLoadState('domcontentloaded');
+      const cdp = await win.context().newCDPSession(win);
+      await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+      await win.locator('text=big.log').first().click();
+      await expect(win.locator('.cm-content')).toBeVisible({ timeout: 30_000 });
+      await win.locator('.cm-content').click();
+      const status = win.locator('[data-statusbar-selection]');
+      /** 活动编辑器的全部选区文本(CodeMirror 视图挂在 .cm-content 的 cmTile 上)。 */
+      const selections = () =>
+        win.evaluate(() => {
+          type View = { state: { selection: { ranges: Array<{ from: number; to: number }> }; sliceDoc(a: number, b: number): string } };
+          const content = document.querySelector('main .cm-content') as unknown as { cmTile?: { root?: { view?: View } } } | null;
+          const view = content?.cmTile?.root?.view;
+          return view ? view.state.selection.ranges.map((r) => view.state.sliceDoc(r.from, r.to)) : null;
+        });
+      /** 经查找跳到第一个 WORD,Esc 关查找条,光标移进词内(空选区)。 */
+      const caretInWord = async () => {
+        await win.keyboard.press('ControlOrMeta+KeyF');
+        await win.keyboard.press('ControlOrMeta+KeyA');
+        await win.keyboard.type(WORD);
+        await expect(win.locator('.cm-search .cm-search-count')).toHaveText(/\b3\b/, { timeout: 10_000 });
+        await win.keyboard.press('Enter');
+        await win.keyboard.press('Escape');
+        await win.keyboard.press('ArrowLeft');
+        await win.keyboard.press('ArrowRight');
+        await win.keyboard.press('ArrowRight');
+      };
+
+      await caretInWord();
+      await win.keyboard.press('ControlOrMeta+Shift+KeyL');
+      await expect.poll(selections, { timeout: 10_000 }).toEqual([WORD, WORD, WORD]);
+      await expect(status).toHaveText(/^3\D/);
+
+      // ⌘F2(更改所有匹配项)同一实现
+      await caretInWord();
+      await win.keyboard.press('ControlOrMeta+F2');
+      await expect.poll(selections, { timeout: 10_000 }).toEqual([WORD, WORD, WORD]);
+
+      // 日志在末尾持续追加(每 50ms 一行,最多 60 行;外部修改自动重载)期间按 ⇧⌘L
+      await caretInWord();
+      let n = 0;
+      appender = setInterval(() => {
+        if (++n > 60) return clearInterval(appender);
+        appendFileSync(file, `\n${String(n).padStart(6, '0')} INFO appended ${n % 3 === 0 ? WORD : 'plain'} line`);
+      }, 50);
+      await win.waitForTimeout(400);
+      await win.keyboard.press('ControlOrMeta+Shift+KeyL');
+      await expect.poll(async () => (await selections())?.length ?? 0, { timeout: 15_000 }).toBeGreaterThanOrEqual(3);
+      expect(n).toBeGreaterThan(5); // 扫描期间确实在追加
+      clearInterval(appender);
+      expect(new Set(await selections())).toEqual(new Set([WORD]));
+    } finally {
+      clearInterval(appender);
       await closeDiscardingUnsaved(app);
     }
   } finally {
