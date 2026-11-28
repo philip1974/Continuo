@@ -196,6 +196,20 @@ describe('Markdown 编辑模式 ⌘F', () => {
     expect(countText()).toContain('5');
   });
 
+  it('查找条打开时在正文段落里编辑(无后续事务):匹配按编辑后的文档立即重算,不落后一次输入', async () => {
+    const { pm, view, container } = await mount(DOC);
+    openFind(pm);
+    typeQuery('alpha');
+    // 第一个段落内容起点 = 标题节点 `Alpha title` 之后(标题节点大小 = 文字 + 首尾 2)
+    const pos = 'Alpha title'.length + 2;
+    expect(view.state.doc.textBetween(pos + 1, pos + 6)).toBe('alpha');
+    act(() => view.dispatch(view.state.tr.insertText('alpha ', pos + 1)));
+    expect(container.querySelectorAll('.co-find-match')).toHaveLength(5);
+    expect(countText()).toContain('5');
+    const marked = [...container.querySelectorAll('.co-find-match')].map((e) => e.textContent?.toLowerCase());
+    expect(marked).toEqual(['alpha', 'alpha', 'alpha', 'alpha', 'alpha']);
+  });
+
   it('Esc 关闭:高亮清除,焦点回编辑区,选区停在当前匹配;已打开时再按 ⌘F 重新聚焦并全选查找词', async () => {
     const { pm, view, container } = await mount(DOC);
     openFind(pm);

@@ -126,7 +126,9 @@ function withDecorations(
   return { query, matches, current, revealed, decorations: DecorationSet.create(doc, decos) };
 }
 
-function applyFind(tr: Transaction, prev: FindState, state: EditorState): FindState {
+// 第 3 个参数是事务前的旧状态:匹配 / 选区须按事务后的新状态算(此前误用旧状态,编辑后匹配落后一次输入,
+// 一直被标题 id 同步紧随其后的第二个事务掩盖)。
+function applyFind(tr: Transaction, prev: FindState, _oldState: EditorState, state: EditorState): FindState {
   const meta = tr.getMeta(findKey) as FindMeta | undefined;
   const { from, to } = state.selection;
   if (meta && 'reveal' in meta) {
