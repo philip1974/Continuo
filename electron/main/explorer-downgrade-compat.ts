@@ -7,9 +7,10 @@
 // - 其余字段写旁挂文件 explorer-ext.json(按 windowSeq 对应窗口段),读时合并回去。旁挂文件缺失 / 损坏 → 只用 explorer.json(丢的只是新增字段)。
 // - 多编辑器组的 layout(带 `editor:2` … 面板)写给 0.2.15 时去掉多出的编辑器组面板(它把它们当成内容一样的重复编辑器),
 //   空出的尺寸并给主编辑器所在的一侧;完整 layout 进旁挂文件。
-// - 旁挂文件按窗口记下写出时 explorer.json 里该窗口的 tab 列表(openFilePaths + activePath)摘要与 layout 结构摘要
+// - 旁挂文件按窗口记下写出时 explorer.json 里该窗口的 tab 列表(openFilePaths,含顺序)摘要与 layout 结构摘要
 //   (只含面板 / 分组的树形,不含尺寸、标题、活动项 —— 0.2.15 什么都不动退出也会重写它们)。读时逐窗口比对:
 //   - tab 列表对得上 → 该窗口的 tab 结构字段(编辑器组、MRU、预览 / 固定 tab)照常合并;layout 结构也对得上 → 还原完整 layout;
+//     0.2.15 里只换了活动 tab(activePath 不同)→ 照常合并,旧版选中的文件设为它所在组的活动 tab(必要时设为活动组);
 //     layout 结构对不上(旧版本里挪过面板)→ 用 explorer.json 的 layout,编辑器组随之不合并(组面板已不在 layout 里);
 //   - tab 列表对不上(旧版本里改过 tab)→ 以 explorer.json 为准,该窗口只合并与 tab 列表无关的字段
 //     (几何、搜索、视图状态、编码、Markdown 模式);只影响这一个窗口。
@@ -78,10 +79,51 @@ function partition(src: Obj, legacyKeys: ReadonlySet<string>): { legacy: Obj; ex
   return { legacy, extra };
 }
 
-/** 窗口 tab 列表摘要:explorer.json 里该窗口的 openFilePaths + activePath(0.2.15 读写的就是这两项)。 */
+/**
+ * 窗口 tab 列表摘要:explorer.json 里该窗口的 openFilePaths(含顺序:0.2.15 只在用户拖动 tab 时重排)。
+ * 不含 activePath —— 0.2.15 里只切换活动 tab 不算改了 tab 列表(见 applyLegacyActivePath)。
+ */
 function tabsDigest(editor: unknown): string {
   const e = isObj(editor) ? editor : {};
+  return hashExplorerText(JSON.stringify([e['openFilePaths'] ?? null]));
+}
+
+/** 本分支更早写的摘要(含 activePath):对得上 = tab 列表与活动 tab 都没动。 */
+function tabsDigestWithActive(editor: unknown): string {
+  const e = isObj(editor) ? editor : {};
   return hashExplorerText(JSON.stringify([e['openFilePaths'] ?? null, e['activePath'] ?? null]));
+}
+
+const moveToFront = (list: unknown, item: string): unknown =>
+  Array.isArray(list) && list.includes(item) ? [item, ...list.filter((x) => x !== item)] : list;
+
+/**
+ * 以 explorer.json 的 activePath(0.2.15 里最后选中的文件)为准:设为它所在组的活动 tab 并移到组内 MRU 首位;
+ * 不在当前活动组里 → 该组设为活动组(并移到组 MRU 首位)。已一致(0.2.15 没换活动 tab)→ 原对象返回。
+ */
+function applyLegacyActivePath(editor: Obj): Obj {
+  const active = editor['activePath'];
+  if (typeof active !== 'string') return editor;
+  const groups = editor['groups'];
+  if (!Array.isArray(groups) || groups.length === 0) {
+    const mru = moveToFront(editor['mruPaths'], active);
+    return mru === editor['mruPaths'] ? editor : { ...editor, mruPaths: mru };
+  }
+  const has = (g: unknown): g is Obj => isObj(g) && Array.isArray(g['openFilePaths']) && g['openFilePaths'].includes(active);
+  const current = groups.find((g) => isObj(g) && g['id'] === editor['activeGroup']);
+  const target = has(current) ? current : groups.find(has);
+  if (target === undefined) return editor;
+  if (target === current && target['activePath'] === active) return editor;
+  const nextGroups = groups.map((g) =>
+    g === target ? { ...g, activePath: active, ...(g['mruPaths'] === undefined ? null : { mruPaths: moveToFront(g['mruPaths'], active) }) } : g,
+  );
+  const id = target['id'] as string;
+  return {
+    ...editor,
+    groups: nextGroups,
+    activeGroup: id,
+    ...(editor['groupMru'] === undefined ? null : { groupMru: moveToFront(editor['groupMru'], id) }),
+  };
 }
 
 /** dockview 序列化 grid 节点里各 leaf 的面板 id。 */
@@ -236,6 +278,35 @@ export function stripEditorGroupPanels(layout: Obj): Obj {
   return out;
 }
 
+/**
+ * layout 的活动 dock 组改为含编辑器组面板 panelId 的组(该组活动面板也设为它)。原活动组不是编辑器组面板所在的组
+ *(用户焦点在终端等别的面板)→ 不动;找不到该面板 → 不动。
+ */
+function activateEditorGroupPanel(layout: Obj, panelId: string): Obj {
+  const groups = layoutGroups(layout);
+  const current = groups.find((g) => g.id === layout['activeGroup']);
+  if (current !== undefined && !current.views.some((v) => v === PRIMARY_EDITOR_PANEL || EDITOR_GROUP_PANEL_RE.test(v))) return layout;
+  const target = groups.find((g) => g.views.includes(panelId));
+  if (target === undefined || target.id === undefined) return layout;
+  const setActive = (node: unknown): unknown => {
+    if (!isObj(node)) return node;
+    if (node['type'] === 'leaf') {
+      const data = isObj(node['data']) ? node['data'] : {};
+      return data['id'] === target.id ? { ...node, data: { ...data, activeView: panelId } } : node;
+    }
+    return Array.isArray(node['data']) ? { ...node, data: node['data'].map(setActive) } : node;
+  };
+  const out: Obj = { ...layout, activeGroup: target.id };
+  if (isObj(layout['grid'])) out['grid'] = { ...layout['grid'], root: setActive(layout['grid']['root']) };
+  for (const key of ['floatingGroups', 'popoutGroups'] as const) {
+    const list = layout[key];
+    if (Array.isArray(list)) {
+      out[key] = list.map((g) => (isObj(g) && isObj(g['data']) ? { ...g, data: (setActive({ type: 'leaf', data: g['data'] }) as Obj)['data'] } : g));
+    }
+  }
+  return out;
+}
+
 /** 拆成 0.2.15 能读的 explorer.json 内容与新增字段(无新增字段时 ext 为 null)。 */
 export function splitExplorerPayload(payload: ExplorerPayloadV3): {
   legacy: ExplorerPayloadV3;
@@ -341,7 +412,8 @@ export function mergeExplorerExt(base: unknown, ext: ExplorerExtFile, exact: boo
     extBySeq.delete(e.windowSeq); // 同一 windowSeq 的重复段只补首个(与 findWindowEntryBySeq 命中首个一致)
     const out = { ...w };
     assignNew(out, e.fields, LEGACY_WINDOW_KEYS, NO_KEYS);
-    const tabsMatch = e.tabs !== undefined ? e.tabs === tabsDigest(w['editor']) : exact;
+    const tabsMatch =
+      e.tabs !== undefined ? e.tabs === tabsDigest(w['editor']) || e.tabs === tabsDigestWithActive(w['editor']) : exact;
     let layoutRestored = true;
     if (e.layout) {
       layoutRestored = tabsMatch && e.layout.shape === layoutShapeDigest(w['layout']);
@@ -350,7 +422,12 @@ export function mergeExplorerExt(base: unknown, ext: ExplorerExtFile, exact: boo
     if (e.editor && isObj(out['editor'])) {
       const editor = { ...out['editor'] };
       assignNew(editor, e.editor, LEGACY_EDITOR_KEYS, !tabsMatch ? STRUCTURAL_EDITOR_KEYS : layoutRestored ? NO_KEYS : GROUP_EDITOR_KEYS);
-      out['editor'] = editor;
+      out['editor'] = tabsMatch ? applyLegacyActivePath(editor) : editor;
+      // 活动组随之换了 → 还原的完整 layout 的活动 dock 组也指过去(否则启动时 dock 激活旧活动组的面板,又把活动组抢回去)
+      const activeGroup = (out['editor'] as Obj)['activeGroup'];
+      if (e.layout && layoutRestored && typeof activeGroup === 'string' && activeGroup !== editor['activeGroup']) {
+        out['layout'] = activateEditorGroupPanel(e.layout.full, activeGroup);
+      }
     }
     return out;
   });

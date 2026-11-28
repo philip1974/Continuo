@@ -9,7 +9,7 @@ import {
   prepareExplorerFileForBoot,
   writeExplorerFile,
 } from '../../../electron/main/persistence';
-import { explorerExtFilePath, stripEditorGroupPanels } from '../../../electron/main/explorer-downgrade-compat';
+import { explorerExtFilePath, hashExplorerText, stripEditorGroupPanels } from '../../../electron/main/explorer-downgrade-compat';
 import type { ExplorerPayloadV3 } from '../../../electron/shared/explorer-persistence-schema';
 import { ExplorerSchemaV3 as ExplorerSchemaV3_0215 } from './fixtures/explorer-schema-0.2.15';
 
@@ -215,6 +215,111 @@ describe('拆分过编辑器组的 layout', () => {
     expect(loaded.windows[0]!.lastClosedAt).toBe(1_800_000_000_000);
     expect(loaded.windows[1]!.editor).toEqual(splitPayload().windows[1]!.editor);
     expect(loaded.openWindowSeqs).toEqual([2, 0]);
+  });
+
+  it('0.2.15 里只切换了活动 tab(切到另一组的文件)→ 编辑器组、固定 tab、MRU、完整 layout 都在;旧版选中的文件成为其所在组的活动 tab,该组成为活动组', async () => {
+    await writeExplorerFile(file, splitPayload());
+    const old = ExplorerSchemaV3_0215.parse(await readJson(file));
+    old.windows[0]!.editor = { openFilePaths: ['/ws/a.ts', '/ws/b.ts', '/ws/c.md'], activePath: '/ws/c.md' };
+    await fs.writeFile(file, JSON.stringify(old, null, 2));
+
+    const loaded = (await loadExplorer(file))!;
+    expect(loaded.windows[0]!.layout).toEqual(splitLayout());
+    const editor = loaded.windows[0]!.editor!;
+    expect(editor.activePath).toBe('/ws/c.md');
+    expect(editor.groups).toEqual(splitPayload().windows[0]!.editor!.groups);
+    expect(editor.activeGroup).toBe('editor:2');
+    expect(editor.groupMru).toEqual(['editor:2', 'editor']);
+    expect(editor.viewStates).toEqual(fullPayload().windows[0]!.editor!.viewStates);
+  });
+
+  it('0.2.15 里只切换了活动 tab(同组另一个文件)→ 该组活动 tab 改为它并移到组内 MRU 首位,固定 tab 保留,活动组不变', async () => {
+    await writeExplorerFile(file, splitPayload());
+    const old = ExplorerSchemaV3_0215.parse(await readJson(file));
+    old.windows[0]!.editor = { openFilePaths: ['/ws/a.ts', '/ws/b.ts', '/ws/c.md'], activePath: '/ws/b.ts' };
+    await fs.writeFile(file, JSON.stringify(old, null, 2));
+
+    const loaded = (await loadExplorer(file))!;
+    expect(loaded.windows[0]!.layout).toEqual(splitLayout());
+    const editor = loaded.windows[0]!.editor!;
+    expect(editor.activeGroup).toBe('editor');
+    expect(editor.groupMru).toEqual(['editor', 'editor:2']);
+    expect(editor.groups![0]).toEqual({
+      id: 'editor',
+      openFilePaths: ['/ws/a.ts', '/ws/b.ts'],
+      activePath: '/ws/b.ts',
+      stickyPaths: ['/ws/a.ts'],
+      mruPaths: ['/ws/b.ts', '/ws/a.ts'],
+    });
+    expect(editor.groups![1]).toEqual(splitPayload().windows[0]!.editor!.groups![1]);
+  });
+
+  it('0.2.15 里切到原活动组之外的组的文件 → 还原的完整 layout 的活动 dock 组也改指该组(启动时 dock 不把活动组抢回去)', async () => {
+    const p = splitPayload();
+    p.windows[0]!.editor!.activeGroup = 'editor:2';
+    p.windows[0]!.editor!.groupMru = ['editor:2', 'editor'];
+    p.windows[0]!.editor!.activePath = '/ws/c.md';
+    await writeExplorerFile(file, p);
+    const old = ExplorerSchemaV3_0215.parse(await readJson(file));
+    old.windows[0]!.editor = { openFilePaths: ['/ws/a.ts', '/ws/b.ts', '/ws/c.md'], activePath: '/ws/a.ts' };
+    await fs.writeFile(file, JSON.stringify(old, null, 2));
+
+    const loaded = (await loadExplorer(file))!;
+    const editor = loaded.windows[0]!.editor!;
+    expect(editor.activeGroup).toBe('editor');
+    expect(editor.groupMru).toEqual(['editor', 'editor:2']);
+    expect(editor.groups).toEqual(p.windows[0]!.editor!.groups);
+    expect(loaded.windows[0]!.layout).toEqual({ ...splitLayout(), activeGroup: '1' });
+  });
+
+  it('单组窗口在 0.2.15 里只切换了活动 tab → 固定 / 预览 tab 照常回来,MRU 首位改为旧版选中的文件', async () => {
+    const p = fullPayload();
+    p.windows[1]!.editor = {
+      openFilePaths: ['/ws2/x.ts', '/ws2/y.ts'],
+      activePath: '/ws2/x.ts',
+      stickyPaths: ['/ws2/x.ts'],
+      previewPath: '/ws2/y.ts',
+      mruPaths: ['/ws2/x.ts', '/ws2/y.ts'],
+    };
+    await writeExplorerFile(file, p);
+    const old = ExplorerSchemaV3_0215.parse(await readJson(file));
+    old.windows[1]!.editor = { openFilePaths: ['/ws2/x.ts', '/ws2/y.ts'], activePath: '/ws2/y.ts' };
+    await fs.writeFile(file, JSON.stringify(old, null, 2));
+
+    const loaded = (await loadExplorer(file))!;
+    expect(loaded.windows[1]!.editor).toEqual({
+      openFilePaths: ['/ws2/x.ts', '/ws2/y.ts'],
+      activePath: '/ws2/y.ts',
+      stickyPaths: ['/ws2/x.ts'],
+      previewPath: '/ws2/y.ts',
+      mruPaths: ['/ws2/y.ts', '/ws2/x.ts'],
+    });
+  });
+
+  it('0.2.15 里重排了 tab(tab 列表顺序变了)→ 仍算改了 tab,以 0.2.15 为准', async () => {
+    await writeExplorerFile(file, splitPayload());
+    const old = ExplorerSchemaV3_0215.parse(await readJson(file));
+    old.windows[0]!.editor = { openFilePaths: ['/ws/b.ts', '/ws/a.ts', '/ws/c.md'], activePath: '/ws/a.ts' };
+    await fs.writeFile(file, JSON.stringify(old, null, 2));
+
+    const loaded = (await loadExplorer(file))!;
+    expect(loaded.windows[0]!.editor!.groups).toBeUndefined();
+    expect(loaded.windows[0]!.editor!.openFilePaths).toEqual(['/ws/b.ts', '/ws/a.ts', '/ws/c.md']);
+  });
+
+  it('更早写的旁挂文件(tab 摘要含 activePath)+ 0.2.15 什么都不动 → 编辑器组照常回来', async () => {
+    await writeExplorerFile(file, splitPayload());
+    const ext = (await readJson(explorerExtFilePath(file))) as { windows: { windowSeq: number; tabs?: string }[] };
+    const onDisk = (await readJson(file)) as ExplorerPayloadV3;
+    for (const w of ext.windows) {
+      const e = onDisk.windows.find((x) => x.windowSeq === w.windowSeq)!.editor!;
+      w.tabs = hashExplorerText(JSON.stringify([e.openFilePaths, e.activePath]));
+    }
+    await fs.writeFile(explorerExtFilePath(file), JSON.stringify(ext));
+
+    const loaded = (await loadExplorer(file))!;
+    expect(loaded.windows[0]!.layout).toEqual(splitLayout());
+    expect(loaded.windows[0]!.editor).toEqual(splitPayload().windows[0]!.editor);
   });
 
   it('0.2.15 里改了 tab → 以 0.2.15 的 tab 与 layout 为准(不还原组面板,只剩一个编辑器)', async () => {

@@ -1,7 +1,7 @@
 // 编辑器组按空间顺序编号(对齐 VSCode GroupsOrder.GRID_APPEARANCE):拖动 dock tab 换位后 dock 标题「编辑器 N」、⌘1/⌘2/⌘3、
 // 读屏名称里的组号都跟位置走,重启保留;重启恢复的 popout 子窗关掉后,回到主窗的组重新编号、不与第一组重名。
 // BDD: src/__tests__/editor-groups/(editor-groups-order.spec.tsx)
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test';
@@ -10,6 +10,7 @@ import { openTreeItem } from './helpers/explorer';
 import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
+import { readPersistedExplorer } from './helpers/persisted-explorer';
 
 const apps: ElectronApplication[] = [];
 const dirs: string[] = [];
@@ -102,13 +103,13 @@ interface PersistedLayout {
   readonly popoutGroups?: readonly unknown[];
 }
 
-/** 等主窗 dock 布局落盘且满足 probe(explorer.json)。 */
+/** 等主窗 dock 布局落盘且满足 probe(explorer.json + 旁挂文件合并后:多编辑器组的完整 layout 在旁挂文件里)。 */
 async function waitLayoutPersisted(ud: string, probe: (layout: PersistedLayout) => boolean): Promise<void> {
   await expect
     .poll(
       () => {
         try {
-          const persisted = JSON.parse(readFileSync(path.join(ud, 'explorer.json'), 'utf8')) as {
+          const persisted = readPersistedExplorer(ud) as {
             windows?: Array<{ windowSeq: number; layout?: PersistedLayout }>;
           };
           const layout = persisted.windows?.find((w) => w.windowSeq === 0)?.layout;
