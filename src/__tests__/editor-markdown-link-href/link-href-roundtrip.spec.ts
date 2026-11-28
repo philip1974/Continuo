@@ -174,7 +174,7 @@ describe('补丁本身', () => {
     const config = readFileSync(path.join(ROOT, 'electron.vite.config.ts'), 'utf-8');
     const renderer = config.slice(config.indexOf('renderer:'));
     expect(renderer).toMatch(/milkdownLinkHrefPlugin\(\)/);
-    expect(renderer).toMatch(/esbuildOptions:\s*\{\s*plugins:\s*\[milkdownLinkHrefEsbuildPlugin\(\)\]/);
+    expect(renderer).toMatch(/esbuildOptions:\s*\{\s*plugins:\s*\[[^\]]*milkdownLinkHrefEsbuildPlugin\(\)/);
     const workspace = readFileSync(path.join(ROOT, 'vitest.workspace.ts'), 'utf-8');
     expect(workspace).toMatch(/plugins:\s*\[milkdownLinkHrefPlugin\(\)\][\s\S]*?name:\s*'milkdown-patched'/);
   });

@@ -71,6 +71,7 @@ import { withExplorerFileMutex } from './lib/file-mutex';
 import { createKeyedCounter } from './lib/keyed-counter';
 import { statDirGated } from './lib/dir-stat-gate';
 import { makeWindowResourceCleanup } from './window-resource-cleanup';
+import { forwardPopoutMoves } from './popout-move-forward';
 import { makeQuitCleanupGuard } from './quit-cleanup-guard';
 import { resolveUserDataPath } from './user-data-path';
 import { PLUGINS_CHANNELS, PROTOCOL_SCHEME } from '../shared/plugins-channels';
@@ -940,6 +941,7 @@ app.on('web-contents-created', (_evt, contents) => {
   // 重启恢复的 popout 以 show:false 建出(见 windowOpenHandler)→ 不抢焦点地显示,主窗保持键盘焦点。
   contents.on('did-create-window', (child) => {
     popoutOpenerIds.set(child, contents.id);
+    forwardPopoutMoves(child, contents);
     if (!child.isDestroyed() && !child.isVisible()) child.showInactive();
     // popout 子窗聚焦 = 它的主窗口在活动(重启后焦点回到这个主窗口)。
     child.on('focus', () => {

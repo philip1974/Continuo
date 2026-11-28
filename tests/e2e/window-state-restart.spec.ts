@@ -154,6 +154,47 @@ test('popout 子窗位置 / 尺寸重启两次不漂移;恢复出来的子窗不
   }
 });
 
+// 只移动、不改尺寸(没有 resize 事件兜底):popout 位置靠 main 推送的子窗 move 得知(不再每帧轮询),移动后位置照常落盘、
+// 重启回到移动后的位置。BDD: src/__tests__/popout-window-move/
+test('popout 子窗只移动不改尺寸:新位置落盘,重启后回到该位置', async () => {
+  test.setTimeout(120_000);
+  let { app: a, main } = await launch();
+  await main.getByRole('button', { name: DOCK_POPOUT }).click();
+  await expect.poll(() => a.windows().length, { timeout: 10_000 }).toBe(2);
+  const persistedLeft = () => {
+    const persisted = readPersistedExplorer(userData) as {
+      windows?: Array<{ windowSeq: number; layout?: { popoutGroups?: Array<{ position?: { left?: number } }> } }>;
+    };
+    return persisted.windows?.find((w) => w.windowSeq === 0)?.layout?.popoutGroups?.[0]?.position?.left ?? null;
+  };
+  // 等弹出后的布局先落盘(之后再挪,确保落盘的新值来自移动)
+  await expect.poll(persistedLeft, { timeout: 10_000 }).not.toBeNull();
+  const moved = await a.evaluate(({ BrowserWindow, screen }) => {
+    const wa = screen.getPrimaryDisplay().workArea;
+    const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('popout=1'))!;
+    const before = w.getContentBounds();
+    const x = before.x === wa.x + 211 ? wa.x + 157 : wa.x + 211;
+    w.setPosition(x + (w.getBounds().x - before.x), w.getBounds().y);
+    const after = w.getContentBounds();
+    return { x: after.x, width: after.width, height: after.height, sameSize: after.width === before.width && after.height === before.height };
+  });
+  expect(moved.sameSize).toBe(true);
+  await expect.poll(persistedLeft, { timeout: 10_000 }).toBe(moved.x);
+
+  await quit(a);
+  ({ app: a, main } = await launch());
+  await expect
+    .poll(
+      () =>
+        a.evaluate(({ BrowserWindow }) => {
+          const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('popout=1'));
+          return w ? w.getContentBounds().x : null;
+        }),
+      { timeout: 15_000 },
+    )
+    .toBe(moved.x);
+});
+
 test('设置面板弹出到 popout 后重启:主窗标题栏 / 窗口标题 / 状态栏取主窗的活动编辑器(不是 popout 里的面板)', async () => {
   test.setTimeout(120_000);
   let { app: a, main } = await launch();

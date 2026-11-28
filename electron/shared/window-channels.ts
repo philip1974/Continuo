@@ -91,7 +91,19 @@ export const WINDOW_CHANNELS = {
   IS_FULL_SCREEN: 'window:is-full-screen',
   /** main → renderer:主窗口进入 / 退出全屏(payload boolean = 现在是否全屏)。 */
   FULL_SCREEN_CHANGED: 'window:full-screen-changed',
+  /**
+   * main → renderer(打开该子窗的主窗):dockview popout 子窗被移动(BrowserWindow 'move',payload = 子窗的 window.open 名)。
+   * 替代 dockview 每帧 rAF 轮询子窗 screenX / screenY(开着 popout 时主 renderer 一直 120Hz 跑、最小化也不停)。
+   * BDD: src/__tests__/popout-window-move/
+   */
+  POPOUT_MOVED: 'window:popout-moved',
 } as const;
+
+/**
+ * renderer 装在 globalThis 上的订阅函数名:构建期改写后的 dockview `onDidWindowMoveEnd(window)` 经它订阅「该 popout 被移动」
+ *(见 scripts/vite-dockview-popout-move.ts)。签名 `(popout: Window, onMove: () => void) => () => void`(返回 unsubscribe)。
+ */
+export const POPOUT_MOVE_HOOK_GLOBAL = '__continuoOnPopoutWindowMove';
 
 /** 切换窗口列表的一项(window:list-windows)。 */
 export interface WindowSwitchEntry {

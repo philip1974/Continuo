@@ -1926,6 +1926,10 @@
 
 - [`popout-stylesheets.spec.ts`](./popout-stylesheets/popout-stylesheets.spec.ts)
 
+## [popout 子窗移动:事件驱动,不再每帧轮询](./popout-window-move/README.md)
+
+- [`popout-window-move.spec.ts`](./popout-window-move/popout-window-move.spec.ts)
+
 ## [posix-backslash-filename(macOS / Linux 上文件名含 `\`)](./posix-backslash-filename/README.md)
 
 - [`posix-backslash.spec.ts`](./posix-backslash-filename/posix-backslash.spec.ts)

@@ -670,6 +670,14 @@ const api = {
       subscribeIpc(WINDOW_CHANNELS.FULL_SCREEN_CHANGED, (_event, payload: unknown) => {
         if (typeof payload === 'boolean') cb(payload);
       }),
+    /**
+     * 订阅本窗口打开的 dockview popout 子窗被移动(参数 = 子窗 window.open 名;非 string 的畸形推送丢弃);返回 unsubscribe。
+     * 构建期改写的 dockview onDidWindowMoveEnd 经它得知子窗移动(取代每帧 rAF 轮询)。BDD: src/__tests__/popout-window-move/
+     */
+    onPopoutMoved: (cb: (popoutName: string) => void): (() => void) =>
+      subscribeIpc(WINDOW_CHANNELS.POPOUT_MOVED, (_event, payload: unknown) => {
+        if (typeof payload === 'string') cb(payload);
+      }),
     /** 关闭本窗口(经 main win.close(),走关窗脏确认)。⌘W 已无可关的编辑器 / 面板时调用(对齐 VSCode)。 */
     close: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.CLOSE, {}),
     /** 激活本窗口(主窗 renderer 把面板 / 选择器打开在主窗、而系统焦点在 popout 子窗时调用)。 */

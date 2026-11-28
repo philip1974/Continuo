@@ -31,6 +31,7 @@ import { sandboxSweep } from './plugins/sandbox-sweep';
 import { captureLmApi, coApi } from './lib/co-api';
 import { isPopoutWindow } from './lib/popout-mode';
 import { prefetchDockLayout } from './shell/dock/layout-prefetch';
+import { installPopoutWindowMoveHook } from './shell/dock/popout-window-move';
 import { useUpdateStore } from './marketplace/update-store';
 import { useKeybindingsStore } from './plugins/keybindings/keybindings-store';
 import {
@@ -78,6 +79,8 @@ export async function init(): Promise<void> {
   // Phase 4.B:**最早**调,把 window.api 缓存到 module-local。
   // 之后 sandboxSweep 删掉 window.api 也不影响 LM UI(走 coApi)。
   captureLmApi();
+  // dockview popout 子窗移动改为 main 推送(替代每帧 rAF 轮询),须在 dockview 建 popout 前装上。BDD: src/__tests__/popout-window-move/
+  installPopoutWindowMoveHook();
 
   // M-Plugin v4.1 SDK 暴露:user-installed plugin 通过 globalThis.co 拿到
   // Plugin 基类 + React(用 Blob URL import 时无法走 ESM bare import)。

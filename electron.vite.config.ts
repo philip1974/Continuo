@@ -7,6 +7,7 @@ import { mainModuleSideEffects } from './scripts/main-bundle-side-effects';
 import { milkdownKatexStubPlugin } from './scripts/vite-milkdown-katex-stub';
 import { milkdownLinkHrefEsbuildPlugin, milkdownLinkHrefPlugin } from './scripts/vite-milkdown-link-href';
 import { cspDevConnectPlugin } from './scripts/vite-csp-dev-connect';
+import { dockviewPopoutMoveEsbuildPlugin, dockviewPopoutMovePlugin } from './scripts/vite-dockview-popout-move';
 
 // BUILD_TARGET=pack 时输出到 out-pack/,让 `pnpm build:app` 与 `pnpm dev` 可以并行
 // 跑(dev 持续写 out/,builder 读 out-pack/,互不踩盘)。
@@ -57,15 +58,16 @@ export default defineConfig({
       react(),
       tailwindcss(),
       xtermWebglAtlasVersionPlugin(),
+      dockviewPopoutMovePlugin(),
       milkdownKatexStubPlugin(),
       milkdownLinkHrefPlugin(),
       cspDevConnectPlugin(),
     ],
     // dev 预打包会绕过 transform,addon-webgl 是无依赖的单文件 ESM,直接走源文件即可;
-    // @milkdown/preset-commonmark 与 Crepe 一起预打包,补丁改走 esbuild 插件(milkdownLinkHref)。
+    // @milkdown/preset-commonmark 与 Crepe 一起预打包,补丁改走 esbuild 插件(milkdownLinkHref);dockview-core 同理(dockviewPopoutMove)。
     optimizeDeps: {
       exclude: ['@xterm/addon-webgl'],
-      esbuildOptions: { plugins: [milkdownLinkHrefEsbuildPlugin()] },
+      esbuildOptions: { plugins: [milkdownLinkHrefEsbuildPlugin(), dockviewPopoutMoveEsbuildPlugin()] },
     },
     resolve: {
       alias: {
