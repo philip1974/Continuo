@@ -1,7 +1,10 @@
 import type { z } from 'zod';
 import type {
+  debugControlInputSchema,
+  debugEvaluateInputSchema as debugViewEvaluateInputSchema,
   debugGetStackInputSchema,
   debugGetVariablesInputSchema,
+  debugSetUserBreakpointInputSchema,
 } from './debug-view-schema';
 
 export const DEBUG_VIEW_CHANNELS = {
@@ -10,7 +13,44 @@ export const DEBUG_VIEW_CHANNELS = {
   /** 当前停点的栈帧 + 首帧的作用域(面板不能切帧,一次取齐)。 */
   GET_STACK: 'debug:getStack',
   GET_VARIABLES: 'debug:getVariables',
+  /** 用户在调试工具栏 / 按键接管会话:继续 / 暂停 / 单步 / 停止(只作用于本窗口的会话,不经 agent 授权)。 */
+  CONTROL: 'debug:control',
+  /** 编辑器 gutter 切换断点:窗口级用户断点(存到下次 launch)+ 同步到本窗口的全部会话。 */
+  SET_USER_BREAKPOINT: 'debug:setUserBreakpoint',
+  /** 调试控制台求值(DAP evaluate context=repl)。 */
+  EVALUATE: 'debug:evaluate',
 } as const;
+
+/** 调试工具栏 / 按键可发的动作(VSCode debugToolBar:continue / pause / stepOver / stepInto / stepOut / stop)。 */
+export const DEBUG_CONTROL_ACTIONS = ['continue', 'pause', 'stepOver', 'stepIn', 'stepOut', 'stop'] as const;
+export type DebugControlAction = (typeof DEBUG_CONTROL_ACTIONS)[number];
+
+/**
+ * 被调试程序的输出(DAP output 事件;telemetry 类别不收)。category 缺省按 DAP 规范为 console。
+ * output 已去除 ANSI 转义、单条按 DEBUG_OUTPUT_ENTRY_BYTES_MAX 截断;seq 为会话内递增序号(read_output 的游标)。
+ */
+export interface DebugOutputEntry {
+  readonly seq: number;
+  readonly category: string;
+  readonly output: string;
+}
+
+/** 单条输出的字节上限(超出截断)。 */
+export const DEBUG_OUTPUT_ENTRY_BYTES_MAX = 16 * 1024;
+/** 每个会话保留的输出条数上限(环形缓冲,丢最旧;VSCode REPL MAX_REPL_LENGTH 同为 10000)。 */
+export const DEBUG_OUTPUT_ENTRIES_MAX = 10_000;
+/** 每个会话保留的输出总字节上限(环形缓冲,丢最旧)。 */
+export const DEBUG_OUTPUT_BYTES_MAX = 2 * 1024 * 1024;
+/** subscribe 快照 / renderer 控制台保留的最近输出条数(面板只显示最近这些)。 */
+export const DEBUG_VIEW_OUTPUT_ENTRIES_MAX = 1000;
+/** 窗口级用户断点上限(同 subscribe 快照的断点上限)。 */
+export const DEBUG_USER_BREAKPOINTS_MAX = 1000;
+
+/** 用户在编辑器 gutter 设的断点(窗口级,存到下次 launch;file 为编辑器 tab 路径)。 */
+export interface DebugUserBreakpoint {
+  readonly file: string;
+  readonly line: number;
+}
 
 // debug 视图的数据形态:main(debug.service 产出)与 renderer(debug.store 消费)共用。preload 的
 // getStack / getVariables 返回的是 unknown,renderer 逐字段手工校验 —— 两侧各写一份接口时,
@@ -65,6 +105,18 @@ export type DebugViewEvent =
       readonly reason: string;
     }
   | {
+      /** 会话已建立(launch 完成):面板 / 工具栏据此显示运行中的会话(此前要等第一个断点或停点才出现)。 */
+      readonly type: 'started';
+      readonly sessionId: string;
+      readonly label?: string;
+    }
+  | {
+      /** 一批新输出(main 按短间隔合批推送,seq 递增)。 */
+      readonly type: 'output';
+      readonly sessionId: string;
+      readonly entries: readonly DebugOutputEntry[];
+    }
+  | {
       readonly type: 'continued';
       readonly sessionId: string;
     }
@@ -113,8 +165,22 @@ export interface DebugViewSessionSnapshot {
     readonly file: string;
     readonly breakpoints: readonly DebugBreakpoint[];
   }[];
+  /** 最近的输出(最多 DEBUG_VIEW_OUTPUT_ENTRIES_MAX 条):重载后控制台不清空。 */
+  readonly output?: readonly DebugOutputEntry[];
+}
+
+/**
+ * 用户断点变化(不属于某个会话):推给本窗口 renderer 的完整列表。与 DebugViewEvent 分开发(同一 EVENT 通道,
+ * type 区分),renderer 整表替换。
+ */
+export interface DebugUserBreakpointsEvent {
+  readonly type: 'user-breakpoints-changed';
+  readonly breakpoints: readonly DebugUserBreakpoint[];
 }
 
 /** 面板 IPC 入参:由 main 的 zod schema 推出(单一来源,见 debug-view-schema.ts)。 */
 export type DebugGetStackInput = z.infer<typeof debugGetStackInputSchema>;
 export type DebugGetVariablesInput = z.infer<typeof debugGetVariablesInputSchema>;
+export type DebugControlInput = z.infer<typeof debugControlInputSchema>;
+export type DebugSetUserBreakpointInput = z.infer<typeof debugSetUserBreakpointInputSchema>;
+export type DebugViewEvaluateInput = z.infer<typeof debugViewEvaluateInputSchema>;

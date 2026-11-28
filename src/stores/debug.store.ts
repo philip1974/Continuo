@@ -3,10 +3,16 @@ import { asRecord } from '../../electron/shared/as-record';
 import { coApi } from '@/lib/co-api';
 import {
   capGroupsNewestFirst,
+  DEBUG_USER_BREAKPOINTS_MAX,
+  DEBUG_VIEW_OUTPUT_ENTRIES_MAX,
   DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
   type DebugBreakpoint,
+  type DebugControlAction,
+  type DebugOutputEntry,
   type DebugScope,
   type DebugStackFrame,
+  type DebugUserBreakpoint,
+  type DebugUserBreakpointsEvent,
   type DebugVariable,
   type DebugViewEvent,
 } from '../../electron/shared/debug-view-channels';
@@ -27,6 +33,23 @@ export interface DebugStoppedLocation {
   readonly line?: number;
 }
 
+/**
+ * 调试控制台的一行:程序输出(category = DAP output 类别 stdout / stderr / console / important …),或用户在控制台的
+ * 求值(input = 输入的表达式、result = 结果、error = 求值失败)。id 在 store 内唯一(列表 key)。
+ */
+export interface DebugConsoleLine {
+  readonly id: number;
+  readonly category: string;
+  readonly text: string;
+}
+
+/** 刚结束的会话留下的控制台内容(VSCode:会话结束后调试控制台保留输出,直到下一个会话开始)。 */
+export interface DebugEndedConsole {
+  readonly sessionId: string;
+  readonly label?: string;
+  readonly lines: readonly DebugConsoleLine[];
+}
+
 export interface DebugSessionShadow {
   readonly id: string;
   /** 面板显示的会话名(main 随事件 / 快照发来:launch 的 name,无则程序文件名);缺省时面板回退 id。 */
@@ -39,13 +62,33 @@ export interface DebugSessionShadow {
   readonly variableNextStart?: ReadonlyMap<number, number>;
   readonly stopped?: DebugStoppedLocation;
   readonly lastStoppedOrder: number;
+  /** 调试控制台(最近 DEBUG_VIEW_OUTPUT_ENTRIES_MAX 行);缺省 = 空。 */
+  readonly console?: readonly DebugConsoleLine[];
+  /** 控制台前面有行被截掉(只保留最近的;或 main 那边已丢弃,输出 seq 不连续)。 */
+  readonly consoleTruncated?: boolean;
+  /** 已收到的最后一条输出的 seq(判断是否有输出没送到)。 */
+  readonly lastOutputSeq?: number;
 }
 
 type DebugState = {
   sessions: ReadonlyMap<string, DebugSessionShadow>;
   activeSessionId: string | null;
   stoppedOrder: number;
-  ingestEvent: (event: DebugViewEvent) => Promise<void>;
+  /** 本窗口的用户断点(编辑器 gutter 设的;main 推完整列表)。 */
+  userBreakpoints: readonly DebugUserBreakpoint[];
+  /** 最近结束的会话的控制台(没有存活会话时面板仍显示它)。新会话开始时清空。 */
+  endedConsole: DebugEndedConsole | null;
+  /**
+   * 经 stopped 事件实时到达的最新一停(停下时自动打开 / 定位用,见 debug-auto-reveal;subscribe 快照恢复的停点不算)。
+   */
+  lastLiveStop: { readonly sessionId: string; readonly stopSeq: number; readonly reason: string } | null;
+  ingestEvent: (event: DebugViewEvent | DebugUserBreakpointsEvent) => Promise<void>;
+  /** 调试工具栏 / 按键:对会话发 继续 / 暂停 / 单步 / 停止;失败提示,不抛。 */
+  control: (sessionId: string, action: DebugControlAction) => Promise<void>;
+  /** 编辑器 gutter:设置 / 删除 file 第 line 行的断点(窗口级用户断点 + 同步到本窗口会话);失败提示,不抛。 */
+  setBreakpointAt: (file: string, line: number, enabled: boolean) => Promise<void>;
+  /** 调试控制台求值:输入与结果都追加到该会话的控制台;停住时在首帧求值。 */
+  evaluate: (sessionId: string, expression: string) => Promise<void>;
   loadVariables: (
     sessionId: string,
     variablesReference: number,
@@ -67,7 +110,62 @@ function emptySession(id: string): DebugSessionShadow {
     scopes: [],
     variableRefs: new Map(),
     lastStoppedOrder: 0,
+    console: [],
   };
+}
+
+let nextConsoleLineId = 1;
+
+/** 追加控制台行并按上限保留最近的(截掉时记 consoleTruncated)。 */
+function appendConsole(
+  session: DebugSessionShadow,
+  lines: readonly { readonly category: string; readonly text: string }[],
+): DebugSessionShadow {
+  if (lines.length === 0) return session;
+  const added = lines.map((line) => ({ id: nextConsoleLineId++, category: line.category, text: line.text }));
+  const all = [...(session.console ?? []), ...added];
+  const overflow = all.length - DEBUG_VIEW_OUTPUT_ENTRIES_MAX;
+  return {
+    ...session,
+    console: overflow > 0 ? all.slice(overflow) : all,
+    ...(overflow > 0 || session.consoleTruncated ? { consoleTruncated: true } : {}),
+  };
+}
+
+/** 追加程序输出:seq 与上次收到的不连续(main 环形缓冲 / 合批已丢弃一部分)→ 同样记为截断。 */
+function appendOutputEntries(session: DebugSessionShadow, entries: readonly DebugOutputEntry[]): DebugSessionShadow {
+  const first = entries[0];
+  if (first === undefined) return session;
+  const gap = first.seq > (session.lastOutputSeq ?? -1) + 1;
+  const next = appendConsole(
+    session,
+    entries.map((entry) => ({ category: entry.category, text: entry.output })),
+  );
+  return { ...next, lastOutputSeq: entries[entries.length - 1]!.seq, ...(gap ? { consoleTruncated: true } : {}) };
+}
+
+const DEBUG_OUTPUT_TEXT_MAX = 64 * 1024;
+
+function asOutputEntries(value: unknown): DebugOutputEntry[] {
+  if (!Array.isArray(value)) return [];
+  return (value as readonly unknown[])
+    .slice(-DEBUG_VIEW_OUTPUT_ENTRIES_MAX)
+    .flatMap((item) => {
+      const raw = asRecord(item);
+      return typeof raw.seq === 'number' && typeof raw.category === 'string' && typeof raw.output === 'string'
+        ? [{ seq: raw.seq, category: raw.category.slice(0, 64), output: raw.output.slice(0, DEBUG_OUTPUT_TEXT_MAX) }]
+        : [];
+    });
+}
+
+function asUserBreakpoints(value: unknown): DebugUserBreakpoint[] {
+  if (!Array.isArray(value)) return [];
+  return (value as readonly unknown[]).slice(0, DEBUG_USER_BREAKPOINTS_MAX).flatMap((item) => {
+    const raw = asRecord(item);
+    return typeof raw.file === 'string' && typeof raw.line === 'number' && Number.isInteger(raw.line) && raw.line >= 1
+      ? [{ file: raw.file, line: raw.line }]
+      : [];
+  });
 }
 
 function getOrCreateSession(
@@ -144,8 +242,13 @@ function asBreakpoint(value: unknown): DebugBreakpoint | null {
 
 // debug 推送事件来自 IPC:与 subscribe 快照同形,同样逐字段校验(asBreakpoint)、断点数按同一上限截断
 //(E168-E175 push ingress 守卫族)。不合法 → null,调用方 drop。
-function asDebugViewEvent(value: unknown): DebugViewEvent | null {
+function asDebugViewEvent(value: unknown): DebugViewEvent | DebugUserBreakpointsEvent | null {
   const raw = asRecord(value);
+  if (raw.type === 'user-breakpoints-changed') {
+    return Array.isArray(raw.breakpoints)
+      ? { type: 'user-breakpoints-changed', breakpoints: asUserBreakpoints(raw.breakpoints) }
+      : null;
+  }
   if (typeof raw.sessionId !== 'string') return null;
   const sessionId = raw.sessionId;
   const label = asLabel(raw.label);
@@ -165,6 +268,10 @@ function asDebugViewEvent(value: unknown): DebugViewEvent | null {
     case 'stopped':
       if (typeof raw.stopSeq !== 'number' || typeof raw.reason !== 'string') return null;
       return { type: 'stopped', sessionId, ...label, stopSeq: raw.stopSeq, reason: raw.reason };
+    case 'started':
+      return { type: 'started', sessionId, ...label };
+    case 'output':
+      return Array.isArray(raw.entries) ? { type: 'output', sessionId, entries: asOutputEntries(raw.entries) } : null;
     case 'continued':
     case 'terminated':
       return { type: raw.type, sessionId };
@@ -185,6 +292,7 @@ interface SessionSnapshot {
   readonly stop?: { readonly stopSeq: number; readonly reason: string };
   /** 按 source 分组(file → 该 source 的完整集合),总数已按上限截断。 */
   readonly breakpointsBySource: ReadonlyMap<string, readonly DebugBreakpoint[]>;
+  readonly output: readonly DebugOutputEntry[];
 }
 
 // subscribe 快照来自 IPC:逐字段校验(同 asFrame 等),断点总数按 main 同一上限截断。
@@ -215,7 +323,13 @@ function asSessionSnapshot(value: unknown): SessionSnapshot | null {
   const offset = parsed.length - capped.length;
   const breakpointsBySource = new Map<string, readonly DebugBreakpoint[]>();
   capped.forEach((breakpoints, i) => breakpointsBySource.set(parsed[offset + i]!.file, breakpoints));
-  return { id: raw.session_id, ...asLabel(raw.label), ...(stop ? { stop } : {}), breakpointsBySource };
+  return {
+    id: raw.session_id,
+    ...asLabel(raw.label),
+    ...(stop ? { stop } : {}),
+    breakpointsBySource,
+    output: asOutputEntries(raw.output),
+  };
 }
 
 /** 按 file 分组(组序 = 首次出现顺序;store 内同一文件的断点本就相邻)。 */
@@ -322,7 +436,38 @@ export const useDebugStore = create<DebugState>((set, get) => ({
   activeSessionId: null,
   stoppedOrder: 0,
 
+  userBreakpoints: [],
+  endedConsole: null,
+  lastLiveStop: null,
+
   ingestEvent: async (event) => {
+    if (event.type === 'user-breakpoints-changed') {
+      set({ userBreakpoints: event.breakpoints });
+      return;
+    }
+
+    if (event.type === 'started') {
+      set((state) => {
+        const current = getOrCreateSession(state.sessions, event.sessionId);
+        const sessions = new Map(state.sessions);
+        sessions.set(event.sessionId, { ...current, ...(event.label !== undefined ? { label: event.label } : {}) });
+        // 新会话开始:上一个会话留下的控制台不再显示(VSCode 同)。
+        return { sessions, endedConsole: null };
+      });
+      return;
+    }
+
+    if (event.type === 'output') {
+      set((state) => {
+        const current = state.sessions.get(event.sessionId);
+        if (!current) return state;
+        const sessions = new Map(state.sessions);
+        sessions.set(event.sessionId, appendOutputEntries(current, event.entries));
+        return { sessions };
+      });
+      return;
+    }
+
     if (event.type === 'breakpoints-changed') {
       set((state) => {
         const current = getOrCreateSession(state.sessions, event.sessionId);
@@ -366,7 +511,12 @@ export const useDebugStore = create<DebugState>((set, get) => ({
         };
         const sessions = new Map(state.sessions);
         sessions.set(event.sessionId, nextSession);
-        return { sessions, activeSessionId: updateActiveSession(sessions), stoppedOrder: nextOrder };
+        return {
+          sessions,
+          activeSessionId: updateActiveSession(sessions),
+          stoppedOrder: nextOrder,
+          lastLiveStop: { sessionId: event.sessionId, stopSeq: event.stopSeq, reason: event.reason },
+        };
       });
       await pullStackAndScopes(event.sessionId, event.stopSeq);
       return;
@@ -396,14 +546,72 @@ export const useDebugStore = create<DebugState>((set, get) => ({
 
     if (event.type === 'terminated') {
       set((state) => {
-        if (!state.sessions.has(event.sessionId)) return state;
+        const ended = state.sessions.get(event.sessionId);
+        if (!ended) return state;
         const sessions = new Map(state.sessions);
         sessions.delete(event.sessionId);
         return {
           sessions,
           activeSessionId: updateActiveSession(sessions),
+          // 有输出的会话结束后保留其控制台(程序跑完即结束时仍能看到输出)。
+          ...(ended.console !== undefined && ended.console.length > 0
+            ? {
+                endedConsole: {
+                  sessionId: ended.id,
+                  ...(ended.label !== undefined ? { label: ended.label } : {}),
+                  lines: ended.console,
+                },
+              }
+            : {}),
         };
       });
+    }
+  },
+
+  control: async (sessionId, action) => {
+    try {
+      const result = await coApi.debug.control({ sessionId, action });
+      if (!result.ok) notifyFailure(result);
+    } catch (err) {
+      notifyThrownError(err);
+    }
+  },
+
+  setBreakpointAt: async (file, line, enabled) => {
+    try {
+      const result = await coApi.debug.setUserBreakpoint({ file, line, enabled });
+      if (!result.ok) notifyFailure(result);
+    } catch (err) {
+      notifyThrownError(err);
+    }
+  },
+
+  evaluate: async (sessionId, expression) => {
+    const appendLine = (category: string, text: string) =>
+      set((state) => {
+        const current = state.sessions.get(sessionId);
+        if (!current) return state;
+        const sessions = new Map(state.sessions);
+        sessions.set(sessionId, appendConsole(current, [{ category, text }]));
+        return { sessions };
+      });
+    appendLine('input', expression);
+    // 停住时在首帧求值(VSCode REPL 在当前聚焦的帧求值;面板不能切帧,即首帧),运行中全局求值。
+    const frameId = get().sessions.get(sessionId)?.frames[0]?.id;
+    try {
+      const result = await coApi.debug.evaluate({
+        sessionId,
+        expression,
+        ...(frameId !== undefined ? { frameId } : {}),
+      });
+      if (result.ok) {
+        const value = asRecord(result.data).result;
+        appendLine('result', typeof value === 'string' ? value : '');
+      } else {
+        appendLine('error', result.message ?? result.code);
+      }
+    } catch (err) {
+      appendLine('error', err instanceof Error ? err.message : String(err));
     }
   },
 
@@ -486,7 +694,7 @@ async function fetchVariablesPage(
  * 快照送达前已收到事件的会话(touched),事件比快照新 —— 不改其停点,只补它尚无记录的 source 的断点;
  * 已不在 store 里的(已结束 / 已继续的未知会话)不复活。
  */
-function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void {
+function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>, userBreakpointsTouched: boolean): void {
   const snapshots = (Array.isArray(asRecord(data).sessions) ? (asRecord(data).sessions as readonly unknown[]) : [])
     .map(asSessionSnapshot)
     .filter((snapshot): snapshot is SessionSnapshot => snapshot !== null);
@@ -515,10 +723,13 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
         }
         continue;
       }
-      const base: DebugSessionShadow = {
-        ...emptySession(snapshot.id),
-        ...(snapshot.label !== undefined ? { label: snapshot.label } : {}),
-      };
+      const base: DebugSessionShadow = appendOutputEntries(
+        {
+          ...emptySession(snapshot.id),
+          ...(snapshot.label !== undefined ? { label: snapshot.label } : {}),
+        },
+        snapshot.output,
+      );
       const breakpoints = [...snapshot.breakpointsBySource.values()].flat();
       if (!snapshot.stop) {
         sessions.set(snapshot.id, { ...base, breakpoints });
@@ -536,7 +747,12 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
       });
       pulls.push({ id: snapshot.id, stopSeq: snapshot.stop.stopSeq });
     }
-    return { sessions, activeSessionId: updateActiveSession(sessions) };
+    return {
+      sessions,
+      activeSessionId: updateActiveSession(sessions),
+      // 快照之前已收到 user-breakpoints-changed 事件:事件更新,不用快照覆盖。
+      ...(userBreakpointsTouched ? {} : { userBreakpoints: asUserBreakpoints(asRecord(data).userBreakpoints) }),
+    };
   });
   for (const pull of pulls) void pullStackAndScopes(pull.id, pull.stopSeq);
 }
@@ -548,6 +764,7 @@ export function startDebugStoreSync(): void {
   if (unsubscribeDebugEvents) return;
   const isLatest = debugSyncGuard.begin();
   const touched = new Set<string>();
+  let userBreakpointsTouched = false;
   let snapshotApplied = false;
   unsubscribeDebugEvents = coApi.debug.onEvent((payload) => {
     const event = asDebugViewEvent(payload);
@@ -555,14 +772,17 @@ export function startDebugStoreSync(): void {
       console.warn('[debug] invalid debug view event, dropped', payload);
       return;
     }
-    if (!snapshotApplied) touched.add(event.sessionId);
+    if (!snapshotApplied) {
+      if (event.type === 'user-breakpoints-changed') userBreakpointsTouched = true;
+      else touched.add(event.sessionId);
+    }
     useDebugStore.getState().ingestEvent(event).catch(notifyThrownError);
   });
   void coApi.debug.subscribe().then(
     (result) => {
       snapshotApplied = true;
       if (!result.ok || !isLatest()) return;
-      hydrateFromSnapshot(result.data, touched);
+      hydrateFromSnapshot(result.data, touched, userBreakpointsTouched);
     },
     () => {
       snapshotApplied = true;
@@ -578,5 +798,8 @@ export function resetDebugStoreForTest(): void {
     sessions: EMPTY_DEBUG_SESSIONS,
     activeSessionId: null,
     stoppedOrder: 0,
+    userBreakpoints: [],
+    endedConsole: null,
+    lastLiveStop: null,
   });
 }

@@ -21,7 +21,13 @@ vi.mock('../../lib/co-api', () => ({
     },
   },
 }));
-vi.mock('@/plugins/co-app', () => ({ coApp: { editor: { openFile: h.openFile } } }));
+// commands:调试工具栏按钮的键位提示读命令注册表(此处为空表)。
+vi.mock('@/plugins/co-app', () => ({
+  coApp: {
+    editor: { openFile: h.openFile },
+    commands: { getAll: () => [], get: () => undefined, subscribe: () => () => undefined },
+  },
+}));
 vi.mock('@/notifications/notify', () => ({ notify: { error: h.notifyError } }));
 
 import { DebugPanel, RUNNING_ANNOUNCE_DELAY_MS } from '../../panels/Debug/DebugPanel';

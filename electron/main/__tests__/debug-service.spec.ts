@@ -1587,7 +1587,9 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     await service.continue(sessionId, { threadId: 3 });
     await service.killByOwner(11, 'window-closed');
 
-    expect(events.map((entry) => entry.ownerWindowId)).toEqual([11, 11, 11, 11]);
+    expect(events.map((entry) => entry.ownerWindowId)).toEqual([11, 11, 11, 11, 11]);
+    // started:launch 完成即通知(面板 / 调试工具栏显示运行中的会话,见 debug-user-controls)。
+    expect(events.shift()!.event).toEqual({ type: 'started', sessionId, label: 'fixture.js' });
     expect(events.map((entry) => entry.event.type)).toEqual([
       'breakpoints-changed',
       'stopped',
@@ -1636,6 +1638,7 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     parent.emit('stopped', { reason: 'breakpoint', threadId: 3 });
     await waiting;
 
+    expect(events.shift()).toMatchObject({ type: 'started', sessionId });
     parent.emit('terminated', {});
     expect(events.map((event) => event.type)).toEqual(['breakpoints-changed', 'stopped', 'terminated']);
     expect(events.at(-1)).toEqual({ type: 'terminated', sessionId });
@@ -1668,7 +1671,7 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     );
     await parent.triggerStartDebugging({ type: 'pwa-node' });
     parent.children[0]!.emit('exited', {});
-    expect(events).toEqual([{ type: 'terminated', sessionId }]);
+    expect(events).toEqual([{ type: 'started', sessionId, label: 'fixture.js' }, { type: 'terminated', sessionId }]);
     expect(service.viewSnapshot(13)).toEqual([]);
     await service.cleanupAll('test');
   });

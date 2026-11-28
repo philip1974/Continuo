@@ -101,7 +101,10 @@ import {
 import {
   DEBUG_VIEW_CHANNELS,
   type DebugGetStackInput,
+  type DebugControlInput,
   type DebugGetVariablesInput,
+  type DebugSetUserBreakpointInput,
+  type DebugViewEvaluateInput,
 } from '../shared/debug-view-channels';
 import type { Locale } from '../shared/i18n-types';
 import {
@@ -687,6 +690,12 @@ const api = {
       input: DebugGetVariablesInput,
     ): Promise<IpcResult<unknown>> =>
       ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.GET_VARIABLES, input),
+    control: (input: DebugControlInput): Promise<IpcResult<unknown>> =>
+      ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.CONTROL, input),
+    setUserBreakpoint: (input: DebugSetUserBreakpointInput): Promise<IpcResult<unknown>> =>
+      ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.SET_USER_BREAKPOINT, input),
+    evaluate: (input: DebugViewEvaluateInput): Promise<IpcResult<unknown>> =>
+      ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.EVALUATE, input),
   },
   i18n: {
     /** 同步初值用 — main settings.service 已 hydrate 后返当前 locale。 */

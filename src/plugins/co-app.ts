@@ -98,6 +98,11 @@ export interface EditorRevealOptions {
    * 夹取规则 clampGotoLine)。缺省 false:越界报 line-out-of-range(插件 API 契约)。BDD: src/__tests__/quick-open-file-line/
    */
   readonly clampToDocument?: boolean;
+  /**
+   * 定位后不把焦点移进编辑器(VSCode openEditor preserveFocus:调试停下时打开停止位置,用户正在别处打字不被打断;
+   * BDD: src/__tests__/debug-user-controls/)。缺省 false:定位并聚焦。
+   */
+  readonly preserveFocus?: boolean;
 }
 
 /**
@@ -117,6 +122,7 @@ export async function openFileInEditor(
     undefined,
     () => openFileByPath(path, editorFileDeps, openOpts),
     revealOpts?.clampToDocument === true,
+    revealOpts?.preserveFocus === true,
   );
 }
 
@@ -150,6 +156,8 @@ async function openInEditor(
   open: () => Promise<FileOpResult>,
   /** 行列越界时夹到文档范围(见 EditorRevealOptions.clampToDocument)。 */
   clamp = false,
+  /** 定位后不聚焦编辑器(见 EditorRevealOptions.preserveFocus)。 */
+  preserveFocus = false,
 ): Promise<EditorOpenResult> {
   let openResult;
   try {
@@ -234,7 +242,9 @@ async function openInEditor(
       return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
     }
     const at: GotoLineRequest = clamp ? clampGotoLine(target, view.state.doc) : target;
-    outcome = scrollToLine(view, at.line, at.column, opts.length);
+    outcome = preserveFocus
+      ? scrollToLine(view, at.line, at.column, opts.length, { focus: false })
+      : scrollToLine(view, at.line, at.column, opts.length);
   } catch (err) {
     return {
       ok: false,

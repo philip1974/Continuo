@@ -46,6 +46,7 @@ import { useLocale } from '@/i18n';
 import { codeMirrorContentLabel, codeMirrorPhrases, editorContentLabel } from './codemirror-phrases';
 import { useEditorGroupNumber } from './editor-group-number';
 import { debugDecorationsExtension } from './decorations/debug-decorations';
+import { breakpointGutterToggle } from './decorations/breakpoint-gutter-toggle';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { rebindCodeMirrorRoots } from './codemirror-root';
@@ -383,6 +384,8 @@ export function CodeEditor({
       // 缩进参考线按上面的文档缩进计级(Markdown 源码模式同样显示,VSCode 同)
       guidesCompartment.current.of(editorGuides(appliedGuidesRef.current)),
       debugDecorationsExtension(),
+      // 点断点 gutter 切换断点(VSCode 点行号左侧;BDD: src/__tests__/debug-user-controls/)
+      breakpointGutterToggle(),
       // 选区变化 → 后退 / 前进的导航记录(BDD: src/__tests__/editor-navigation-history/)
       navigationHistoryExtension(tabId, groupId),
       // 资源管理器拖来的文件只打开(⇧ 放下插入路径 / Markdown 链接);Markdown 源码视图粘贴 / 拖入图片存成文件再插相对路径。

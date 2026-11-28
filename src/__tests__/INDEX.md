@@ -431,6 +431,15 @@
 
 - [`debounce.spec.ts`](./debounce/debounce.spec.ts)
 
+## [debug-user-controls · 用户接管调试会话 / 调试控制台 / 停下时自动定位](./debug-user-controls/README.md)
+
+- [`breakpoint-gutter.spec.tsx`](./debug-user-controls/breakpoint-gutter.spec.tsx)
+- [`debug-auto-reveal.spec.ts`](./debug-user-controls/debug-auto-reveal.spec.ts)
+- [`debug-console.spec.tsx`](./debug-user-controls/debug-console.spec.tsx)
+- [`debug-ipc-and-mcp.spec.ts`](./debug-user-controls/debug-ipc-and-mcp.spec.ts)
+- [`debug-service-user-controls.spec.ts`](./debug-user-controls/debug-service-user-controls.spec.ts)
+- [`debug-toolbar-keys.spec.tsx`](./debug-user-controls/debug-toolbar-keys.spec.tsx)
+
 ## [装饰层契约 (M4)](./decor-contracts/README.md) `[contract]`
 
 - [`beams-reduced-motion-render.spec.tsx`](./decor-contracts/beams-reduced-motion-render.spec.tsx)

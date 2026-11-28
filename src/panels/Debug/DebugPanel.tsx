@@ -15,6 +15,8 @@ import {
   Button,
   Card,
   EmptyState,
+  IconButton,
+  Input,
   ScrollArea,
   Tabs,
   TruncateStart,
@@ -23,10 +25,14 @@ import {
 import {
   selectDisplayedSession,
   useDebugStore,
+  type DebugConsoleLine,
   type DebugScope,
   type DebugSessionShadow,
   type DebugVariable,
 } from '@/stores/debug.store';
+import { useRegisteredCommandHotkeyText, withHotkey } from '@/lib/hotkey-label';
+import { tWithFallback } from '@/i18n';
+import { DEBUG_COMMANDS, displayedDebugState, runDebugAction, type DebugCommandDef } from './debug-commands';
 import { useLocale, useT } from '@/i18n';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { useCopyMcpConfig } from '@/shell/use-copy-mcp-config';
@@ -37,6 +43,7 @@ import { announce } from '@/lib/announce';
 import { getAnnouncingDocument } from '@/shell/dock/popout-documents';
 
 const EMPTY_VARIABLES: readonly [] = [];
+const EMPTY_CONSOLE: readonly DebugConsoleLine[] = [];
 
 /** DAP stopped 事件的 reason(规范列出的取值)→ catalog 键;徽章与读屏播报共用。 */
 const STOP_REASON_KEYS: Readonly<Record<string, string>> = {
@@ -92,6 +99,8 @@ export function DebugPanel() {
   const [activeTab, setActiveTab] = useState('stack');
   // 已停下的会话优先,否则最近的运行中会话(见 selectDisplayedSession)。
   const session = useDebugStore(selectDisplayedSession);
+  // 没有存活会话时显示刚结束的会话的控制台(程序跑完即结束时仍能看到输出)。
+  const endedConsole = useDebugStore((s) => s.endedConsole);
   const debugTabs = useMemo<readonly TabItem[]>(
     () => {
       void locale;
@@ -99,31 +108,213 @@ export function DebugPanel() {
         { id: 'stack', label: t('panels.debug.tab.stack') },
         { id: 'variables', label: t('panels.debug.tab.variables') },
         { id: 'breakpoints', label: t('panels.debug.tab.breakpoints') },
+        { id: 'console', label: t('panels.debug.tab.console') },
       ];
     },
     [locale, t],
   );
 
-  if (!session) return <DebugEmptyState />;
+  if (!session && !endedConsole) return <DebugEmptyState />;
 
+  // 窄(侧栏宽,VSCode 调试视图在侧栏)时视图切换叠在上方,宽时在左侧(容器查询,按面板自身宽度)。
   return (
-    <div className="flex h-full w-full gap-3 bg-canvas p-3 text-fg">
-      <aside className="w-36 shrink-0">
-        <Tabs
-          items={debugTabs}
-          activeId={activeTab}
-          onSelect={setActiveTab}
-          ariaLabel={t('panels.debug.views_aria')}
+    <div className="@container h-full w-full bg-canvas text-fg">
+      <div className="flex h-full w-full flex-col gap-3 p-3 @lg:flex-row">
+        <aside className="shrink-0 @lg:w-36">
+          <Tabs
+            items={debugTabs}
+            activeId={activeTab}
+            onSelect={setActiveTab}
+            ariaLabel={t('panels.debug.views_aria')}
+          />
+        </aside>
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+          {session ? (
+            <DebugSessionHeader session={session} />
+          ) : (
+            <Card className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
+                {endedConsole!.label ?? endedConsole!.sessionId}
+              </div>
+              <Badge variant="neutral">{t('panels.debug.ended')}</Badge>
+            </Card>
+          )}
+          {activeTab === 'console' ? (
+            <ConsoleSection
+              sessionId={session?.id ?? null}
+              lines={session ? (session.console ?? EMPTY_CONSOLE) : endedConsole!.lines}
+              truncated={session ? session.consoleTruncated === true : false}
+            />
+          ) : session ? (
+            <ScrollArea>
+              {activeTab === 'stack' && <StackSection session={session} />}
+              {activeTab === 'variables' && <VariablesSection session={session} />}
+              {activeTab === 'breakpoints' && <BreakpointsSection session={session} />}
+            </ScrollArea>
+          ) : (
+            <EmptyState>{t('panels.debug.empty_session')}</EmptyState>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/** 工具栏按钮图标(仿 VSCode codicon debug-continue / pause / step-over / step-into / step-out / stop;stroke 风格同活动栏)。 */
+const DEBUG_ACTION_ICON_PATHS: Readonly<Record<string, ReactNode>> = {
+  continue: <path d="M7 5v14l11-7z" />,
+  pause: <path d="M8 5v14M16 5v14" />,
+  stepOver: (
+    <>
+      <path d="M4 13a8 8 0 0 1 15-3.5" />
+      <path d="M20 5v5h-5" />
+      <circle cx="12" cy="18" r="1.6" />
+    </>
+  ),
+  stepIn: (
+    <>
+      <path d="M12 3v10M8 9l4 4 4-4" />
+      <circle cx="12" cy="19" r="1.6" />
+    </>
+  ),
+  stepOut: (
+    <>
+      <path d="M12 14V4M8 8l4-4 4 4" />
+      <circle cx="12" cy="19" r="1.6" />
+    </>
+  ),
+  stop: <rect x="6" y="6" width="12" height="12" rx="1" />,
+};
+
+function DebugActionIcon({ action }: { readonly action: string }) {
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {DEBUG_ACTION_ICON_PATHS[action]}
+    </svg>
+  );
+}
+
+function DebugActionButton({ def }: { readonly def: DebugCommandDef }) {
+  useLocale(); // 切换语言后重渲(tWithFallback 不订阅)
+  const hotkey = useRegisteredCommandHotkeyText(coApp.commands, def.id);
+  const state = useDebugStore((s) => displayedDebugState(s));
+  const label = tWithFallback(def.titleKey, def.title);
+  return (
+    <IconButton
+      aria-label={label}
+      title={withHotkey(label, hotkey)}
+      disabled={!def.enabledIn.includes(state)}
+      onClick={() => void runDebugAction(def.action)}
+      data-debug-action={def.action}
+    >
+      <DebugActionIcon action={def.action} />
+    </IconButton>
+  );
+}
+
+/**
+ * 调试工具栏(VSCode debug.toolBarLocation=docked:在调试视图顶部):继续 / 暂停(同一位置按状态切换)、单步跳过、单步调试、
+ * 单步跳出、停止;按钮按会话状态启用,tooltip「名称 (键位)」。作用于面板显示的会话(含 agent 启动的)。
+ */
+function DebugToolbar({ stopped }: { readonly stopped: boolean }) {
+  const t = useT();
+  const defs = DEBUG_COMMANDS.filter((def) => def.action !== (stopped ? 'pause' : 'continue'));
+  return (
+    <div role="group" aria-label={t('panels.debug.toolbar_aria')} className="flex shrink-0 items-center gap-0.5">
+      {defs.map((def) => (
+        <DebugActionButton key={def.id} def={def} />
+      ))}
+    </div>
+  );
+}
+
+/** 控制台各类行的颜色(VSCode REPL:stderr 错误色、console 类别警告色、求值输入弱化)。 */
+const CONSOLE_LINE_CLASS: Readonly<Record<string, string>> = {
+  stderr: 'text-error',
+  error: 'text-error',
+  console: 'text-warning',
+  important: 'text-warning',
+  input: 'text-fg-muted',
+};
+
+/**
+ * 调试控制台(VSCode Debug Console / REPL):程序输出(DAP output 事件,stdout / stderr / console 分色,ANSI 已去除,只保留最近的
+ * DEBUG_VIEW_OUTPUT_ENTRIES_MAX 行)+ 底部求值输入(Enter 求值;停住时在首帧求值)。新输出到达时若已在底部则跟随滚动。
+ */
+function ConsoleSection({
+  sessionId,
+  lines,
+  truncated,
+}: {
+  readonly sessionId: string | null;
+  readonly lines: readonly DebugConsoleLine[];
+  readonly truncated: boolean;
+}) {
+  const t = useT();
+  const evaluate = useDebugStore((s) => s.evaluate);
+  const [expression, setExpression] = useState('');
+  const logRef = useRef<HTMLDivElement>(null);
+  const stickRef = useRef(true);
+  useEffect(() => {
+    const el = logRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [lines]);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <ScrollArea
+        ref={logRef}
+        role="log"
+        aria-label={t('panels.debug.console.log_aria')}
+        className="min-h-0 flex-1 rounded border border-line bg-panel-soft p-2 font-mono text-xs"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+        }}
+      >
+        {truncated && <div className="text-fg-dim">{t('panels.debug.console.truncated')}</div>}
+        {lines.length === 0 ? (
+          <div className="text-fg-dim">{t('panels.debug.console.empty')}</div>
+        ) : (
+          lines.map((line) => (
+            <div
+              key={line.id}
+              data-category={line.category}
+              className={`min-w-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere] ${CONSOLE_LINE_CLASS[line.category] ?? 'text-fg'}`}
+            >
+              {line.category === 'input' ? `› ${line.text}` : line.text.replace(/\n$/, '')}
+            </div>
+          ))
+        )}
+      </ScrollArea>
+      {sessionId !== null && (
+        <Input
+          size="sm"
+          variant="mono"
+          value={expression}
+          placeholder={t('panels.debug.console.input_placeholder')}
+          aria-label={t('panels.debug.console.input_aria')}
+          onChange={(e) => setExpression(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+            const text = expression.trim();
+            if (text === '') return;
+            e.preventDefault();
+            setExpression('');
+            stickRef.current = true;
+            void evaluate(sessionId, text);
+          }}
         />
-      </aside>
-      <section className="flex min-w-0 flex-1 flex-col gap-3">
-        <DebugSessionHeader session={session} />
-        <ScrollArea>
-          {activeTab === 'stack' && <StackSection session={session} />}
-          {activeTab === 'variables' && <VariablesSection session={session} />}
-          {activeTab === 'breakpoints' && <BreakpointsSection session={session} />}
-        </ScrollArea>
-      </section>
+      )}
     </div>
   );
 }
@@ -141,7 +332,10 @@ function DebugSessionHeader({ session }: { readonly session: DebugSessionShadow 
   // 会话名(VSCode 调用栈 / 调试工具栏同样显示会话名):程序名或 launch name,main 没给时回退内部 id。
   const title = session.label ?? session.id;
   return (
-    <Card className="flex items-center justify-between gap-3">
+    <Card className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+      {/* 工具栏单独一行在最上(VSCode 调试视图顶部的 docked 工具栏);窄侧栏里也不挤掉会话名 */}
+      <DebugToolbar stopped={session.stopped !== undefined} />
+      <div className="min-w-0 basis-full" />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-fg" title={title}>
           {title}

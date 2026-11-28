@@ -270,6 +270,9 @@ debugService.setEventSink({
   emit(ownerWindowId, event) {
     sendToWindow(BrowserWindow.fromId(ownerWindowId), DEBUG_VIEW_CHANNELS.EVENT, event, '[debug-view] event');
   },
+  emitWindowEvent(ownerWindowId, event) {
+    sendToWindow(BrowserWindow.fromId(ownerWindowId), DEBUG_VIEW_CHANNELS.EVENT, event, '[debug-view] event');
+  },
 });
 
 registerDebugViewIpc(debugService);

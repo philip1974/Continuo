@@ -3,6 +3,7 @@
 
 import { z } from 'zod';
 import { sessionIdSchema } from './mcp-debug-schemas';
+import { DEBUG_CONTROL_ACTIONS } from './debug-view-channels';
 
 export const debugSubscribeInputSchema = z.object({}).strict();
 
@@ -15,5 +16,27 @@ export const debugGetVariablesInputSchema = z
     variablesReference: z.number().int().positive(),
     // 「加载更多」:上一页返回的 next_start(同 MCP debug.variables 的 start);缺省从 0 起。
     start: z.number().int().min(0).optional(),
+  })
+  .strict();
+
+export const debugControlInputSchema = z
+  .object({ sessionId: sessionIdSchema, action: z.enum(DEBUG_CONTROL_ACTIONS) })
+  .strict();
+
+// file 是编辑器 tab 的绝对路径(main 不读它,只转给 adapter);enabled=false 删除该行(含 adapter 校正到该行的断点)。
+export const debugSetUserBreakpointInputSchema = z
+  .object({
+    file: z.string().min(1).max(4096),
+    line: z.number().int().min(1),
+    enabled: z.boolean(),
+  })
+  .strict();
+
+// 调试控制台求值:停住时带首帧 id(在当前帧求值),运行中不带(全局求值)。表达式长度同 MCP debug.evaluate。
+export const debugEvaluateInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    expression: z.string().min(1).max(4096),
+    frameId: z.number().int().min(0).optional(),
   })
   .strict();

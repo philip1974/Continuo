@@ -51,6 +51,7 @@ function build(
     variables: vi.fn(async () => ({ variables: [], truncated: false })),
     evaluate: vi.fn(async () => ({ result: '42', truncated: false })),
     disconnect: vi.fn(async () => ({ disconnected: true })),
+    readOutput: vi.fn(() => ({ entries: [], next_seq: 0, truncated: false, has_more: false })),
     listSessions: vi.fn(() => [
       {
         session_id: 'debug-owned',

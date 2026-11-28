@@ -13,6 +13,8 @@ import { activePanelInDocument, mainWindowAddPosition } from './group-mru';
 import { getCommandDocument } from './popout-documents';
 import { focusDockPanelSoon } from './panel-focus';
 import { resetDockLayout } from './layout.default';
+import { isSidePanelType, sidePanelAddPosition, SIDE_PANEL_INITIAL_WIDTH } from './side-panel';
+import { addPanelKeepingActive } from './wrap-panel-close';
 
 let panelCounter = 0;
 /**
@@ -62,20 +64,50 @@ export function showPanelOfType(type: string): void {
       revealDockPanel(api, existing);
       return;
     }
-    const spec = coApp.panels.get(type);
-    if (!spec) return;
-    const position = mainWindowAddPosition(api);
+    const options = newPanelOptions(api, type);
+    if (!options) return;
     try {
-      addPanelAndFocus(api, {
-        id: spec.multiInstance === true ? nextPanelId(type, (id) => api.getPanel(id) != null) : type,
-        component: type,
-        title: tWithFallback(spec.titleKey, spec.title),
-        ...(position ? { position } : {}),
-        ...(spec.titleKey ? { params: { titleKey: spec.titleKey } } : {}),
-      });
+      addPanelAndFocus(api, options);
     } catch (err) {
       console.warn('[dock] add panel failed', err);
       notify.error(t('shell.dock.add_panel_failed'));
+    }
+  });
+}
+
+/** 新建某类面板的 addPanel 参数:侧栏型面板(搜索 / 调试)落在侧栏组,其余按主窗落点。类型未注册 → null。 */
+function newPanelOptions(api: DockviewApi, type: string): Parameters<DockviewApi['addPanel']>[0] | null {
+  const spec = coApp.panels.get(type);
+  if (!spec) return null;
+  const side = isSidePanelType(type);
+  const position = side ? sidePanelAddPosition(api) : mainWindowAddPosition(api);
+  return {
+    id: spec.multiInstance === true ? nextPanelId(type, (id) => api.getPanel(id) != null) : type,
+    component: type,
+    title: tWithFallback(spec.titleKey, spec.title),
+    ...(position ? { position } : {}),
+    ...(side && !('referenceGroup' in (position ?? {})) ? { initialWidth: SIDE_PANEL_INITIAL_WIDTH } : {}),
+    ...(spec.titleKey ? { params: { titleKey: spec.titleKey } } : {}),
+  };
+}
+
+/**
+ * 显示某类面板但不动焦点、不换活动组(调试停下时自动打开调试视图,VSCode openDebug=openOnDebugBreak 打开视图而不聚焦):
+ * 已有 → 在其所在组切到它(不激活该组);没有 → 在侧栏 / 主窗落点新建,激活还给原活动面板。
+ */
+export function revealPanelOfTypeWithoutFocus(type: string): void {
+  runWhenDockLayoutReady((api) => {
+    const existing = api.panels.find((p) => p.view.contentComponent === type);
+    if (existing) {
+      if (existing.group.activePanel !== existing) existing.group.model.openPanel(existing, { skipSetGroupActive: true });
+      return;
+    }
+    const options = newPanelOptions(api, type);
+    if (!options) return;
+    try {
+      addPanelKeepingActive(api, options);
+    } catch (err) {
+      console.warn('[dock] add panel failed', err);
     }
   });
 }

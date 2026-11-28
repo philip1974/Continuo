@@ -33,6 +33,10 @@ export const MCP_TOOL_DEBUG_VARIABLES = 'debug.variables';
 export const MCP_TOOL_DEBUG_EVALUATE = 'debug.evaluate';
 export const MCP_TOOL_DEBUG_DISCONNECT = 'debug.disconnect';
 export const MCP_TOOL_DEBUG_LIST_SESSIONS = 'debug.list_sessions';
+export const MCP_TOOL_DEBUG_READ_OUTPUT = 'debug.read_output';
+/** debug.read_output 单次返回的输出字节上限(默认 / 最大)。 */
+export const DEBUG_READ_OUTPUT_BYTES_DEFAULT = 64 * 1024;
+export const DEBUG_READ_OUTPUT_BYTES_MAX = 1024 * 1024;
 
 /** debug session id(MCP 工具入参与 Debug 面板 IPC 入参共用;与 terminal / hook-bridge 同一共享常量)。 */
 export { sessionIdSchema };
@@ -282,6 +286,39 @@ export const debugDisconnectOutputSchema = z
   .strict();
 
 export const debugListSessionsInputSchema = z.object({}).strict();
+
+export const debugReadOutputInputSchema = z
+  .object({
+    session_id: sessionIdSchema,
+    since_seq: nonNegativeIntSchema
+      .default(0)
+      .describe('Incremental cursor: pass next_seq from the previous read. Default 0 (from the oldest retained entry).'),
+    max_bytes: z
+      .number()
+      .int()
+      .min(1)
+      .max(DEBUG_READ_OUTPUT_BYTES_MAX)
+      .default(DEBUG_READ_OUTPUT_BYTES_DEFAULT)
+      .describe('Upper bound on the total output text returned (UTF-8 bytes); at least one entry is returned when available.'),
+  })
+  .strict();
+
+export const debugReadOutputOutputSchema = z
+  .object({
+    entries: z.array(
+      z
+        .object({
+          seq: nonNegativeIntSchema,
+          category: z.string(),
+          output: z.string(),
+        })
+        .strict(),
+    ),
+    next_seq: nonNegativeIntSchema,
+    truncated: z.boolean(),
+    has_more: z.boolean(),
+  })
+  .strict();
 export type DebugLaunchInput = z.infer<typeof debugLaunchInputSchema>;
 export type DebugSetBreakpointInput = z.infer<
   typeof debugSetBreakpointInputSchema
@@ -290,6 +327,8 @@ export type DebugWaitForStopInput = z.infer<typeof debugWaitForStopInputSchema>;
 export type DebugVariablesInput = z.infer<typeof debugVariablesInputSchema>;
 export type DebugEvaluateInput = z.infer<typeof debugEvaluateInputSchema>;
 export type DebugScopesInput = z.infer<typeof debugScopesInputSchema>;
+export type DebugReadOutputInput = z.infer<typeof debugReadOutputInputSchema>;
+export type DebugReadOutputOutput = z.infer<typeof debugReadOutputOutputSchema>;
 
 type JsonSchema = Record<string, unknown>;
 
@@ -329,3 +368,4 @@ export const debugVariablesInputJsonSchema = toAdvertisedJsonSchema(debugVariabl
 export const debugEvaluateInputJsonSchema = toAdvertisedJsonSchema(debugEvaluateInputSchema);
 export const debugDisconnectInputJsonSchema = toAdvertisedJsonSchema(debugDisconnectInputSchema);
 export const debugListSessionsInputJsonSchema = toAdvertisedJsonSchema(debugListSessionsInputSchema);
+export const debugReadOutputInputJsonSchema = toAdvertisedJsonSchema(debugReadOutputInputSchema);

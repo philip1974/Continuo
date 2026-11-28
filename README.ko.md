@@ -88,7 +88,7 @@ Continuo가 실행되고 MCP 서버가 등록되면, 에이전트는 다음을 �
 | `terminal.list_sessions` | 활성 패널 나열 |
 | `terminal.kill` | 세션에 시그널 전송: `SIGTERM`(기본)은 Ctrl+C 후 3초 뒤 강제 종료, `SIGINT`는 Ctrl+C만 보냄(Continuo가 프로세스를 강제 종료하지 않음), `SIGKILL`은 즉시 종료. 프로세스가 끝나면 패널은 남고 `list_sessions`가 `exit_code`를 보고하며, 이때 출력 버퍼가 해제되므로 최종 출력이 필요하면 먼저 `read_output`을 호출하세요 |
 | `terminal.await_stop_hook` | 세션의 에이전트가 Stop hook을 실행할 때(턴 종료)까지 대기 — 해당 세션에 아직 가져가지 않은 Stop 이벤트(최대 10분 보관)가 있으면 즉시 반환; `install_stop_hook: true`, `agentLabel`이 `claude` / `claude-code` / `cc` / `codex`, cwd가 창의 workspace 폴더 안(홈 디렉터리나 그 상위 디렉터리는 제외)인 세션에만 hook이 설치됨 |
-| `debug.*` | Node.js 디버거 제어: `launch`, `set_breakpoint`, `wait_for_stop`, `continue`, `step_over` / `step_in` / `step_out`, `stack`, `scopes`, `variables`, `evaluate`, `disconnect`, `list_sessions` |
+| `debug.*` | Node.js 디버거 제어: `launch`, `set_breakpoint`, `wait_for_stop`, `continue`, `step_over` / `step_in` / `step_out`, `stack`, `scopes`, `variables`, `evaluate`, `disconnect`, `list_sessions`, `read_output` |
 
 에이전트가 창을 조작하기 전에 Continuo는 해당 창에서 허용 여부를 묻습니다. 터미널, 디버그, 플러그인 도구 권한은 각각 따로 부여됩니다. `list_sessions`는 창의 모든 세션을 보여 주지만, 읽기 / 쓰기 / kill / 대기 도구와 `debug.*`는 같은 MCP 호출자(stdio 연결 하나, 또는 HTTP 터미널 토큰 / MCP 세션 하나)가 `create_session` 또는 `debug.launch`로 만든 세션에만 동작합니다.
 

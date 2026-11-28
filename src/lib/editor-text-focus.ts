@@ -13,6 +13,9 @@
 // - `markdownEditorFocus`:editorFocus 且是 Markdown 文档(VSCode `editorFocus && resourceLangId == markdown`,切换预览 ⇧⌘V 用它):
 //   Markdown 编辑 / 预览(Milkdown 外层),或源码模式的 CodeEditor(语言为 Markdown 时 .cm-editor 另带 MARKDOWN_SOURCE_ATTR)。
 //   其它文件的编辑器里不成立(Windows / Linux 的 Ctrl+Shift+V 照常粘贴)。BDD: src/__tests__/workbench-vscode-default-keys/
+// - `inDebugMode` / `debugStopped` / `debugRunning`:调试状态(VSCode `inDebugMode` / `debugState == 'stopped'` / `debugState == 'running'`,
+//   调试工具栏命令 F5 / F10 / F11 / ⇧F5 等用它):与焦点无关,只看本窗口显示的调试会话;不成立时同键让给后面的绑定(无会话时 F5
+//   照旧不做调试动作)。状态由调试模块注入(provideDebugState),本模块不依赖调试 store。BDD: src/__tests__/debug-user-controls/
 // BDD: src/__tests__/editor-text-commands/、src/__tests__/editor-find-keybindings/、src/__tests__/terminal-scroll-commands/、
 // src/__tests__/terminal-focus-cycle/
 
@@ -36,17 +39,43 @@ export type CommandWhen =
   | 'markdownEditorFocus'
   | 'terminalFocus'
   | 'terminalNormalBufferFocus'
-  | 'terminalSplitFocus';
+  | 'terminalSplitFocus'
+  | 'inDebugMode'
+  | 'debugStopped'
+  | 'debugRunning';
 
 const TERMINAL_WHENS: ReadonlySet<unknown> = new Set<CommandWhen>(['terminalFocus', 'terminalNormalBufferFocus', 'terminalSplitFocus']);
+const DEBUG_WHENS: ReadonlySet<unknown> = new Set<CommandWhen>(['inDebugMode', 'debugStopped', 'debugRunning']);
 
 export function isCommandWhen(value: unknown): value is CommandWhen {
-  return value === 'editorTextFocus' || value === 'editorFocus' || value === 'markdownEditorFocus' || TERMINAL_WHENS.has(value);
+  return (
+    value === 'editorTextFocus' ||
+    value === 'editorFocus' ||
+    value === 'markdownEditorFocus' ||
+    TERMINAL_WHENS.has(value) ||
+    DEBUG_WHENS.has(value)
+  );
 }
 
-/** 两个条件能否同时成立(编辑器类条件之间、终端类条件之间重叠;终端与编辑器互斥)。 */
+/**
+ * 两个条件能否同时成立(编辑器类条件之间、终端类条件之间重叠;终端与编辑器互斥;调试状态与焦点无关,与任何焦点条件都可同时成立,
+ * 调试状态之间只有 stopped / running 互斥)。
+ */
 export function whenOverlaps(a: CommandWhen, b: CommandWhen): boolean {
+  if (DEBUG_WHENS.has(a) || DEBUG_WHENS.has(b)) {
+    return !((a === 'debugStopped' && b === 'debugRunning') || (a === 'debugRunning' && b === 'debugStopped'));
+  }
   return TERMINAL_WHENS.has(a) === TERMINAL_WHENS.has(b);
+}
+
+/** 本窗口显示的调试会话状态:无会话 / 运行中 / 已停住。 */
+export type DebugStateValue = 'inactive' | 'running' | 'stopped';
+
+let debugState: () => DebugStateValue = () => 'inactive';
+
+/** 注入调试状态(inDebugMode / debugStopped / debugRunning 用;调试模块提供,见 panels/Debug/debug-commands)。 */
+export function provideDebugState(probe: () => DebugStateValue): void {
+  debugState = probe;
 }
 
 let terminalSplitActive: (doc: Document) => boolean = () => false;
@@ -66,7 +95,8 @@ export function whenCoveredBy(a: CommandWhen | undefined, b: CommandWhen | undef
     b === undefined ||
     a === b ||
     ((a === 'editorTextFocus' || a === 'markdownEditorFocus') && b === 'editorFocus') ||
-    ((a === 'terminalNormalBufferFocus' || a === 'terminalSplitFocus') && b === 'terminalFocus')
+    ((a === 'terminalNormalBufferFocus' || a === 'terminalSplitFocus') && b === 'terminalFocus') ||
+    ((a === 'debugStopped' || a === 'debugRunning') && b === 'inDebugMode')
   );
 }
 
@@ -107,6 +137,9 @@ export function isTerminalNormalBufferElement(el: Element | null): boolean {
 }
 
 function holdsFor(when: CommandWhen, el: Element | null): boolean {
+  if (when === 'inDebugMode') return debugState() !== 'inactive';
+  if (when === 'debugStopped') return debugState() === 'stopped';
+  if (when === 'debugRunning') return debugState() === 'running';
   if (when === 'terminalFocus') return isTerminalElement(el);
   if (when === 'terminalSplitFocus') return isTerminalElement(el) && terminalSplitActive(el!.ownerDocument);
   if (when === 'terminalNormalBufferFocus') return isTerminalNormalBufferElement(el);

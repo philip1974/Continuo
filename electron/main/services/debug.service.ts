@@ -27,11 +27,20 @@ import {
 } from '../../shared/mcp-debug-schemas';
 import {
   capGroupsNewestFirst,
+  DEBUG_OUTPUT_BYTES_MAX,
+  DEBUG_OUTPUT_ENTRIES_MAX,
+  DEBUG_OUTPUT_ENTRY_BYTES_MAX,
+  DEBUG_USER_BREAKPOINTS_MAX,
+  DEBUG_VIEW_OUTPUT_ENTRIES_MAX,
   DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
   type DebugBreakpoint,
+  type DebugOutputEntry,
+  type DebugUserBreakpoint,
+  type DebugUserBreakpointsEvent,
   type DebugViewEvent,
   type DebugViewSessionSnapshot,
 } from '../../shared/debug-view-channels';
+import { stripAnsi } from '../../shared/strip-ansi';
 import { codedError, toError } from '../../shared/error-message';
 import { runSerialPerKey } from '../../shared/run-serial-per-key';
 import { lowerIfNeeded } from '../../shared/lower-if-needed';
@@ -90,6 +99,25 @@ export interface DebugProcessOps {
 
 export interface DebugEventSink {
   emit(ownerWindowId: number, event: DebugViewEvent): void;
+  /** 不属于某个会话的窗口级事件(用户断点变化);同一通道推给该窗口。 */
+  emitWindowEvent?(ownerWindowId: number, event: DebugUserBreakpointsEvent): void;
+}
+
+/** 输出推给 renderer 的合批间隔:大量输出(循环里 console.log)不逐条走 IPC / 逐条触发面板渲染。 */
+export const DEBUG_OUTPUT_FLUSH_MS = 50;
+
+export interface ReadOutputInput {
+  readonly sinceSeq: number;
+  readonly maxBytes: number;
+}
+
+export interface ReadOutputResult {
+  readonly entries: readonly DebugOutputEntry[];
+  readonly next_seq: number;
+  /** since_seq 之前(含)有输出已被环形缓冲丢弃。 */
+  readonly truncated: boolean;
+  /** 字节上限截住了,后面还有已缓冲的输出。 */
+  readonly has_more: boolean;
 }
 
 // 安全:debug.launch 的 program/cwd 来自 agent,必须锁在 owner window 的 workspace 内,
@@ -297,6 +325,14 @@ interface RuntimeDebugSession {
    * reference 只在本停内有效:停住 / 恢复时清空。
    */
   readonly indexedChildCounts: Map<number, number>;
+  /** 被调试程序的输出(环形缓冲,条数 / 字节双上限,丢最旧)。 */
+  readonly output: DebugOutputEntry[];
+  outputBytes: number;
+  /** 下一条输出的 seq(从 0 起递增,不因丢弃回退)。 */
+  nextOutputSeq: number;
+  /** 尚未推给 renderer 的输出(DEBUG_OUTPUT_FLUSH_MS 合批)。 */
+  pendingOutput: DebugOutputEntry[];
+  outputFlushTimer?: NodeJS.Timeout;
 }
 
 
@@ -814,6 +850,11 @@ export class DebugService {
   /** cleanupAll(应用退出)已开始:此后 launch 一律拒绝 —— 只取消当时在途的 launch 时,之后新发起的照常 spawn。 */
   private shuttingDown = false;
   private eventSink: DebugEventSink | null = null;
+  /**
+   * 窗口级用户断点(编辑器 gutter 设的,VSCode 断点同样不属于某个会话):新会话 launch 时下发,切换时同步到本窗口全部
+   * 会话。只在内存里(关窗清掉)。
+   */
+  private readonly userBreakpoints = new Map<number, DebugUserBreakpoint[]>();
 
   constructor(options: DebugServiceOptions = {}) {
     this.adapterPath =
@@ -985,6 +1026,10 @@ export class DebugService {
       processIdsByClient: new Map(),
       configurationDone: false,
       launched: false,
+      output: [],
+      outputBytes: 0,
+      nextOutputSeq: 0,
+      pendingOutput: [],
     };
     try {
       debugSessions.add({
@@ -1023,11 +1068,19 @@ export class DebugService {
     } finally {
       cancelled.removeEventListener('abort', onAbort);
     }
+    // 用户在编辑器 gutter 设的断点(窗口级)在程序起跑前下发(起跑推迟到 wait_for_stop / continue,见下)。
+    // 单个下发失败不影响 launch(与 agent 设断点互不阻断)。
+    for (const bp of [...(this.userBreakpoints.get(ctx.ownerWindowId) ?? [])]) {
+      if (cancelled.aborted) break;
+      await this.setBreakpoints(id, bp).catch(() => undefined);
+    }
     // initialize 期间被取消:会话已被拆(或正在拆),这里不能再把 session_id 交给调用方。
     if (cancelled.aborted) {
       await this.teardownSession(id, 'caller-disconnected').catch(() => undefined);
       throw launchCancelledError();
     }
+    // 面板 / 调试工具栏据此显示新会话(运行中;此前要等第一个断点或停点事件才出现)。
+    this.emitSessionEvent(id, { type: 'started', sessionId: id, label: this.sessionLabel(id, runtime) });
     // 程序此时还没起跑(configurationDone + launch 推迟到第一个「要求程序运行」的调用,见 ensureProgramStarted),
     // 如实报 starting。
     return { session_id: id, state: 'starting' };
@@ -1151,6 +1204,152 @@ export class DebugService {
     // 本次那项时沿用各连接上次的回报,都没有才报 {verified:true}。
     this.emitBreakpointSnapshot(sessionId, runtime, source);
     return { ...(aggregateReport(runtime, record) ?? { verified: true }) };
+  }
+
+  /**
+   * 删除 file 上的断点:请求行或 adapter 校正后的行等于 line 的记录(编辑器 gutter 显示的是校正后的行)。把该 source
+   * 剩下的完整集合下发给父连接与存活的 child、推快照;返回被删记录的请求行。父连接失败 → 记录恢复、原错误上抛。
+   */
+  async removeBreakpoint(
+    sessionId: string,
+    input: { readonly file: string; readonly line: number },
+  ): Promise<{ removedLines: readonly number[] }> {
+    this.requireRuntime(sessionId);
+    return runSerialPerKey(this.breakpointChains, sessionId, async () => {
+      let realFile: string | undefined;
+      try {
+        realFile = await this.workspace.realpath(input.file);
+      } catch {
+        // 沿用该拼写此前关联的分组(同 setBreakpoints)。
+      }
+      const runtime = this.requireRuntime(sessionId);
+      const spellingKey = sourceKey(input.file);
+      const source =
+        realFile !== undefined ? sourceKey(realFile) : (runtime.resolvedSources.get(spellingKey) ?? spellingKey);
+      const removed = runtime.breakpoints.filter(
+        (bp) => bp.source === source && (bp.line === input.line || aggregateReport(runtime, bp)?.line === input.line),
+      );
+      if (removed.length === 0) return { removedLines: [] };
+      const before = [...runtime.breakpoints];
+      runtime.breakpoints.splice(0, runtime.breakpoints.length, ...before.filter((bp) => !removed.includes(bp)));
+      const remaining = runtime.breakpoints.filter((bp) => bp.source === source);
+      const args = setBreakpointsArgs(runtime.adapterPaths.get(source) ?? realFile ?? input.file, remaining);
+      try {
+        await this.sendBreakpointsTo(runtime, runtime.parentClient, args, remaining);
+      } catch (err) {
+        runtime.breakpoints.splice(0, runtime.breakpoints.length, ...before);
+        throw err;
+      }
+      await Promise.allSettled(
+        runtime.childClients.map((child) =>
+          this.sendBreakpointsTo(runtime, child, args, remaining, CHILD_BREAKPOINT_SYNC_TIMEOUT_MS),
+        ),
+      );
+      this.emitBreakpointSnapshot(sessionId, runtime, source);
+      return { removedLines: removed.map((bp) => bp.line) };
+    });
+  }
+
+  /** 窗口的用户断点(subscribe 快照用)。 */
+  userBreakpointSnapshot(ownerWindowId: number): readonly DebugUserBreakpoint[] {
+    return this.userBreakpoints.get(ownerWindowId) ?? [];
+  }
+
+  /**
+   * 编辑器 gutter 切换断点(VSCode breakpointEditorContribution:点 glyph margin 切换):记为窗口级用户断点(下次 launch
+   * 下发),并同步到本窗口全部存活会话(含 agent 启动的)。删除时连同各会话里 adapter 校正到该行的断点一起删。
+   * 各会话同步失败不影响其它会话;结果以推送的 breakpoints-changed / user-breakpoints-changed 为准。
+   */
+  async setUserBreakpoint(
+    ownerWindowId: number,
+    input: { readonly file: string; readonly line: number; readonly enabled: boolean },
+  ): Promise<void> {
+    const file = normalizeSourcePath(input.file);
+    const list = this.userBreakpoints.get(ownerWindowId) ?? [];
+    const sessions = debugSessions
+      .byOwner(ownerWindowId)
+      .filter((session) => session.state === 'active' && session.runtimeState !== 'terminated');
+    if (input.enabled) {
+      if (!list.some((bp) => bp.file === file && bp.line === input.line)) {
+        if (list.length >= DEBUG_USER_BREAKPOINTS_MAX) {
+          throw codedError(ERROR_CODES.BAD_INPUT, `too many breakpoints (max ${DEBUG_USER_BREAKPOINTS_MAX})`);
+        }
+        this.userBreakpoints.set(ownerWindowId, [...list, { file, line: input.line }]);
+        this.emitUserBreakpoints(ownerWindowId);
+      }
+      await Promise.allSettled(sessions.map((session) => this.setBreakpoints(session.id, { file, line: input.line })));
+      return;
+    }
+    const results = await Promise.allSettled(
+      sessions.map((session) => this.removeBreakpoint(session.id, { file, line: input.line })),
+    );
+    const lines = new Set([input.line]);
+    for (const result of results) {
+      if (result.status === 'fulfilled') for (const line of result.value.removedLines) lines.add(line);
+    }
+    const current = this.userBreakpoints.get(ownerWindowId) ?? [];
+    const next = current.filter((bp) => !(bp.file === file && lines.has(bp.line)));
+    if (next.length === current.length) return;
+    if (next.length === 0) this.userBreakpoints.delete(ownerWindowId);
+    else this.userBreakpoints.set(ownerWindowId, next);
+    this.emitUserBreakpoints(ownerWindowId);
+  }
+
+  private emitUserBreakpoints(ownerWindowId: number): void {
+    this.eventSink?.emitWindowEvent?.(ownerWindowId, {
+      type: 'user-breakpoints-changed',
+      breakpoints: this.userBreakpointSnapshot(ownerWindowId),
+    });
+  }
+
+  /**
+   * 暂停运行中的会话(VSCode debug 工具栏「暂停」F6):对活动连接的线程发 DAP pause,停下后照常经 stopped 事件
+   *(reason=pause)呈现。已停住 → 无操作;程序还没起跑 → 报错(没有可暂停的线程)。
+   */
+  async pause(sessionId: string): Promise<{ paused: boolean }> {
+    const runtime = this.requireRuntime(sessionId);
+    const session = this.requireSession(sessionId);
+    if (session.runtimeState === 'stopped') return { paused: false };
+    if (!runtime.launched || runtime.endedMessage !== undefined) {
+      throw codedError(ERROR_CODES.BAD_INPUT, 'debug session is not running');
+    }
+    const threadId = await this.resolveThreadId(sessionId);
+    await runtime.activeClient.sendRequest('pause', { threadId }, this.requestTimeoutMs);
+    return { paused: true };
+  }
+
+  /**
+   * debug.read_output:since_seq 起(含)的已缓冲输出,按 maxBytes 截(至少返回一条;单条超限时截短该条)。
+   * next_seq 接着读;truncated = since_seq 之后有输出已被环形缓冲丢弃。
+   */
+  readOutput(sessionId: string, input: ReadOutputInput): ReadOutputResult {
+    const runtime = this.requireRuntime(sessionId);
+    const firstSeq = runtime.output[0]?.seq ?? runtime.nextOutputSeq;
+    const truncated = input.sinceSeq < firstSeq;
+    const entries: DebugOutputEntry[] = [];
+    let bytes = 0;
+    let index = runtime.output.findIndex((entry) => entry.seq >= input.sinceSeq);
+    if (index < 0) index = runtime.output.length;
+    for (; index < runtime.output.length; index += 1) {
+      const entry = runtime.output[index]!;
+      const size = utf8ByteLength(entry.output);
+      if (bytes + size > input.maxBytes) {
+        if (entries.length === 0) {
+          entries.push({ ...entry, output: truncateUtf8(entry.output, input.maxBytes).value });
+          index += 1;
+        }
+        break;
+      }
+      bytes += size;
+      entries.push(entry);
+    }
+    const last = entries[entries.length - 1];
+    return {
+      entries,
+      next_seq: last !== undefined ? last.seq + 1 : Math.max(input.sinceSeq, firstSeq),
+      truncated,
+      has_more: index < runtime.output.length,
+    };
   }
 
   /**
@@ -1580,6 +1779,9 @@ export class DebugService {
               }
             : {}),
           breakpointsBySource: groups,
+          ...(runtime && runtime.output.length > 0
+            ? { output: runtime.output.slice(-DEBUG_VIEW_OUTPUT_ENTRIES_MAX) }
+            : {}),
         };
       });
   }
@@ -1606,6 +1808,7 @@ export class DebugService {
     reason: string,
   ): Promise<readonly string[]> {
     this.cancelLaunches((launch) => launch.ownerWindowId === ownerWindowId);
+    this.userBreakpoints.delete(ownerWindowId);
     return this.teardownMany(debugSessions.byOwner(ownerWindowId), reason);
   }
 
@@ -1856,6 +2059,9 @@ export class DebugService {
         this.handleBreakpointEvent(sessionId, client, event.body);
       }
     });
+    client.on('output', (event) => {
+      if (this.isLiveClient(sessionId, client)) this.appendOutput(sessionId, event.body);
+    });
     client.on('terminated', () => this.markEnded(sessionId, client, 'debug session terminated'));
     client.on('exited', () => this.markEnded(sessionId, client, 'debug session exited'));
   }
@@ -1958,6 +2164,8 @@ export class DebugService {
     // 此后清理只需回收 adapter。
     runtime.processIdsByClient.clear();
     debugSessions.update(sessionId, { runtimeState: 'terminated', systemProcessIds: [] });
+    // 结束前的最后输出先推完(renderer 收到 terminated 后把它留作「上次会话的输出」)。
+    this.flushOutput(sessionId);
     // 通知 renderer 移除该会话(面板 / 执行行 / 红点)—— 停住时被 kill 的 adapter 可能不先发 continued。
     // 会话本身留到 teardown(MCP 仍可 list);viewSnapshot 同样不含已结束会话;teardown 时再发的 terminated renderer 幂等忽略。
     this.emitSessionEvent(sessionId, { type: 'terminated', sessionId });
@@ -2060,6 +2268,48 @@ export class DebugService {
    */
   private sessionLabel(sessionId: string, runtime: RuntimeDebugSession): string {
     return debugSessions.get(sessionId)?.name ?? path.basename(runtime.launch.program);
+  }
+
+  /**
+   * DAP output 事件 → 环形缓冲(条数 / 字节双上限,丢最旧)+ 合批推给 renderer。telemetry 不是程序输出,不收;
+   * category 缺省按 DAP 规范为 console。去 ANSI、单条按字节上限截断。会话结束后到达的输出仍进缓冲(agent 可读),
+   * 不再推给 renderer(会话已移除)。
+   */
+  private appendOutput(sessionId: string, bodyJson: DapJson | undefined): void {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) return;
+    const body = asRecord(bodyJson);
+    const category = stringField(body, 'category') ?? 'console';
+    if (category === 'telemetry') return;
+    const raw = stringField(body, 'output');
+    if (raw === undefined || raw === '') return;
+    const output = truncateUtf8(stripAnsi(raw), DEBUG_OUTPUT_ENTRY_BYTES_MAX).value;
+    if (output === '') return;
+    const entry: DebugOutputEntry = { seq: runtime.nextOutputSeq, category: category.slice(0, 64), output };
+    runtime.nextOutputSeq += 1;
+    runtime.output.push(entry);
+    runtime.outputBytes += utf8ByteLength(output);
+    while (
+      runtime.output.length > DEBUG_OUTPUT_ENTRIES_MAX ||
+      (runtime.outputBytes > DEBUG_OUTPUT_BYTES_MAX && runtime.output.length > 1)
+    ) {
+      runtime.outputBytes -= utf8ByteLength(runtime.output.shift()!.output);
+    }
+    if (runtime.endedMessage !== undefined) return;
+    runtime.pendingOutput.push(entry);
+    if (runtime.pendingOutput.length > DEBUG_VIEW_OUTPUT_ENTRIES_MAX) runtime.pendingOutput.shift();
+    runtime.outputFlushTimer ??= setTimeout(() => this.flushOutput(sessionId), DEBUG_OUTPUT_FLUSH_MS);
+  }
+
+  private flushOutput(sessionId: string): void {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) return;
+    if (runtime.outputFlushTimer !== undefined) clearTimeout(runtime.outputFlushTimer);
+    runtime.outputFlushTimer = undefined;
+    if (runtime.pendingOutput.length === 0) return;
+    const entries = runtime.pendingOutput;
+    runtime.pendingOutput = [];
+    this.emitSessionEvent(sessionId, { type: 'output', sessionId, entries });
   }
 
   private emitSessionEvent(sessionId: string, event: DebugViewEvent): void {
@@ -2204,6 +2454,7 @@ export class DebugService {
     if (!first) return Promise.resolve();
 
     const task = this.doTeardownSession(sessionId, reason).finally(() => {
+      this.flushOutput(sessionId);
       this.emitSessionEvent(sessionId, {
         type: 'terminated',
         sessionId,

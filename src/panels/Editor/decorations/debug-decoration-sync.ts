@@ -22,12 +22,22 @@ let unsubscribeDebug: (() => void) | null = null;
 let unsubscribeEditor: (() => void) | null = null;
 let refCount = 0;
 
-function breakpointLinesForTab(
-  sessions: ReadonlyMap<string, DebugSessionShadow>,
+/**
+ * tab 上显示红点的行:有调试会话时显示各会话的断点(adapter 校正后的行;用户断点在 launch / 切换时已下发给会话),
+ * 没有会话时显示窗口级用户断点(编辑器 gutter 设的,存到下次 launch)。gutter 点击据此判断是删除还是新增。
+ */
+export function breakpointLinesForTab(
+  state: Pick<ReturnType<typeof useDebugStore.getState>, 'sessions' | 'userBreakpoints'>,
   tab: EditorTab,
 ): number[] {
   const lines: number[] = [];
-  for (const session of sessions.values()) {
+  if (state.sessions.size === 0) {
+    for (const breakpoint of state.userBreakpoints) {
+      if (tabMatchesDiskPath(tab, breakpoint.file)) lines.push(breakpoint.line);
+    }
+    return lines;
+  }
+  for (const session of state.sessions.values()) {
     for (const breakpoint of session.breakpoints) {
       if (tabMatchesDiskPath(tab, breakpoint.file)) lines.push(breakpoint.line);
     }
@@ -103,7 +113,7 @@ function syncDebugDecorations(): void {
     // 断点 / 帧路径通常是调用方拼写(main 已换回),但 agent 也可能直接用真实路径设断点:filePath / realPath 任一命中。
     applyDecorations(
       view,
-      breakpointLinesForTab(debugState.sessions, tab),
+      breakpointLinesForTab(debugState, tab),
       execLineForTab(activeSession, tab),
     );
   }
@@ -134,7 +144,7 @@ function editorDecorationInputsChanged(
 
 type DebugDecorationInputs = Pick<
   ReturnType<typeof useDebugStore.getState>,
-  'sessions' | 'activeSessionId'
+  'sessions' | 'activeSessionId' | 'userBreakpoints'
 >;
 
 function debugDecorationInputsChanged(
@@ -142,6 +152,7 @@ function debugDecorationInputsChanged(
   prev: DebugDecorationInputs,
 ): boolean {
   if (next.activeSessionId !== prev.activeSessionId) return true;
+  if (next.userBreakpoints !== prev.userBreakpoints) return true;
   if (next.sessions === prev.sessions) return false;
   if (next.sessions.size !== prev.sessions.size) return true;
   for (const [id, session] of next.sessions) {
