@@ -34,7 +34,8 @@ import { SegmentedControl, type SegmentedControlOption } from '@/design';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { focusActiveEditor, requestEditorFocus } from './editor-focus-registry';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
-import { activateDockPanel } from '@/shell/dock/wrap-panel-close';
+import { activateGroupKeepingShown } from '@/shell/dock/group-mru';
+import { focusDockPanelSoon } from '@/shell/dock/panel-focus';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
 import { ImageViewer } from './ImageViewer';
@@ -229,12 +230,14 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       for (const id of ids) closeStoreTab(id, groupId);
       if (!refocus) return;
       const s = useEditorStore.getState();
-      // 组随最后一个 tab 关闭(closeEmptyGroups)→ 焦点交给新的活动组(最近使用的组)的编辑器。先激活它的 dock 面板:
-      // 否则随后 dock 移除本组时才把它设为活动面板,dockview 重挂其内容,刚给的焦点掉到 body。
+      // 组随最后一个 tab 关闭(closeEmptyGroups)→ 焦点交给新的活动组(最近使用的组)。先激活它的 dock 面板:
+      // 否则随后 dock 移除本组时才把它设为活动面板,dockview 重挂其内容,刚给的焦点掉到 body。该 dock 组正显示的是
+      // 别的面板(冲突比较 / 设置页 / 终端)时不切走它,焦点交给它(VSCode:MRU 组正显示的编辑器不变)。
       if (!editorGroupIdsOf(s).includes(groupId)) {
         const next = getDockApi()?.getPanel(s.activeGroupId);
-        if (next) activateDockPanel(next);
-        focusActiveEditor();
+        const shown = next ? activateGroupKeepingShown(next) : undefined;
+        if (shown && shown !== next) focusDockPanelSoon(shown, () => shown.api.isActive);
+        else focusActiveEditor();
         return;
       }
       const next = groupActiveTabIdOf(s, groupId);

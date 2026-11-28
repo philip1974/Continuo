@@ -85,6 +85,17 @@ export function mostRecentPanelInDocument(
   return undefined;
 }
 
+/**
+ * 激活 panel 所在的 dock 组,但不切走该组正显示的面板(VSCode:关闭编辑器组后焦点移到最近使用的组,该组正显示的编辑器
+ * 不变):panel 就是组里正显示的面板 → 激活它;同组正显示的是别的面板(冲突比较 / 设置页 / 终端等)→ 激活那个。
+ * 返回被激活的面板,调用方把焦点交给它。BDD: src/__tests__/focus-after-close/close-group-keeps-shown-panel.spec.ts
+ */
+export function activateGroupKeepingShown(panel: IDockviewPanel): IDockviewPanel {
+  const shown = panel.group.activePanel ?? panel;
+  activateDockPanel(shown);
+  return shown;
+}
+
 /** 编辑器组面板(面板 id = 编辑器组 id;BDD: src/__tests__/editor-groups/)。 */
 const isEditorGroupPanel = (panel: IDockviewPanel): boolean =>
   isEditorGroupId(panel.id) && panel.view?.contentComponent === 'editor';

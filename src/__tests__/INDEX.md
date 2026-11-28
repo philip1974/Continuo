@@ -1134,6 +1134,7 @@
 
 ## [关闭弹窗 / tab / 面板后的焦点归属(VSCode 对齐)](./focus-after-close/README.md)
 
+- [`close-group-keeps-shown-panel.spec.ts`](./focus-after-close/close-group-keeps-shown-panel.spec.ts)
 - [`dock-drop-focus.spec.ts`](./focus-after-close/dock-drop-focus.spec.ts)
 - [`dock-panel-close-focus.spec.ts`](./focus-after-close/dock-panel-close-focus.spec.ts)
 - [`editor-tab-close-focus.spec.tsx`](./focus-after-close/editor-tab-close-focus.spec.tsx)
@@ -1190,6 +1191,7 @@
 ## [high-contrast-theme(高对比度深色 / 高对比度浅色主题 + 系统高对比度自动切换)](./high-contrast-theme/README.md)
 
 - [`hc-host-color-scheme.spec.ts`](./high-contrast-theme/hc-host-color-scheme.spec.ts)
+- [`hc-rules.spec.ts`](./high-contrast-theme/hc-rules.spec.ts)
 - [`hc-terminal.spec.tsx`](./high-contrast-theme/hc-terminal.spec.tsx)
 - [`hc-theme-switch.spec.tsx`](./high-contrast-theme/hc-theme-switch.spec.tsx)
 - [`hc-tokens.spec.ts`](./high-contrast-theme/hc-tokens.spec.ts)

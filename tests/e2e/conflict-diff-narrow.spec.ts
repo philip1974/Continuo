@@ -73,6 +73,9 @@ test('720×900 两个编辑组:冲突比较为单栏内联,按钮不竖排不溢
   // 关掉左组让差异 tab 所在组占满
   await window.keyboard.press('ControlOrMeta+KeyW');
   await expect(window.locator('[data-editor-panel-root]')).toHaveCount(1, { timeout: 5_000 });
+  // 关组后焦点到差异 tab 所在组,但该组正显示的冲突比较不被切走(VSCode:MRU 组正显示的编辑器不变),焦点在比较视图里
+  await expect(panel).toBeVisible();
+  await expect.poll(() => panel.evaluate((el) => el.contains(el.ownerDocument.activeElement))).toBe(true);
   await expect.poll(async () => (await panel.boundingBox())!.width, { timeout: 5_000 }).toBeGreaterThan(900);
   await expect(panel.locator('.cm-mergeView')).toHaveCount(1, { timeout: 5_000 });
   await expect(panel.locator('.cm-merge-a .cm-content')).toContainText('export const theirs = 1;');
