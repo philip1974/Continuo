@@ -47,6 +47,11 @@
 
 - 只读:`GIT_OPTIONAL_LOCKS=0`(不写 index、不抢 `index.lock`);剥离宿主机密与改读别处仓库的 `GIT_*`;强制 `core.fsmonitor=false`;
   禁止一切传输;execFile + 参数数组(不经 shell)
+- 打开不可信文件夹不执行其自带配置里的外部程序(`git-status-untrusted-repo.spec.ts`,真实 git + 写标记文件的探针):
+  先 `git config --list --show-scope -z --name-only` 枚举仓库作用域(local / worktree,含其 include)定义的 filter 驱动名,
+  每个都以命令行作用域(`GIT_CONFIG_KEY_n`,名字可含 `=` `.`)置空 `clean / smudge / process` 并 `required=false`;
+  `--ignore-submodules=dirty` 不进子模块跑 status(子模块 config 里的驱动名枚举不到);hook 不执行(不写 index)。
+  读配置失败 → `null`(fail-closed)。用户 / 系统级 filter(如 git-lfs)照常运行
 - cwd 只能是发送窗口已登记的工作区根:IPC 入参 `{ root }` 是 renderer 期望的根,只用来比对 —— 与登记根不符(换根后
   `window:notify-root` 尚未到达、或从「未打开文件夹」首次打开登记还没到)→ `GIT_STATUS_STALE`,不跑 git;renderer 不能指定目录
 - 非仓库 / 未装 git / 命令失败 → `null`(静默);单条命令超时 10s、输出上限 32MiB、条目上限 100k
@@ -78,7 +83,9 @@
 
 - 文件夹继承颜色时不画 VSCode 的圆点徽标(codicon `circle-filled`),只着色
 - 不区分暂存区修改与工作区修改的颜色(VSCode 两个槽位默认同色);重命名 / 复制与未跟踪同色(VSCode 默认同值)
-- 子模块不单独着色
+- 子模块不单独着色;子模块内部未提交的改动不反映到子模块目录(`--ignore-submodules=dirty`,只看记录的提交是否变化)
+- 仓库自带的 filter 被置空:stat 变化(如 touch)的受其影响的文件按原始内容与 index 比较,可能显示为已修改。VSCode 对未信任的
+  工作区(受限模式)干脆不跑 git;这里仍显示装饰,但不执行任何仓库提供的程序
 - 用 `--untracked-files=normal`(整个未跟踪目录一条记录,渲染时展开到其下各项),VSCode 默认 `-uall`
 
 ## e2e

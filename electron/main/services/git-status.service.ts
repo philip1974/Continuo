@@ -5,6 +5,12 @@
 // - execFile + 参数数组(不经 shell);cwd 由调用方传入本窗口已登记的工作区根(git.ipc 取 getWorkspaceRoot,renderer 不自报)。
 // - GIT_OPTIONAL_LOCKS=0:status 不写回 index、不抢 index.lock(用户同时在终端跑 git 不会撞锁),也不触发写 index 的 hook。
 // - 同 plugin-fs 的 git 兜底 env:剥离宿主机密与改读别处仓库的 GIT_*、强制 core.fsmonitor=false、禁止一切传输(惰性拉取)。
+// - 不执行仓库自带配置里的外部程序(打开不可信文件夹即在其中跑 status):仓库作用域(local / worktree,含其 include)
+//   定义的每个 filter 驱动都以命令行作用域置空 clean / smudge / process 并 required=false(git convert.c apply_filter:
+//   命令为空即不过滤);`--ignore-submodules=dirty` 不进子模块跑 status(子模块自己的 config 里的 filter / fsmonitor
+//   驱动名宿主枚举不到)。只读的 rev-parse / config / status 不触发 textconv / diff.external / sshCommand /
+//   credential.helper / gpg.program / pager(无 diff、无传输、非 tty),GIT_OPTIONAL_LOCKS=0 不写 index 故不触发 hook。
+//   取舍:被置空的 filter 让 stat 变化的受影响文件按原始内容比较,可能显示为已修改(VSCode 受限模式干脆不跑 git)。
 // - Windows 上 git 只在 PATH 绝对目录中解析(不执行工作区里的 git.exe)。
 // 资源:单条命令超时 + 输出上限(SIGKILL);全局并发上限;同一根至多一个在跑 + 一个排队(期间的请求合并到排队那次)。
 // BDD: src/__tests__/explorer-git-decorations/
@@ -35,20 +41,23 @@ export const GIT_STATUS_MAX_ENTRIES = 100_000;
 /** 全局同时在跑的 git 查询上限(多窗口 / 多根)。 */
 export const GIT_STATUS_MAX_CONCURRENT = 2;
 
-/** 跑一条 git 命令,返回 stdout;非零退出 / 超时 / 超限 / 找不到 git → reject。 */
-export type GitExec = (args: readonly string[], cwd: string) => Promise<string>;
+/** 命令行作用域的额外 git 配置(经 GIT_CONFIG_KEY_n / VALUE_n 传入:键里可含 `=` 等任意字符,`-c` 做不到)。 */
+export type GitConfigOverrides = readonly (readonly [string, string])[];
 
-export function gitStatusEnv(): NodeJS.ProcessEnv {
-  return mergeSpawnEnv(withGitHardeningEnv(stripGitRepoRedirectEnv(stripInternalSecretEnv(process.env))), {
+/** 跑一条 git 命令,返回 stdout;非零退出 / 超时 / 超限 / 找不到 git → reject。 */
+export type GitExec = (args: readonly string[], cwd: string, config?: GitConfigOverrides) => Promise<string>;
+
+export function gitStatusEnv(config: GitConfigOverrides = []): NodeJS.ProcessEnv {
+  return mergeSpawnEnv(withGitHardeningEnv(stripGitRepoRedirectEnv(stripInternalSecretEnv(process.env)), process.platform, config), {
     ...GIT_OFFLINE_ENV,
     GIT_OPTIONAL_LOCKS: '0',
     GIT_TERMINAL_PROMPT: '0',
   });
 }
 
-export const execGit: GitExec = (args, cwd) =>
+export const execGit: GitExec = (args, cwd, config) =>
   new Promise<string>((resolve, reject) => {
-    const env = gitStatusEnv();
+    const env = gitStatusEnv(config);
     execFile(
       resolveSpawnCommand('git', env),
       [...args],
@@ -141,7 +150,37 @@ export function parsePorcelainZ(stdout: string, rawPrefix: string): GitStatusEnt
   return out;
 }
 
-/** 在 root 跑 rev-parse + status;任何失败 → null。 */
+/** 列出全部配置键及其作用域(`scope\0key\0` 交替);无条目时也退出 0(不像 --get-regexp 无匹配退出 1)。 */
+export const GIT_CONFIG_LIST_ARGS: readonly string[] = ['config', '--list', '--show-scope', '-z', '--name-only'];
+
+/** 由打开的目录自身控制的配置作用域(`.git/config`、`config.worktree` 及它们 include 的文件)。 */
+const REPO_CONFIG_SCOPES = new Set(['local', 'worktree']);
+
+/**
+ * 从 GIT_CONFIG_LIST_ARGS 的输出取仓库作用域定义的 filter 驱动名(子节名区分大小写,可含 `.` `=`),返回把它们全部
+ * 置空的命令行作用域配置。用户 / 系统级配置的 filter(如 git-lfs)是用户自己装的程序,照常运行。
+ */
+export function repoFilterOverrides(stdout: string): GitConfigOverrides {
+  const tokens = stdout.split('\0');
+  const names = new Set<string>();
+  for (let i = 0; i + 1 < tokens.length; i += 2) {
+    if (!REPO_CONFIG_SCOPES.has(tokens[i]!)) continue;
+    const key = tokens[i + 1]!;
+    // 键形如 filter.<子节>.<变量>;节名与变量名 git 已转小写,子节原样
+    if (!key.startsWith('filter.')) continue;
+    const dot = key.lastIndexOf('.');
+    if (dot <= 'filter.'.length) continue;
+    names.add(key.slice('filter.'.length, dot));
+  }
+  const out: [string, string][] = [];
+  for (const name of names) {
+    out.push([`filter.${name}.clean`, ''], [`filter.${name}.smudge`, ''], [`filter.${name}.process`, '']);
+    out.push([`filter.${name}.required`, 'false']);
+  }
+  return out;
+}
+
+/** 在 root 跑 rev-parse + config + status;任何失败 → null(读不到配置时 fail-closed,不冒险跑 status)。 */
 export async function queryGitStatus(root: string, exec: GitExec = execGit): Promise<GitStatusSnapshot | null> {
   let head: string;
   try {
@@ -154,9 +193,20 @@ export async function queryGitStatus(root: string, exec: GitExec = execGit): Pro
   const prefix = (lines[1] ?? '').replace(/\r$/, '');
   let out: string;
   try {
+    const config = repoFilterOverrides(await exec(GIT_CONFIG_LIST_ARGS, root));
     out = await exec(
-      ['status', '--porcelain=v1', '-z', '--ignored=matching', '--untracked-files=normal', '--', '.'],
+      [
+        'status',
+        '--porcelain=v1',
+        '-z',
+        '--ignored=matching',
+        '--untracked-files=normal',
+        '--ignore-submodules=dirty',
+        '--',
+        '.',
+      ],
       root,
+      config,
     );
   } catch {
     return null;

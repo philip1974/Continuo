@@ -4,7 +4,8 @@
 //    `git status` 的插件即执行任意命令。用 git ≥2.31 的「命令行作用域」env(GIT_CONFIG_COUNT /
 //    GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n,优先级高于仓库 config)强制 core.fsmonitor=false。对所有子进程
 //    注入:非 git 程序忽略,git 被间接调用时同样受保护。不设 core.hooksPath(会破坏用户提交 hooks)。
-//    **覆盖范围(如实说明):宿主兜底只覆盖 core.fsmonitor**。同一威胁(不可信仓库的 `.git/config` /
+//    **覆盖范围(如实说明):插件子进程的宿主兜底只覆盖 core.fsmonitor**(宿主自己跑的资源管理器 git 状态另外置空
+//    仓库定义的 filter 驱动并不进子模块,见 services/git-status.service)。同一威胁(不可信仓库的 `.git/config` /
 //    `.gitattributes` 让 git 执行命令)下还有:`filter.<driver>.clean/smudge/process` + `.gitattributes`、
 //    `diff.<driver>.textconv` / `diff.external`、`core.sshCommand`、`core.pager` / `pager.<cmd>`、
 //    `core.editor`、`credential.helper` 等 —— 驱动名由仓库自定,命令行作用域 env 无通配语法,宿主无法

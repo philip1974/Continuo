@@ -219,7 +219,9 @@ describe('只读、加固的 git 环境', () => {
 describe('并发与合并', () => {
   function controlledExec() {
     const pending: { args: readonly string[]; cwd: string; resolve: (s: string) => void }[] = [];
-    const exec: GitExec = (args, cwd) => new Promise((resolve) => pending.push({ args, cwd, resolve }));
+    // 读配置那一步直接答空(不计入 pending):这里只关心 rev-parse / status 的排队
+    const exec: GitExec = (args, cwd) =>
+      args[0] === 'config' ? Promise.resolve('') : new Promise((resolve) => pending.push({ args, cwd, resolve }));
     const flush = () => new Promise((r) => setTimeout(r, 0));
     return { exec, pending, flush };
   }

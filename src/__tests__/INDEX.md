@@ -996,6 +996,7 @@
 - [`folder-tree-git.spec.tsx`](./explorer-git-decorations/folder-tree-git.spec.tsx)
 - [`git-decorations.spec.ts`](./explorer-git-decorations/git-decorations.spec.ts)
 - [`git-status-service.spec.ts`](./explorer-git-decorations/git-status-service.spec.ts)
+- [`git-status-untrusted-repo.spec.ts`](./explorer-git-decorations/git-status-untrusted-repo.spec.ts)
 - [`hidden-files-default.spec.ts`](./explorer-git-decorations/hidden-files-default.spec.ts)
 - [`use-git-status.spec.tsx`](./explorer-git-decorations/use-git-status.spec.tsx)
 
