@@ -16,6 +16,7 @@ import {
 } from '../../shared/trusted-domains';
 import {
   getUserTrustedDomains,
+  isTrustedDomainsPersistBlocked,
   onUserTrustedDomainsChanged,
   setUserTrustedDomains,
 } from '../services/trusted-domains.service';
@@ -66,6 +67,7 @@ export function registerShellIpc(): void {
   safeHandle(SHELL_CHANNELS.TRUSTED_DOMAINS_GET, z.undefined(), async () => ({
     user: await getUserTrustedDomains(),
     defaults: DEFAULT_TRUSTED_DOMAINS,
+    persistBlocked: await isTrustedDomainsPersistBlocked(),
   }));
   safeHandle(SHELL_CHANNELS.TRUSTED_DOMAINS_SET, SetTrustedDomainsInput, ({ domains }) => setUserTrustedDomains(domains));
   onUserTrustedDomainsChanged((list) =>

@@ -1,11 +1,14 @@
 // BDD: workspace-trust / IPC:renderer 伪造不了信任(没有置信任的通道,决定只来自 main 原生对话框)、帧信任 / 入参校验、
 // notify-root 触发询问、userData 持久化(损坏隔离)、E2E 默认只在 CONTINUO_E2E=1 下生效。
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WORKSPACE_TRUST_CHANNELS } from '../../../electron/shared/workspace-trust';
 import { WINDOW_CHANNELS } from '../../../electron/shared/window-channels';
+import { en } from '../../../electron/shared/i18n-locales/en';
+import { ko } from '../../../electron/shared/i18n-locales/ko';
+import { zh } from '../../../electron/shared/i18n-locales/zh';
 
 type InvokeHandler = (event: { sender: object; senderFrame: unknown }, raw: unknown) => Promise<unknown>;
 
@@ -136,6 +139,41 @@ describe('workspace-trust IPC', () => {
     await settled(1);
     expect(m.showMessageBox).not.toHaveBeenCalled();
     expect(await invoke(WORKSPACE_TRUST_CHANNELS.GET_INFO, undefined)).toMatchObject({ ok: true, data: { trusted: true } });
+  });
+
+  it('经符号链接打开:复选框显示链接所在上级的完整路径;勾上级 → 信任该上级(realpath 后)与当前文件夹,本窗口受信任', async () => {
+    const realParent = mkdtempSync(path.join(tmpdir(), 'ui193-real-'));
+    const target = path.join(realParent, 'proj');
+    mkdirSync(target);
+    const linkParent = mkdtempSync(path.join(tmpdir(), 'ui193-links-'));
+    const link = path.join(linkParent, 'proj');
+    symlinkSync(target, link, 'dir');
+    try {
+      await register();
+      m.showMessageBox.mockResolvedValue({ response: 0, checkboxChecked: true });
+      await invoke(WINDOW_CHANNELS.NOTIFY_ROOT, { root: link });
+      await settled(2);
+      const opts = m.showMessageBox.mock.calls[0]![1] as { checkboxLabel: string; detail: string };
+      expect(opts.checkboxLabel).toContain(linkParent);
+      expect(opts.detail).toContain(link);
+      expect((await fileData()).trusted).toEqual([realpathSync(linkParent), realpathSync(target)]);
+      expect(m.sent.at(-1)).toEqual([WORKSPACE_TRUST_CHANNELS.CHANGED, { root: link, trusted: true }]);
+    } finally {
+      rmSync(linkParent, { recursive: true, force: true });
+      rmSync(realParent, { recursive: true, force: true });
+    }
+  });
+
+  it('持久化文件读不出来(IO 错误,非损坏)→ 不写盘,询问对话框写明「本次修改不会保存」', async () => {
+    mkdirSync(trustFile()); // 路径是目录:读失败(EFTYPE),内容未知
+    await register();
+    m.showMessageBox.mockResolvedValue({ response: 0, checkboxChecked: false });
+    await invoke(WINDOW_CHANNELS.NOTIFY_ROOT, { root: ws });
+    await settled(2);
+    const { detail } = m.showMessageBox.mock.calls[0]![1] as { detail: string };
+    expect([en, zh, ko].some((l) => detail.includes(l['workspace_trust.not_saved']))).toBe(true);
+    expect(readdirSync(trustFile())).toEqual([]);
+    expect(await invoke(WORKSPACE_TRUST_CHANNELS.GET_INFO, undefined)).toMatchObject({ ok: true, data: { persistBlocked: true } });
   });
 
   it('持久化文件损坏 → 隔离留证、什么都不信任(会询问)', async () => {

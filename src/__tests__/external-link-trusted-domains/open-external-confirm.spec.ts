@@ -1,7 +1,8 @@
 // BDD: external-link-trusted-domains / main 外链出口:不受信的 http(s) 链接先弹原生确认框(VSCode trustedDomainsValidator),
-// 「信任 <域名>」写入 userData/trusted-domains.json;mailto 与受信链接直接打开;文件损坏时不覆盖。
+// 「信任 <域名>」写入 userData/trusted-domains.json;mailto 与受信链接直接打开;文件损坏时隔离留证、抢救有效条目后照常保存;
+// 读不出来(IO)时不覆盖,并在确认框里写明「本次修改不会保存」。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -49,6 +50,7 @@ import { openExternalIfAllowed } from '../../../electron/main/services/shell.ser
 import {
   _resetTrustedDomainsForTest,
   getUserTrustedDomains,
+  isTrustedDomainsPersistBlocked,
   setUserTrustedDomains,
 } from '../../../electron/main/services/trusted-domains.service';
 import { en } from '../../../electron/shared/i18n-locales/en';
@@ -162,13 +164,60 @@ describe('无需确认', () => {
 });
 
 describe('持久化', () => {
-  it('读出已存的列表;文件损坏 → 按空列表询问,且不覆盖原文件', async () => {
+  const restart = () => _resetTrustedDomainsForTest();
+
+  it('读出已存的列表', async () => {
     writeFileSync(file(), JSON.stringify({ version: 1, domains: ['https://saved.test'] }));
     expect(await getUserTrustedDomains()).toEqual(['https://saved.test']);
-    _resetTrustedDomainsForTest();
+    expect(await isTrustedDomainsPersistBlocked()).toBe(false);
+  });
+
+  it('JSON 损坏 → 原文件隔离为 .corrupt 留证、按空列表询问;之后信任的域照常保存,重启后还在', async () => {
     writeFileSync(file(), '{oops');
     expect(await getUserTrustedDomains()).toEqual([]);
+    expect(readFileSync(`${file()}.corrupt`, 'utf8')).toBe('{oops');
+    expect(await isTrustedDomainsPersistBlocked()).toBe(false);
     await setUserTrustedDomains(['https://new.test']);
-    expect(readFileSync(file(), 'utf8')).toBe('{oops');
+    restart();
+    expect(await getUserTrustedDomains()).toEqual(['https://new.test']);
+  });
+
+  it('格式不符(条目超长 / 非字符串 / 版本不对)→ 隔离留证,抢救出合法条目并立即写回;重启后仍在', async () => {
+    const bad = { version: 2, domains: ['https://keep.test', 42, 'x'.repeat(300), ' https://keep2.test '] };
+    writeFileSync(file(), JSON.stringify(bad));
+    expect(await getUserTrustedDomains()).toEqual(['https://keep.test', 'https://keep2.test']);
+    expect(JSON.parse(readFileSync(`${file()}.corrupt`, 'utf8'))).toEqual(bad);
+    expect(JSON.parse(readFileSync(file(), 'utf8'))).toEqual({ version: 1, domains: ['https://keep.test', 'https://keep2.test'] });
+    restart();
+    expect(await getUserTrustedDomains()).toEqual(['https://keep.test', 'https://keep2.test']);
+  });
+
+  it('再次损坏不覆盖更早的 .corrupt 证据', async () => {
+    writeFileSync(file(), '{first');
+    await getUserTrustedDomains();
+    restart();
+    writeFileSync(file(), '{second');
+    await getUserTrustedDomains();
+    const evidence = readdirSync(h.userData).filter((f) => f.startsWith('trusted-domains.json.corrupt'));
+    expect(evidence).toHaveLength(2);
+    expect(readFileSync(`${file()}.corrupt`, 'utf8')).toBe('{first');
+  });
+
+  it('读不出来(IO 错误,内容未知)→ 按空列表询问、本次不写盘;「配置受信任的域」对话框写明本次修改不会保存', async () => {
+    mkdirSync(file()); // 路径是目录:读失败(非损坏)
+    expect(await getUserTrustedDomains()).toEqual([]);
+    expect(await isTrustedDomainsPersistBlocked()).toBe(true);
+    h.responses = [2, 0];
+    await openExternalIfAllowed('https://docs.example.com/a');
+    expect(h.boxes[1]!.detail).toBe(`https://docs.example.com/a\n\n${en['settings.trusted_domains.not_saved']}`);
+    expect(h.opened).toEqual(['https://docs.example.com/a']); // 本次运行内存里生效
+    expect(readdirSync(file())).toEqual([]);
+    expect(existsSync(`${file()}.corrupt`)).toBe(false);
+  });
+
+  it('正常时「配置受信任的域」对话框不带该提示', async () => {
+    h.responses = [2, 3];
+    await openExternalIfAllowed('https://docs.example.com/a');
+    expect(h.boxes[1]!.detail).toBe('https://docs.example.com/a');
   });
 });

@@ -32,6 +32,8 @@ export interface WorkspaceTrustInfo extends WorkspaceTrustState {
   readonly canUntrust: boolean;
   /** 全部已信任文件夹(按加入顺序)。 */
   readonly folders: readonly string[];
+  /** 本次运行信任的修改存不下来(读盘失败,见 workspace-trust.service):管理界面提示。 */
+  readonly persistBlocked: boolean;
 }
 
 export function isWorkspaceTrustState(p: unknown): p is WorkspaceTrustState {

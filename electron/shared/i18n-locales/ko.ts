@@ -917,6 +917,8 @@ export const ko: Record<TranslationKey, string> = {
   'settings.trusted_domains.remove': '{domain} 제거',
   'settings.trusted_domains.default_badge': '기본값',
   'settings.trusted_domains.empty': '추가한 도메인 없음',
+  'settings.trusted_domains.not_saved':
+    '저장된 신뢰할 수 있는 도메인을 읽을 수 없습니다. 지금 변경한 내용은 Continuo를 종료할 때까지만 적용되며 저장되지 않습니다.',
   'commands.preferences.manage_trusted_domains.title': '신뢰할 수 있는 도메인 관리',
   'panels.editor.link.blocked_scheme': '보안상의 이유로 이 링크를 열지 않았습니다: {scheme}',
   'panels.editor.unicode.ambiguous': '{char} 문자는 소스 코드에서 더 일반적인 ASCII 문자 {ascii}와(과) 혼동될 수 있습니다.',
@@ -1451,7 +1453,7 @@ export const ko: Record<TranslationKey, string> = {
   'workspace_trust.prompt.learn_more': '이러한 파일의 작성자를 신뢰하지 않는 경우 파일이 악의적일 수 있으므로 제한 모드에서 계속하는 것이 좋습니다.',
   'workspace_trust.prompt.trust': '예, 작성자를 신뢰합니다.',
   'workspace_trust.prompt.dont_trust': '아니요, 작성자를 신뢰하지 않습니다.',
-  'workspace_trust.prompt.trust_parent': '부모 폴더 “{name}”에서 모든 파일의 작성자를 신뢰합니다.',
+  'workspace_trust.prompt.trust_parent': '부모 폴더 “{path}”에서 모든 파일의 작성자를 신뢰합니다.',
   'workspace_trust.status.text': '제한 모드',
   'workspace_trust.status.aria': '제한 모드: 이 폴더를 신뢰할 수 없으므로 일부 기능을 사용할 수 없습니다.',
   'workspace_trust.status.tooltip': '제한 모드로 실행\n\n이 폴더를 신뢰할 수 없으므로 일부 기능을 사용할 수 없습니다.\n{features}\n\n클릭하여 작업 영역 신뢰를 관리합니다.',
@@ -1472,5 +1474,7 @@ export const ko: Record<TranslationKey, string> = {
   'workspace_trust.manage.remove': '경로 삭제',
   'workspace_trust.manage.close': '닫기',
   'workspace_trust.manage.failed': '작업 영역 신뢰를 업데이트할 수 없습니다.',
+  'workspace_trust.not_saved':
+    '저장된 작업 영역 신뢰 설정을 읽을 수 없습니다. 지금 변경한 내용은 Continuo를 종료할 때까지만 적용되며 저장되지 않습니다.',
   'workspace_trust.note': '이 폴더는 신뢰할 수 없습니다(제한 모드). 이 폴더에 있는 파일의 작성자를 신뢰하는 경우에만 권한을 부여하세요.',
 };

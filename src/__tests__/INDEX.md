@@ -2425,6 +2425,10 @@
 
 - [`theme-commands.spec.tsx`](./theme-commands/theme-commands.spec.tsx)
 
+## [third-party-notices(第三方声明:从 VSCode 移植 / 复制的代码与数据)](./third-party-notices/README.md)
+
+- [`vscode-notice.spec.ts`](./third-party-notices/vscode-notice.spec.ts)
+
 ## [TitleBar(macOS 顶栏:workspace + active file 文件名)](./title-bar/README.md)
 
 - [`title-bar-full-screen-ipc.spec.ts`](./title-bar/title-bar-full-screen-ipc.spec.ts)

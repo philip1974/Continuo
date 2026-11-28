@@ -19,6 +19,8 @@ export function TrustedDomainsSettingRow({ spec }: { readonly spec: SettingItemS
   const titleId = `setting-title-${spec.id}`;
   const [defaults, setDefaults] = useState<readonly string[]>([]);
   const [user, setUser] = useState<readonly string[]>([]);
+  // 读盘失败:本次修改存不下来(main 判定),在列表上方写明
+  const [persistBlocked, setPersistBlocked] = useState(false);
   const [draft, setDraft] = useState('');
 
   useEffect(() => {
@@ -37,6 +39,7 @@ export function TrustedDomainsSettingRow({ spec }: { readonly spec: SettingItemS
         if (!r.ok) return notifyFailure(r);
         setDefaults(r.data.defaults);
         setUser(r.data.user);
+        setPersistBlocked(r.data.persistBlocked);
       })
       .catch((err: unknown) => {
         if (alive) notifyThrownError(err);
@@ -90,6 +93,11 @@ export function TrustedDomainsSettingRow({ spec }: { readonly spec: SettingItemS
           {description && <div className="mt-1 text-xs text-fg-muted">{description}</div>}
         </div>
         <div className="flex w-80 min-w-0 max-w-full shrink-0 flex-col gap-2">
+          {persistBlocked && (
+            <div role="status" data-trusted-domains-not-saved="" className="text-xs text-warning">
+              {t('settings.trusted_domains.not_saved')}
+            </div>
+          )}
           <ul aria-labelledby={titleId} className="flex flex-col gap-1">
             {defaults.map((d) => (
               <li key={`default:${d}`} className="flex min-h-6 items-center gap-2 text-xs text-fg-muted">

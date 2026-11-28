@@ -24,6 +24,8 @@ export const SHELL_CHANNELS = {
 export interface TrustedDomainsSnapshot {
   readonly user: readonly string[];
   readonly defaults: readonly string[];
+  /** 本次运行的修改存不下来(读盘 IO 失败,见 trusted-domains.service 文件头):设置页提示。 */
+  readonly persistBlocked: boolean;
 }
 
 export interface IpcShellOpenExternalInput {

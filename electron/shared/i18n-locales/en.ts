@@ -942,6 +942,8 @@ export const en = {
   'settings.trusted_domains.remove': 'Remove {domain}',
   'settings.trusted_domains.default_badge': 'Default',
   'settings.trusted_domains.empty': 'No domains added yet',
+  'settings.trusted_domains.not_saved':
+    'The saved trusted domains could not be read. Changes made now apply only until Continuo quits and will not be saved.',
   'commands.preferences.manage_trusted_domains.title': 'Manage Trusted Domains',
   'panels.editor.link.blocked_scheme': 'For security reasons, this link was not opened: {scheme}',
   'panels.editor.unicode.ambiguous': 'The character {char} could be confused with the ASCII character {ascii}, which is more common in source code.',
@@ -1493,7 +1495,7 @@ export const en = {
   'workspace_trust.prompt.learn_more': 'If you don\'t trust the authors of these files, we recommend to continue in restricted mode as the files may be malicious.',
   'workspace_trust.prompt.trust': 'Yes, I trust the authors',
   'workspace_trust.prompt.dont_trust': 'No, I don\'t trust the authors',
-  'workspace_trust.prompt.trust_parent': 'Trust the authors of all files in the parent folder “{name}”',
+  'workspace_trust.prompt.trust_parent': 'Trust the authors of all files in the parent folder “{path}”',
   'workspace_trust.status.text': 'Restricted Mode',
   'workspace_trust.status.aria': 'Restricted Mode: Some features are disabled because this folder is not trusted.',
   'workspace_trust.status.tooltip': 'Running in Restricted Mode\n\nSome features are disabled because this folder is not trusted:\n{features}\n\nClick to manage Workspace Trust.',
@@ -1514,6 +1516,8 @@ export const en = {
   'workspace_trust.manage.remove': 'Delete Path',
   'workspace_trust.manage.close': 'Close',
   'workspace_trust.manage.failed': 'Could not update Workspace Trust',
+  'workspace_trust.not_saved':
+    'The saved Workspace Trust settings could not be read. Changes made now apply only until Continuo quits and will not be saved.',
   'workspace_trust.note': 'This folder is not trusted (Restricted Mode). Only grant this if you trust the authors of the files in this folder.',
 } as const;
 

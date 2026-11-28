@@ -40,6 +40,21 @@ Source copied and adapted (not installed from npm):
 | Power Symbols IEC | <https://github.com/jloughry/Unicode> | MIT |
 | Weather Icons | <https://github.com/erikflowers/weather-icons> | SIL OFL 1.1 |
 
+## Visual Studio Code (microsoft/vscode) · MIT License
+
+Code and data ported or copied from <https://github.com/microsoft/vscode> (© Microsoft Corporation). Code that only follows VS Code's behavior or design is not listed. Full license text: [MIT License text (Visual Studio Code)](#mit-license-text-visual-studio-code).
+
+- `src/panels/Editor/unicode-ambiguous-data.ts` — confusable-character data from `src/vs/base/common/strings.ts` (`AmbiguousCharacters.ambiguousCharacterData`); subset for the UI languages.
+- `src/lib/fuzzy-scorer.ts` — ported from `src/vs/base/common/fuzzyScorer.ts`, with `matchesPrefix` (`filters.ts`) and `compareAnything` / `compareByPrefix` (`comparers.ts`).
+- `src/panels/Editor/indentation-guesser.ts` — ported from `src/vs/editor/common/model/indentationGuesser.ts`.
+- `electron/shared/workspace-search.ts` — `lcut` ported from `src/vs/base/common/strings.ts`.
+- `electron/main/menu-mnemonic.ts` — `mnemonicMenuLabel` ported from `src/vs/base/common/labels.ts`.
+- `src/plugins/quick-open/goto-line.ts` — `FILE_LINE_PATTERN` copied from `LINE_COLON_PATTERN` (`extractRangeFromFilter`, `src/vs/workbench/contrib/search/common/search.ts`).
+- `electron/shared/host-color-scheme.ts` — `hostColorSchemeFromNativeTheme` ported from `getColorScheme` in `src/vs/platform/theme/electron-main/themeMainServiceImpl.ts`.
+- `electron/shared/text-encoding.ts` — encoding ids, labels and order from `SUPPORTED_ENCODINGS` (`src/vs/workbench/services/textfile/common/encoding.ts`); subset.
+- `src/panels/Terminal/useTerminal.ts` — high-contrast terminal palettes from the `hcDark` / `hcLight` defaults in `src/vs/workbench/contrib/terminal/common/terminalColorRegistry.ts`.
+- `src/styles/theme.css` — high-contrast light syntax colors from `extensions/theme-defaults/themes/hc_light.json` (some darkened for contrast).
+
 ## vscode-js-debug · MIT License
 
 - Downloaded at build time by `scripts/fetch-debug-adapter.mjs` (pinned version, SHA-256 verified) and bundled into packaged apps as `js-debug/`, which ships with its own `LICENSE`.
@@ -51,6 +66,32 @@ Source copied and adapted (not installed from npm):
 MIT License
 
 Copyright (c) Aceternity / Manu Arora
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## MIT License text (Visual Studio Code)
+
+```
+MIT License
+
+Copyright (c) 2015 - present Microsoft Corporation
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

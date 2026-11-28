@@ -913,6 +913,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.trusted_domains.remove': '移除 {domain}',
   'settings.trusted_domains.default_badge': '默认',
   'settings.trusted_domains.empty': '尚未添加域名',
+  'settings.trusted_domains.not_saved': '无法读取已保存的受信任的域。本次修改只在退出 Continuo 前有效，不会保存。',
   'commands.preferences.manage_trusted_domains.title': '管理受信任的域',
   'panels.editor.link.blocked_scheme': '出于安全原因未打开此链接：{scheme}',
   'panels.editor.unicode.ambiguous': '字符 {char} 可能会与 ASCII 字符 {ascii} 混淆，后者在源代码中更为常见。',
@@ -1444,7 +1445,7 @@ export const zh: Record<TranslationKey, string> = {
   'workspace_trust.prompt.learn_more': '如果不信任这些文件的作者，则建议继续使用受限模式，因为这些文件可能是恶意文件。',
   'workspace_trust.prompt.trust': '是，我信任此作者',
   'workspace_trust.prompt.dont_trust': '否，我不信任此作者',
-  'workspace_trust.prompt.trust_parent': '信任上级文件夹「{name}」中所有文件的作者',
+  'workspace_trust.prompt.trust_parent': '信任上级文件夹「{path}」中所有文件的作者',
   'workspace_trust.status.text': '受限模式',
   'workspace_trust.status.aria': '受限模式：某些功能已禁用，因为此文件夹不受信任。',
   'workspace_trust.status.tooltip': '在受限模式下运行\n\n某些功能被禁用，因为此文件夹不受信任：\n{features}\n\n点击管理工作区信任。',
@@ -1465,5 +1466,6 @@ export const zh: Record<TranslationKey, string> = {
   'workspace_trust.manage.remove': '删除路径',
   'workspace_trust.manage.close': '关闭',
   'workspace_trust.manage.failed': '无法更新工作区信任',
+  'workspace_trust.not_saved': '无法读取已保存的工作区信任设置。本次修改只在退出 Continuo 前有效，不会保存。',
   'workspace_trust.note': '此文件夹不受信任（受限模式）。仅在信任此文件夹中文件的作者时才授权。',
 };

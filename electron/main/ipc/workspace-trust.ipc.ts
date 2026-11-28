@@ -18,6 +18,7 @@ import { trySend } from '../lib/try-send';
 import { getMainT } from '../i18n';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { ROOT_MAX } from '../../shared/window-create-schema';
+import { revealInvisibleChars } from '../../shared/reveal-invisible-chars';
 import { WORKSPACE_TRUST_CHANNELS, WORKSPACE_TRUST_MAX_FOLDERS } from '../../shared/workspace-trust';
 import {
   createWorkspaceTrustService,
@@ -75,15 +76,17 @@ export async function showTrustPrompt(req: TrustPromptRequest): Promise<TrustPro
     detail: [
       t('workspace_trust.prompt.detail', { product: 'Continuo' }),
       t('workspace_trust.prompt.learn_more'),
-      req.root,
+      revealInvisibleChars(req.root),
+      ...(req.persistBlocked ? [t('workspace_trust.not_saved')] : []),
     ].join('\n\n'),
     buttons: [t('workspace_trust.prompt.trust'), t('workspace_trust.prompt.dont_trust')],
     defaultId: 0,
     // Esc / 关闭 = 不信任(受限模式浏览)
     cancelId: 1,
     noLink: true,
-    ...(req.parentName !== null
-      ? { checkboxLabel: t('workspace_trust.prompt.trust_parent', { name: req.parentName }), checkboxChecked: false }
+    // 上级显示完整路径(经符号链接打开时与上方的文件夹路径同一前缀,看得出信任的是哪个目录)
+    ...(req.parent !== null
+      ? { checkboxLabel: t('workspace_trust.prompt.trust_parent', { path: revealInvisibleChars(req.parent) }), checkboxChecked: false }
       : {}),
   };
   const win = BrowserWindow.fromId(req.windowId);

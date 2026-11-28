@@ -7,7 +7,11 @@
 //   大小写不敏感、APFS 不区分 NFC / NFD,同 foldPathForCompare),Linux 原样。
 // - 继承:某个已信任条目等于当前文件夹或是其上级 → 受信任(VSCode doGetUriTrustInfo 的 isEqualOrParent)。
 // - 询问:未信任、且没问过 → 弹一次(同一文件夹同时只弹一个,多窗口共用);「信任」可勾选「信任上级文件夹」(加上级条目)。
+//   上级 = 上报的原路径 root 的上级(VSCode setParentFolderTrust 取工作区 URI 的 dirname,不解析符号链接:经链接打开时
+//   信任的是对话框里看到的那个上级),写入前再 realpath 规范化;规范化后的上级不覆盖当前文件夹(链接指向别处)→ 当前文件夹
+//   也一并记入,保证「信任」之后本窗口确实受信任。
 //   对话框结果只来自 deps.prompt(main 原生对话框),renderer 没有直接置信任的入口。
+// - 读盘失败(IO)→ 本次启动不写盘;对话框与管理界面提示「本次修改不会保存」(persistBlocked)。
 // - enabled=false(只在 E2E 默认,见 workspace-trust.ipc):一切视为受信任、不询问。
 // BDD: src/__tests__/workspace-trust/
 
@@ -23,8 +27,10 @@ export interface TrustPromptRequest {
   readonly windowId: number;
   /** 窗口上报的根(对话框里显示)。 */
   readonly root: string;
-  /** 上级文件夹名(可勾选「信任上级文件夹」);根目录没有上级 → null。 */
-  readonly parentName: string | null;
+  /** root 的上级文件夹完整路径(可勾选「信任上级文件夹」;不解析符号链接);根目录没有上级 → null。 */
+  readonly parent: string | null;
+  /** 本次运行信任的修改存不下来(读盘失败):对话框写明。 */
+  readonly persistBlocked: boolean;
 }
 
 /** 用户的决定;null = 对话框没能弹出 / 没有结果(不记为已询问,保持受限)。 */
@@ -133,19 +139,25 @@ export function createWorkspaceTrustService(deps: WorkspaceTrustDeps): Workspace
     const key = fold(c);
     const pending = prompts.get(key);
     if (pending) return pending;
-    const parent = p.dirname(c);
-    const hasParent = !same(parent, c);
+    const parent = p.dirname(root);
+    const hasParent = !same(parent, root);
     const run = (async () => {
       let answer: TrustPromptAnswer;
       try {
-        answer = await deps.prompt({ windowId, root, parentName: hasParent ? p.basename(parent) || parent : null });
+        answer = await deps.prompt({ windowId, root, parent: hasParent ? parent : null, persistBlocked: persistDisabled });
       } catch (err) {
         warn('[workspace-trust] prompt failed', err);
         answer = null;
       }
       if (answer === null) return;
       pushBounded(prompted, c);
-      if (answer.trust) pushBounded(trusted, answer.parent && hasParent ? parent : c);
+      if (answer.trust && answer.parent && hasParent) {
+        const parentCanonical = await canonical(parent);
+        pushBounded(trusted, parentCanonical);
+        if (!covers(parentCanonical, c)) pushBounded(trusted, c);
+      } else if (answer.trust) {
+        pushBounded(trusted, c);
+      }
       await persist();
       await pushAll();
     })().finally(() => prompts.delete(key));
@@ -185,7 +197,8 @@ export function createWorkspaceTrustService(deps: WorkspaceTrustDeps): Workspace
       await ready;
       const entry = entryFor(windowId);
       const folders = [...trusted];
-      if (!entry) return { root: null, trusted: true, trustedBy: [], canUntrust: false, folders };
+      const persistBlocked = persistDisabled;
+      if (!entry) return { root: null, trusted: true, trustedBy: [], canUntrust: false, folders, persistBlocked };
       const c = await entry.canonical;
       const by = trustedBy(c);
       return {
@@ -194,6 +207,7 @@ export function createWorkspaceTrustService(deps: WorkspaceTrustDeps): Workspace
         trustedBy: by,
         canUntrust: deps.enabled && by.length === 1 && same(by[0]!, c),
         folders,
+        persistBlocked,
       };
     },
     async requestTrust(windowId) {

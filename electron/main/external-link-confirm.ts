@@ -8,7 +8,11 @@ import { BrowserWindow, clipboard, dialog, type MessageBoxOptions } from 'electr
 import { getMainT } from './i18n';
 import { PRODUCT_NAME } from './help-links';
 import { isUrlTrusted, trustChoicesFor, type TrustChoice } from '../shared/trusted-domains';
-import { addUserTrustedDomain, getEffectiveTrustedDomains } from './services/trusted-domains.service';
+import {
+  addUserTrustedDomain,
+  getEffectiveTrustedDomains,
+  isTrustedDomainsPersistBlocked,
+} from './services/trusted-domains.service';
 import { sendMenuCommand } from './lib/menu-command';
 
 /** 确认框里显示的地址:WHATWG 规范化后的完整 href(主机名为 punycode,同形字域名一眼可辨;不截断)。 */
@@ -38,16 +42,20 @@ function choiceLabel(t: ReturnType<typeof getMainT>, c: TrustChoice): string {
   }
 }
 
-/** 「配置受信任的域」:选了信任某项 → 写入并按新列表判定是否打开;「管理」→ 打开设置页的受信任的域;取消 → 不打开。 */
+/**
+ * 「配置受信任的域」:选了信任某项 → 写入并按新列表判定是否打开;「管理」→ 打开设置页的受信任的域;取消 → 不打开。
+ * 读盘失败(本次修改存不下来)时在地址下方写明,不让用户以为已经永久信任。
+ */
 async function configureTrustedDomains(url: string, win: BrowserWindow | null): Promise<boolean> {
   const t = getMainT();
   const choices = trustChoicesFor(url);
   const buttons = [...choices.map((c) => choiceLabel(t, c)), t('link.trust.manage'), t('link.confirm.cancel')];
+  const notSaved = (await isTrustedDomainsPersistBlocked()) ? `\n\n${t('settings.trusted_domains.not_saved')}` : '';
   const response = await showBox(win, {
     type: 'question',
     title: PRODUCT_NAME,
     message: t('link.trust.title'),
-    detail: displayUrl(url),
+    detail: displayUrl(url) + notSaved,
     buttons,
     defaultId: 0,
     cancelId: buttons.length - 1,

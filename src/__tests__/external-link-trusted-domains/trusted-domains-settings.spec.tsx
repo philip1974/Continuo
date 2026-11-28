@@ -6,6 +6,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 
 const h = vi.hoisted(() => ({
   user: ['https://saved.test'] as readonly string[],
+  persistBlocked: false,
   set: vi.fn(),
   changed: null as ((list: readonly string[]) => void) | null,
 }));
@@ -15,7 +16,7 @@ vi.mock('@/lib/co-api', () => ({
     shell: {
       getTrustedDomains: vi.fn(async () => ({
         ok: true,
-        data: { user: h.user, defaults: ['https://github.com/philip1974/Continuo'] },
+        data: { user: h.user, defaults: ['https://github.com/philip1974/Continuo'], persistBlocked: h.persistBlocked },
       })),
       setTrustedDomains: h.set,
       onTrustedDomainsChanged: (cb: (list: readonly string[]) => void) => {
@@ -34,6 +35,7 @@ import { t } from '../../i18n';
 
 beforeEach(() => {
   h.user = ['https://saved.test'];
+  h.persistBlocked = false;
   h.set.mockReset();
   h.set.mockImplementation(async (list: readonly string[]) => ({ ok: true, data: list }));
 });
@@ -72,6 +74,16 @@ describe('设置页「受信任的域」', () => {
     await screen.findByText('https://saved.test');
     act(() => h.changed?.(['https://saved.test', 'https://docs.example.com']));
     expect(await screen.findByText('https://docs.example.com')).toBeTruthy();
+  });
+
+  it('main 报告本次修改存不下来(读盘失败)→ 列表上方写明「不会保存」;正常时不显示', async () => {
+    const view = render(<TrustedDomainsSettingRow spec={WORKBENCH_TRUSTED_DOMAINS} />);
+    await screen.findByText('https://saved.test');
+    expect(screen.queryByText(t('settings.trusted_domains.not_saved'))).toBeNull();
+    view.unmount();
+    h.persistBlocked = true;
+    render(<TrustedDomainsSettingRow spec={WORKBENCH_TRUSTED_DOMAINS} />);
+    expect((await screen.findByText(t('settings.trusted_domains.not_saved'))).getAttribute('role')).toBe('status');
   });
 });
 

@@ -49,6 +49,7 @@ const info = (over: Partial<WorkspaceTrustInfo> = {}): WorkspaceTrustInfo => ({
   trustedBy: [],
   canUntrust: false,
   folders: [],
+  persistBlocked: false,
   ...over,
 });
 
@@ -144,6 +145,17 @@ describe('管理工作区信任', () => {
     expect(await screen.findByText(zh['workspace_trust.manage.trusted_via'])).toBeTruthy();
     expect(screen.queryByRole('button', { name: zh['workspace_trust.manage.dont_trust'] })).toBeNull();
     expect(screen.getByText('/work').className).toContain('font-bold');
+  });
+
+  it('信任设置读盘失败(main 报 persistBlocked)→ 对话框写明「本次修改不会保存」;正常时不显示', async () => {
+    useWorkspaceTrustStore.setState({ manageOpen: true });
+    const view = render(<WorkspaceTrustModal />);
+    await screen.findByRole('button', { name: zh['workspace_trust.manage.trust'] });
+    expect(screen.queryByText(zh['workspace_trust.not_saved'])).toBeNull();
+    view.unmount();
+    h.getInfo.mockResolvedValue({ ok: true, data: info({ persistBlocked: true }) });
+    render(<WorkspaceTrustModal />);
+    expect((await screen.findByText(zh['workspace_trust.not_saved'])).getAttribute('role')).toBe('status');
   });
 });
 

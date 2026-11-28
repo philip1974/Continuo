@@ -52,12 +52,17 @@
 ### 持久化
 
 - `userData/trusted-domains.json` = `{ version: 1, domains: [...] }`(只存用户项);缺文件 = 空
-- 文件损坏 / 超大 / 读失败 → 本次运行按空列表处理(只会多问),且不写盘(不覆盖原文件)
+- 读得出来但内容不对(JSON 损坏 / 格式不符 / 超大)→ 原文件隔离为 `.corrupt` 留证(不覆盖更早的证据),`domains` 里能抢救出的
+  合法条目保留并立即写回,之后照常保存(同 workspace-trust 的损坏隔离;不因一次损坏让以后信任的域永远存不下来)
+- 读不出来(权限 / IO 错误,内容未知)→ 本次运行按空列表处理(只会多问),且不写盘(不覆盖原文件);「配置受信任的域」对话框与
+  设置页写明「本次修改只在退出 Continuo 前有效，不会保存。」
 
 ## 与 VSCode 的差异
 
 - 管理界面是设置页里的列表,不是 VSCode 的 `trustedDomains:/Trusted Domains` JSON 编辑器
 - 「配置受信任的域」是第二个原生对话框(VSCode 是快速选择)
+- 持久化:VSCode 存在应用级 storage(SQLite;`readTrustedDomains` 对 JSON 解析失败静默当空,数据库打不开时删库改用 `.backup`,
+  再不行用内存库)。Continuo 是独立 JSON 文件:损坏隔离留证并抢救条目,读不出来时不写盘并明确提示
 - 确认框显示完整地址(VSCode 超过 60 字符时截掉 query / fragment 的中段)
 - 不区分「来自工作区的链接」与受信工作区(VSCode `workbench.trustedDomains.promptInTrustedWorkspace`):始终确认
 

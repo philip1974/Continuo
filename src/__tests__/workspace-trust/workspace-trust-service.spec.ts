@@ -53,11 +53,11 @@ const TRUST_PARENT = { trust: true, parent: true } as const;
 const NO = { trust: false, parent: false } as const;
 
 describe('workspace-trust 服务', () => {
-  it('首次打开未信任文件夹:先推受限,弹一次对话框(带上级文件夹名);信任 → 推受信任并持久化', async () => {
+  it('首次打开未信任文件夹:先推受限,弹一次对话框(带上级文件夹完整路径);信任 → 推受信任并持久化', async () => {
     const { svc, prompts, last, saves } = setup({ answers: [TRUST] });
     svc.setWindowRoot(1, '/work/proj');
     await flush();
-    expect(prompts).toEqual([{ windowId: 1, root: '/work/proj', parentName: 'work' }]);
+    expect(prompts).toEqual([{ windowId: 1, root: '/work/proj', parent: '/work', persistBlocked: false }]);
     expect(last(1)).toEqual({ root: '/work/proj', trusted: true });
     expect(saves.at(-1)).toEqual({ trusted: ['/work/proj'], prompted: ['/work/proj'] });
     expect(await svc.isWindowTrusted(1, '/work/proj')).toBe(true);
@@ -103,11 +103,29 @@ describe('workspace-trust 服务', () => {
     expect(prompts).toHaveLength(2);
   });
 
+  it('经符号链接打开:上级取上报的原路径的上级(同 VSCode,不取链接目标的上级),写入前 realpath;规范化后的上级不覆盖当前文件夹 → 当前文件夹一并记入', async () => {
+    const { svc, prompts, last, saves } = setup({
+      answers: [TRUST_PARENT],
+      realpath: { '/links/proj': '/real/x/proj', '/links': '/vol/links' },
+    });
+    svc.setWindowRoot(1, '/links/proj');
+    await flush();
+    expect(prompts[0]).toMatchObject({ root: '/links/proj', parent: '/links' });
+    expect(saves.at(-1)?.trusted).toEqual(['/vol/links', '/real/x/proj']);
+    expect(saves.at(-1)?.trusted).not.toContain('/real/x');
+    expect(last(1)).toEqual({ root: '/links/proj', trusted: true });
+    // 上级本身(经链接规范化)下的其它文件夹继承信任
+    svc.setWindowRoot(2, '/vol/links/other');
+    await flush();
+    expect(last(2)?.trusted).toBe(true);
+    expect(prompts).toHaveLength(1);
+  });
+
   it('文件系统根没有上级:不提供「信任上级文件夹」', async () => {
     const { svc, prompts } = setup({ answers: [NO] });
     svc.setWindowRoot(1, '/');
     await flush();
-    expect(prompts[0]?.parentName).toBeNull();
+    expect(prompts[0]?.parent).toBeNull();
   });
 
   it('比较按 realpath:经符号链接打开已信任目录 = 受信任;macOS 上大小写 / NFD 变体同样匹配', async () => {
@@ -191,12 +209,15 @@ describe('workspace-trust 服务', () => {
     expect((await svc.getInfo(1)).folders).toEqual([]);
   });
 
-  it('读持久化失败(非「不存在」):什么都不信任,且本次启动不写盘(不覆盖原文件)', async () => {
-    const { svc, last, saves } = setup({ loadError: true, answers: [TRUST] });
+  it('读持久化失败(非「不存在」):什么都不信任,且本次启动不写盘(不覆盖原文件);对话框与管理界面都标明「本次修改不会保存」', async () => {
+    const { svc, last, saves, prompts } = setup({ loadError: true, answers: [TRUST] });
     svc.setWindowRoot(1, '/work/proj');
     await flush();
+    expect(prompts[0]?.persistBlocked).toBe(true);
     expect(last(1)?.trusted).toBe(true); // 内存里生效
     expect(saves).toHaveLength(0);
+    expect(await svc.getInfo(1)).toMatchObject({ persistBlocked: true });
+    expect(await setup().svc.getInfo(1)).toMatchObject({ persistBlocked: false });
   });
 
   it('isWindowTrusted:根与登记不符 / 未登记 → false;关窗后 → false', async () => {

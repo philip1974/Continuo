@@ -164,6 +164,11 @@ function WorkspaceTrustModalBody() {
       </h2>
       {info === null ? null : (
         <>
+          {info.persistBlocked ? (
+            <p role="status" data-trust-not-saved="" className="mb-2 text-xs text-warning">
+              {t('workspace_trust.not_saved')}
+            </p>
+          ) : null}
           <div id={descriptionId} className="mb-3 text-xs text-fg-muted">
             {info.root === null ? (
               <p>{t('workspace_trust.manage.no_folder')}</p>

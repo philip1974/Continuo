@@ -5,9 +5,10 @@
 //   1. 打开新文件夹 → 弹信任对话框 → 不信任 → 状态栏「受限模式」、git 探针一次都没跑、无 git 装饰
 //      → 管理工作区信任里「信任」(对话框选信任)→ 状态栏项消失、git 装饰出现;重启保留(不再询问、装饰照常)
 //   2. 勾选「信任上级文件夹」→ 上级下的另一个子文件夹不再询问;上级之外的文件夹照常询问
+//   3. 经符号链接打开:复选框显示链接所在上级的完整路径,勾选信任 → 记的是该上级(而非链接目标的上级),本窗口受信任
 // BDD: src/__tests__/workspace-trust/
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
@@ -215,4 +216,31 @@ test('勾选「信任上级文件夹」→ 上级下的其它子文件夹不再�
   await openFolder(app, win, outside);
   await expect.poll(async () => (await trustCalls(app)).length, { timeout: 10_000 }).toBe(2);
   await expect(restrictedItem(win)).toBeVisible({ timeout: 10_000 });
+});
+
+test('经符号链接打开:「信任上级文件夹」显示并信任链接所在的上级(完整路径),不是链接目标的上级', async () => {
+  test.setTimeout(90_000);
+  const { base, env } = makeBase();
+  const target = path.join(base, 'real', 'deep', 'proj');
+  mkdirSync(target, { recursive: true });
+  writeFileSync(path.join(target, 'file.txt'), 'x\n');
+  const links = path.join(base, 'links');
+  mkdirSync(links);
+  const link = path.join(links, 'proj');
+  symlinkSync(target, link, 'dir');
+  const ud = path.join(base, 'ud');
+  mkdirSync(ud);
+
+  const { app, win } = await launch(ud, env);
+  await stubTrustDialog(app);
+  await setTrustAnswer(app, 0, true);
+  await openFolder(app, win, link);
+  await expect.poll(async () => (await trustCalls(app)).length, { timeout: 10_000 }).toBe(1);
+  expect((await trustCalls(app))[0]!.checkboxLabel).toContain(links);
+  await expect(restrictedItem(win)).toHaveCount(0, { timeout: 10_000 });
+  await expect
+    .poll(() => (JSON.parse(readFileSync(path.join(ud, 'workspace-trust.json'), 'utf8')) as { trusted: string[] }).trusted, {
+      timeout: 10_000,
+    })
+    .toEqual([links, target]);
 });
