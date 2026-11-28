@@ -119,7 +119,7 @@ test('两个窗口经主进程同步;两窗同时改不同设置都保留', asyn
   await close(app);
 });
 
-test('旧版本 userData(只有 localStorage)→ 首次启动迁入主进程文件;之后以文件为准', async () => {
+test('旧版本 userData(只有 localStorage)→ 首次启动迁入;之后镜像回旧键,降级期间旧版本的改动再升级时并入;删掉文件 = 恢复默认', async () => {
   test.setTimeout(120_000);
   // 造一个「旧版本」的 userData:localStorage 里有设置值(含旧 id)与快捷键,主进程文件还不存在。
   const legacySettings = JSON.stringify({ 'general.theme': 'light', 'terminal.fontSize': 17 });
@@ -144,17 +144,33 @@ test('旧版本 userData(只有 localStorage)→ 首次启动迁入主进程文�
   await expect.poll(() => readUserSettingsFile(ud, USER_KEYBINDINGS_FILE)).toEqual({ 'settings.toggle': 'mod+shift+u' });
   await dispatchModKey(second.win, 'u', { shift: true });
   await expect(second.win.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({ timeout: 10_000 });
-  // 旧 localStorage 保留(降级回旧版本仍能读到);之后改它也不再影响新版本
-  expect(await second.win.evaluate(() => localStorage.getItem('continuo.settings.values'))).toBe(legacySettings);
+  // 旧键是权威记录的镜像(旧 id),降级回旧版本看到的就是它
+  await expect
+    .poll(() => second.win.evaluate(() => JSON.parse(localStorage.getItem('continuo.settings.values') ?? 'null')))
+    .toEqual(JSON.parse(legacySettings));
+  // 模拟降级期间旧版本改了设置(它整份写回旧键,不碰 .mirror)
   await second.win.evaluate(() =>
-    localStorage.setItem('continuo.settings.values', JSON.stringify({ 'general.theme': 'dark', 'editor.fontSize': 30 })),
+    localStorage.setItem(
+      'continuo.settings.values',
+      JSON.stringify({ 'general.theme': 'dark', 'terminal.fontSize': 17, 'editor.fontSize': 30 }),
+    ),
   );
   await close(second.app);
 
   const third = await launchReady();
-  expect(await third.win.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(false);
-  expect(await third.win.evaluate(() => globalThis.__continuoTest!.getSettingValue('editor.fontSize'))).toBeUndefined();
+  expect(await third.win.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(true);
+  expect(await third.win.evaluate(() => globalThis.__continuoTest!.getSettingValue('editor.fontSize'))).toBe(30);
+  await expect
+    .poll(() => readUserSettingsFile(ud))
+    .toEqual({ 'general.theme': 'dark', 'terminal.integrated.fontSize': 17, 'editor.fontSize': 30 });
   await close(third.app);
+
+  // 删掉设置文件 = 恢复默认(VSCode 删 settings.json 同),不从旧 localStorage 回灌
+  removeUserSettingsFiles(ud);
+  const fourth = await launchReady();
+  expect(await fourth.win.evaluate(() => globalThis.__continuoTest!.getSettingValue('editor.fontSize'))).toBeUndefined();
+  expect(readUserSettingsFile(ud)).toBeNull();
+  await close(fourth.app);
 });
 
 test('设置文件损坏 → 隔离为 .corrupt 留证,应用照常启动、之后的修改照常写盘', async () => {

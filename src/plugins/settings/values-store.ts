@@ -3,7 +3,7 @@
 // 默认值由 spec 提供(reset 即删 key)。
 //
 // 持久化:主进程 userData/user-settings.json(每次修改立即原子写盘,各窗口经 main 广播同步),见
-// storage/user-settings-record.ts;旧版 localStorage 记录首次启动时一次性迁入。
+// storage/user-settings-record.ts;旧版 localStorage 键作为给降级后旧版本看的镜像双向同步。
 
 import { create } from 'zustand';
 import {
@@ -93,6 +93,8 @@ const ops: UserSettingsRecordOps<SettingItemValue> = createUserSettingsRecordOps
     warn: (message, key) => notify.warn(message, { replaceKey: key }),
   },
   migrate: (record) => migrateLegacySettingIds(record),
+  // 镜像回旧 localStorage 键时写旧 id(0.2.15 只认 terminal.fontSize / terminal.cursorStyle)。
+  legacyIds: LEGACY_SETTING_IDS,
 });
 
 export const useSettingsValuesStore = create<SettingsValueState>(() => ({

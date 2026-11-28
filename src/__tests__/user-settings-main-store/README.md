@@ -49,9 +49,25 @@
 - 写:先乐观更新本窗内存,再发增量;main 拒写 / 写盘失败 → 回滚到上次有效状态(超限 warn,写盘失败通知)。
 - 收敛:只接受比已知更新的版本(乱序到达的旧广播被忽略);本窗有未回复的写时不让别窗广播把乐观值改回去,全部回复后收敛到最新权威状态。
   快照与广播都经 store 原有的读端守卫(设置值原语 / 快捷键形态,E22 / E240)。
-- 一次性迁移:main 文件原本不存在而旧 localStorage 有值 → 首帧即旧值,迁入文件(旧设置 id 一并改名);多个窗口同时迁入只生效一次;
-  已有文件(含损坏后写回的)不再读旧 localStorage。旧 localStorage 记录**保留不删**:降级回旧版本时仍能读到(停在迁移那一刻的值),
-  新版本只认文件、不会再读它。
+- 首次迁移:main 文件原本不存在、从未镜像过(见下)而旧 localStorage 有值 → 首帧即旧值,迁入文件(旧设置 id 一并改名);多个窗口同时迁入只生效一次;
+  从未镜像过而文件已存在(含损坏后写回的)→ 以文件为准,不从旧 localStorage 猜改动。
+
+### 旧版本兼容:降级 / 再升级(`renderer-main-roundtrip.spec.ts`「旧版本兼容」、`user-settings-service.spec.ts`「语言」)
+
+0.2.15 只读写 localStorage 的 `continuo.settings.values` / `continuo.keybindings.overrides`。权威始终是 main 的文件,旧键只是给降级后的旧版本看的镜像:
+
+- 镜像:每次拿到权威新状态(写回复 / 广播 / 启动时无待发改动)就把记录写回旧键 —— 改过名的设置写旧 id(`terminal.integrated.fontSize` →
+  `terminal.fontSize`、`terminal.integrated.cursorStyle` → `terminal.cursorStyle`),快捷键键名 / 值格式与旧版相同 —— 并在 `<旧键>.mirror`
+  记下写进去的原文。降级后旧版本看到的就是新版最后的设置。
+- 再升级:旧键与 `.mirror` 不同 = 降级期间旧版本改过 → 把它相对镜像的改动(设 / 重置,旧 id 落到新 id)并进文件,新版独有的设置不丢;相同 =
+  旧版本没动过,以文件为准。旧键整个不见了(旧版本当损坏清掉)不当成「全部重置」。
+- 删除 `user-settings.json` / `user-keybindings.json` 后重启 = 恢复默认(VSCode 删 settings.json 同):镜像过且旧键未被改过 → 不回灌旧值,
+  旧键随即镜像成空(降级后旧版本也是默认)。
+- 权威仍是文件,镜像不会重新引入「强杀丢失」:镜像没落盘只让旧版本看到稍旧的值;旧键与 `.mirror` 在同一任务里写、同批落盘,不会被误判为旧版本改动。
+- 读盘失败(`persistBlocked`)的运行不镜像、不并入。
+- 语言:界面语言的权威在 main `settings.json`(`locale`),设置项 `general.language` 在 `user-settings.json`,平时两边一起改。启动建窗前若两者
+  不一致,按文件修改时间较新者胜:`settings.json` 较新(降级期间旧版本改了语言,而它的 localStorage 没来得及落盘)→ 写进 `general.language`
+  (等于系统默认则删掉);`user-settings.json` 较新 → 不动,renderer 照常把 `general.language` 推给 main。
 - 无 main(单测 / 无 preload):按旧 localStorage 记录只读初始化,修改只留在内存。
 
 ### 端到端(`tests/e2e/settings-crash-durability.spec.ts`)

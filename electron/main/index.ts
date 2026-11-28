@@ -18,8 +18,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
-import { loadSettings } from './services/settings.service';
-import { loadUserSettings } from './services/user-settings.service';
+import { getCurrentLocale, getSystemDefaultLocale, loadSettings } from './services/settings.service';
+import { adoptNewerLocale, loadUserSettings } from './services/user-settings.service';
 import { registerUserSettingsSnapshotIpc } from './ipc/user-settings.ipc';
 import { loadWindowTheme } from './services/window-theme.service';
 import { loadWindowZoom, trackWindowZoom } from './services/window-zoom.service';
@@ -1518,6 +1518,8 @@ app.whenReady().then(async () => {
     // 用户设置值 / 快捷键覆盖:renderer 首帧前经同步快照读取(永不抛)。
     loadUserSettings(),
   ]);
+  // 语言两处存储(settings.json 的 locale / user-settings.json 的 general.language)只改了一边时较新者胜(降级期间旧版本改语言)。
+  await adoptNewerLocale(getCurrentLocale(), getSystemDefaultLocale(), path.join(userData, 'settings.json'));
   // 启动时的 explorer.json(迁移 / 收敛之后):首窗几何在建窗前取用,启动多窗恢复复用同一份读取。读与下方菜单 / MCP host
   // 启动并行。
   const explorerAtStartup = loadExplorer(explorerFile);

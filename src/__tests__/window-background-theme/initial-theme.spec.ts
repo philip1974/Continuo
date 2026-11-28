@@ -91,6 +91,20 @@ describe('首帧来源:main 快照', () => {
     expect(readInitialTheme()).toBe('light');
   });
 
+  it('降级期间旧版本改了主题(旧键与镜像不同)→ 首帧即旧版本改的主题', () => {
+    setStored({ [GENERAL_THEME.id]: 'light' });
+    localStorage.setItem(`${SETTINGS_VALUES_STORAGE_KEY}.mirror`, JSON.stringify({ [GENERAL_THEME.id]: 'dark' }));
+    createFakeUserSettingsMain({ settings: { record: { [GENERAL_THEME.id]: 'dark' } } }).install();
+    expect(readInitialTheme()).toBe('light');
+  });
+
+  it('镜像过而文件被删(needsImport)、旧键未被旧版本改过 → 默认主题,不回灌旧值', () => {
+    setStored({ [GENERAL_THEME.id]: 'light' });
+    localStorage.setItem(`${SETTINGS_VALUES_STORAGE_KEY}.mirror`, JSON.stringify({ [GENERAL_THEME.id]: 'light' }));
+    createFakeUserSettingsMain({ settings: { needsImport: true } }).install();
+    expect(readInitialTheme()).toBe(GENERAL_THEME.default === 'system' ? 'dark' : GENERAL_THEME.default);
+  });
+
   it('快照读取抛错 → 默认主题,不抛', () => {
     const w = globalThis as unknown as { window: { api?: Record<string, unknown> } };
     w.window.api = {

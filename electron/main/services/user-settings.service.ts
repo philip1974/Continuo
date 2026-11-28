@@ -14,6 +14,7 @@
 // - 读不出来(权限 / IO 错误,内容未知)→ 本次运行按空记录,修改只留在内存(各窗口照常同步),**不写盘**(不拿「读不出来」
 //   当「空」覆盖原文件);renderer 据 persistBlocked 提示「本次修改不会保存」。
 // BDD: src/__tests__/user-settings-main-store/
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { app } from 'electron';
 import { atomicWriteJsonCapped } from '../lib/atomic-write';
@@ -218,6 +219,43 @@ export function importUserSettings(scope: UserSettingsScope, record: UserSetting
     await commit(scope, clean);
     return publicState(st);
   });
+}
+
+/** 语言设置项的 id(= renderer GENERAL_LANGUAGE.id)。 */
+export const LANGUAGE_SETTING_ID = 'general.language';
+
+async function mtimeMs(file: string): Promise<number | null> {
+  try {
+    return (await fs.stat(file)).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 启动时(建窗前)对齐语言:界面语言的权威在 main 的 settings.json(locale),设置项 general.language 在 user-settings.json,
+ * 平时两边一起改。只改了一边(降级期间旧版本改了语言而它的 localStorage 没来得及落盘 / 两次写之间崩溃)时较新者胜:
+ * settings.json 较新 → 把 locale 写进 general.language(等于系统默认则删掉 = 默认);user-settings.json 较新 → 不动
+ *(renderer LanguageFromSettings 照常把 general.language 推给 main)。文件不存在(首次迁入还没做)/ 读盘失败 → 不动。永不抛。
+ */
+export async function adoptNewerLocale(locale: string, systemLocale: string, localeFile: string): Promise<void> {
+  try {
+    await queues.settings.run(async () => {
+      await loadScope('settings');
+      const st = states.settings;
+      if (st.missing || st.writeBlocked) return;
+      const stored = ownValue(st.record, LANGUAGE_SETTING_ID);
+      if ((typeof stored === 'string' ? stored : systemLocale) === locale) return;
+      const [localeAt, settingsAt] = await Promise.all([mtimeMs(localeFile), mtimeMs(fileOf('settings'))]);
+      if (localeAt === null || settingsAt === null || localeAt <= settingsAt) return;
+      const next = { ...st.record };
+      if (locale === systemLocale) delete next[LANGUAGE_SETTING_ID];
+      else setOwnValue(next, LANGUAGE_SETTING_ID, locale);
+      await commit('settings', next);
+    });
+  } catch (err) {
+    console.warn('[user-settings] language reconcile skipped', err);
+  }
 }
 
 export function onUserSettingsChanged(cb: (scope: UserSettingsScope, state: UserSettingsScopeState) => void): () => void {

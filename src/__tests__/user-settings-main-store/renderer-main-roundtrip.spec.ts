@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // renderer store ↔ 真实主进程设置存储 ↔ 真实磁盘(IPC 以 structuredClone 模拟)。见同目录 README。
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setupTempDirs } from '../_helpers/tmp-dir';
@@ -142,7 +142,7 @@ describe('多窗口经 main 同步', () => {
 });
 
 describe('一次性迁移旧 localStorage', () => {
-  it('main 文件不存在 + 旧 localStorage 有值 → 首帧即旧值,迁入文件(旧 id 一并迁移);旧 localStorage 保留', async () => {
+  it('main 文件不存在 + 从未镜像过 + 旧 localStorage 有值 → 首帧即旧值,迁入文件(旧 id 一并迁移);旧 localStorage 仍是旧版本能读的值', async () => {
     const legacy = JSON.stringify({ 'general.theme': 'light', 'terminal.fontSize': 17 });
     localStorage.setItem('continuo.settings.values', legacy);
     localStorage.setItem('continuo.keybindings.overrides', JSON.stringify({ 'editor.save': '' }));
@@ -157,11 +157,11 @@ describe('一次性迁移旧 localStorage', () => {
     await settle();
     expect(await readJson('settings')).toEqual({ 'general.theme': 'light', 'terminal.integrated.fontSize': 17 });
     expect(await readJson('keybindings')).toEqual({ 'editor.save': '' });
-    expect(localStorage.getItem('continuo.settings.values')).toBe(legacy); // 降级回旧版本仍可读
+    expect(JSON.parse(localStorage.getItem('continuo.settings.values')!)).toEqual(JSON.parse(legacy)); // 降级回旧版本仍可读
     expect(getUserSettingsSnapshot().settings.needsImport).toBe(false);
   });
 
-  it('迁移后以文件为准:旧 localStorage 之后再变(如降级后改过)也不会再读', async () => {
+  it('从未镜像过(没有 .mirror 记录)且文件已存在 → 以文件为准,不从旧 localStorage 猜改动', async () => {
     await writeFile(fileOf('settings'), JSON.stringify({ 'general.theme': 'dark' }));
     localStorage.setItem('continuo.settings.values', JSON.stringify({ 'general.theme': 'light' }));
     await loadUserSettings();
@@ -191,6 +191,117 @@ describe('一次性迁移旧 localStorage', () => {
     await settle();
     expect(w.useSettingsValuesStore.getState().values).toEqual({ ok: 'kept' });
     expect(await readJson('settings')).toEqual({ ok: 'kept' });
+  });
+});
+
+// 降级 / 再升级(见 README「旧版本兼容」):旧版本(0.2.15)只读写 localStorage 的旧键。
+describe('旧版本兼容:镜像回旧 localStorage 键', () => {
+  const VALUES = 'continuo.settings.values';
+  const KEYS = 'continuo.keybindings.overrides';
+  const legacyOf = (key: string): unknown => JSON.parse(localStorage.getItem(key) ?? 'null');
+  /** 「重启」新版本:main 重新读盘,renderer 重新建 store。 */
+  async function restart() {
+    await settle();
+    _resetUserSettingsForTest();
+    await loadUserSettings();
+    return { values: await openValuesStore(), keys: await openKeybindingsStore() };
+  }
+
+  it('每次修改后旧键即是最新值(改过名的 id 写旧 id),降级后旧版本看得到新版改的设置', async () => {
+    await loadUserSettings();
+    const w = await openValuesStore();
+    w.useSettingsValuesStore.getState().setValue('terminal.integrated.fontSize', 18);
+    w.useSettingsValuesStore.getState().setValue('general.theme', 'light');
+    const k = await openKeybindingsStore();
+    k.useKeybindingsStore.getState().setHotkey('settings.toggle', 'mod+shift+y');
+    await settle();
+    expect(legacyOf(VALUES)).toEqual({ 'terminal.fontSize': 18, 'general.theme': 'light' });
+    expect(legacyOf(KEYS)).toEqual({ 'settings.toggle': 'mod+shift+y' });
+    expect(await readJson('settings')).toEqual({ 'terminal.integrated.fontSize': 18, 'general.theme': 'light' });
+  });
+
+  it('降级期间旧版本改过 → 再升级时把它的改动(设 / 重置 / 旧 id)并进文件,新版独有的设置不丢', async () => {
+    await loadUserSettings();
+    const w = await openValuesStore();
+    const s = w.useSettingsValuesStore.getState();
+    s.setValue('terminal.integrated.fontSize', 18);
+    s.setValue('editor.fontSize', 15);
+    s.setValue('editor.wordWrap', 'on'); // 0.2.15 不认识的设置
+    const k = await openKeybindingsStore();
+    k.useKeybindingsStore.getState().setHotkey('settings.toggle', 'mod+shift+y');
+    await settle();
+    // 旧版本:读旧键、改、整份写回(不认识的条目原样保留),不碰 .mirror
+    const old = legacyOf(VALUES) as Record<string, unknown>;
+    old['terminal.fontSize'] = 20;
+    delete old['editor.fontSize'];
+    old['general.theme'] = 'light';
+    localStorage.setItem(VALUES, JSON.stringify(old));
+    localStorage.setItem(KEYS, JSON.stringify({ 'settings.toggle': 'mod+shift+u', 'editor.save': '' }));
+
+    const r = await restart();
+    const merged = { 'terminal.integrated.fontSize': 20, 'editor.wordWrap': 'on', 'general.theme': 'light' };
+    expect(r.values.useSettingsValuesStore.getState().values).toEqual(merged);
+    expect(r.keys.useKeybindingsStore.getState().overrides).toEqual({ 'settings.toggle': 'mod+shift+u', 'editor.save': '' });
+    await settle();
+    expect(await readJson('settings')).toEqual(merged);
+    expect(await readJson('keybindings')).toEqual({ 'settings.toggle': 'mod+shift+u', 'editor.save': '' });
+
+    // 并入后再重启:旧键与镜像一致,不再重复应用
+    await restart();
+    await settle();
+    expect(await readJson('settings')).toEqual(merged);
+  });
+
+  it('旧版本没改过,只是新版在文件里改了 → 以文件为准(旧键不会把新值改回去)', async () => {
+    await loadUserSettings();
+    const w = await openValuesStore();
+    w.useSettingsValuesStore.getState().setValue('editor.fontSize', 15);
+    await settle();
+    // 另一进程直接写文件(或镜像在强杀前没落盘):旧键 / 镜像仍是旧值、彼此一致
+    await writeFile(fileOf('settings'), JSON.stringify({ 'editor.fontSize': 22 }));
+    const r = await restart();
+    expect(r.values.useSettingsValuesStore.getState().values).toEqual({ 'editor.fontSize': 22 });
+    await settle();
+    expect(legacyOf(VALUES)).toEqual({ 'editor.fontSize': 22 });
+  });
+
+  it('删掉 user-settings.json 后重启 = 恢复默认(VSCode 删 settings.json 同),不从旧 localStorage 回灌过时值', async () => {
+    await loadUserSettings();
+    const w = await openValuesStore();
+    w.useSettingsValuesStore.getState().setValue('general.theme', 'light');
+    const k = await openKeybindingsStore();
+    k.useKeybindingsStore.getState().setHotkey('settings.toggle', 'mod+shift+y');
+    await settle();
+    await rm(fileOf('settings'));
+    await rm(fileOf('keybindings'));
+    const r = await restart();
+    expect(r.values.useSettingsValuesStore.getState().values).toEqual({});
+    expect(r.keys.useKeybindingsStore.getState().overrides).toEqual({});
+    await settle();
+    expect(legacyOf(VALUES)).toEqual({}); // 降级后旧版本也是默认
+    await expect(readFile(fileOf('settings'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('旧版本的改动恰好等于文件现值(main 无变化回复)→ 镜像照样跟上,不留下每次启动都要并入的差异', async () => {
+    await loadUserSettings();
+    const w = await openValuesStore();
+    w.useSettingsValuesStore.getState().setValue('general.theme', 'light');
+    await settle();
+    await writeFile(fileOf('settings'), JSON.stringify({ 'general.theme': 'dark' }));
+    localStorage.setItem(VALUES, JSON.stringify({ 'general.theme': 'dark' }));
+    await restart();
+    await settle();
+    expect(localStorage.getItem(`${VALUES}.mirror`)).toBe(localStorage.getItem(VALUES));
+  });
+
+  it('旧键整个不见了(旧版本当损坏清掉)不当成「全部重置」', async () => {
+    await loadUserSettings();
+    const w = await openValuesStore();
+    w.useSettingsValuesStore.getState().setValue('general.theme', 'light');
+    await settle();
+    localStorage.removeItem(VALUES);
+    const r = await restart();
+    expect(r.values.useSettingsValuesStore.getState().values).toEqual({ 'general.theme': 'light' });
   });
 });
 

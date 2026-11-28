@@ -7,8 +7,9 @@
 //   多窗口并发改不同 key 不再互相覆盖(此前 localStorage 读-改-写的跨窗 lost update,race R113)。
 // - 收敛:main 每次提交带单调版本;本窗有未回复的写时只记下最新权威状态,写全部回复后整体收敛到它 —— 写失败(超限 /
 //   写盘失败)自然回滚到权威值,乱序到达的旧广播也不会把新值改回去。
-// - 一次性迁移:main 文件原本不存在(needsImport)时,把旧 localStorage 记录作为初值并发给 main 迁入;之后以文件为准。
-//   旧 localStorage 记录保留不删:降级回旧版本时它仍能读到(只是停在迁移那一刻的值),而新版本只认文件、不会再读它。
+// - 旧版本兼容(降级 / 再升级,见 user-settings-initial 的 legacy mirror):每次拿到权威新状态,镜像回旧 localStorage 键(旧 id),
+//   降级后旧版本看到的就是最新设置;启动时旧键与镜像不同 = 降级期间旧版本改过 → 把它的改动并进文件。从未镜像过且文件不存在
+//  (首次从旧版本升级)→ 整份迁入;镜像过而文件不存在(用户删了文件)→ 不回灌,恢复默认。
 // - 无 main(单测 / 无 preload):按旧 localStorage 记录只读初始化,修改只留在内存。
 // BDD: src/__tests__/user-settings-main-store/
 import { ownValue, setOwnValue } from '../../../electron/shared/own-value';
@@ -22,7 +23,14 @@ import type {
 } from '../../../electron/shared/user-settings';
 import type { IpcResult } from '../../../electron/shared/ipc-result';
 import { constrainRecord, readRecord, recordsShallowEqual, type ReadRecordOptions } from './local-storage-record';
-import { userSettingsHost } from './user-settings-initial';
+import {
+  applyLegacyChanges,
+  diffRecords,
+  readLegacyChanges,
+  toLegacyIds,
+  userSettingsHost,
+  writeLegacyMirror,
+} from './user-settings-initial';
 
 export interface UserSettingsRecordOps<V> {
   /** 启动时的记录(已按 readOpts 规整、已迁移旧 id),store 的初值。 */
@@ -31,19 +39,6 @@ export interface UserSettingsRecordOps<V> {
   setEntry: (k: string, v: V) => void;
   /** 删单 key(内存里没有时 no-op)。 */
   removeEntry: (k: string) => void;
-}
-
-/** 两个记录的差异(next 相对 prev:要设的与要删的)。 */
-function diffRecords<V>(prev: Record<string, V>, next: Record<string, V>): { set: Record<string, V>; remove: string[] } {
-  const set: Record<string, V> = {};
-  const remove: string[] = [];
-  for (const k in next) {
-    if (Object.prototype.hasOwnProperty.call(next, k) && !Object.is(ownValue(prev, k), next[k])) setOwnValue(set, k, next[k]!);
-  }
-  for (const k in prev) {
-    if (Object.prototype.hasOwnProperty.call(prev, k) && !Object.hasOwn(next, k)) remove.push(k);
-  }
-  return { set, remove };
 }
 
 export function createUserSettingsRecordOps<V extends UserSettingsValue>(opts: {
@@ -61,6 +56,8 @@ export function createUserSettingsRecordOps<V extends UserSettingsValue>(opts: {
   readonly notSavedMessage: () => string;
   /** 记录交给 store 前的迁移(如设置 id 改名);无需迁移时须返回原对象。迁移改动了已存记录时立即把差异写回 main。 */
   readonly migrate?: (record: Record<string, V>) => Record<string, V>;
+  /** 改过名的 id(旧 id → 新 id):镜像回旧键时写旧 id,旧版本对旧 id 的改动落到新 id。 */
+  readonly legacyIds?: Readonly<Record<string, string>>;
   /** 通知(注入以免本模块依赖通知 / i18n;error 用于写盘失败,warn 用于本次不保存)。 */
   readonly notify: { error: (message: string, key: string) => void; warn: (message: string, key: string) => void };
 }): UserSettingsRecordOps<V> {
@@ -84,11 +81,18 @@ export function createUserSettingsRecordOps<V extends UserSettingsValue>(opts: {
   let authRecord: unknown = snap?.record ?? {};
   let pending = 0;
   let notSavedShown = false;
+  // 读盘失败的本次运行(内存记录不是文件内容)不镜像、不并入旧版本改动。
+  const mirrorEnabled = snap !== null && !snap.persistBlocked;
+  const mirror = (record: unknown): void => {
+    if (mirrorEnabled) writeLegacyMirror(legacyKey, toLegacyIds(constrain(record), opts.legacyIds));
+  };
 
   const accept = (state: UserSettingsScopeState): void => {
-    if (state.version <= authVersion) return;
+    // 同版本(main 判定无变化的回复)也重写镜像:启动时并入的改动恰好等于文件现值时,镜像借此跟上,下次启动不再重复并入。
+    if (state.version < authVersion) return;
     authVersion = state.version;
     authRecord = state.record;
+    mirror(state.record);
   };
   const converge = (): void => {
     if (pending > 0) return;
@@ -133,22 +137,37 @@ export function createUserSettingsRecordOps<V extends UserSettingsValue>(opts: {
       });
   };
 
-  // 初值:已迁移 → main 快照;需要迁移 / 无 main → 旧 localStorage 记录(需要迁移时同时发给 main 迁入)。
+  // 初值:无 main → 旧 localStorage 记录(只读);首次从旧版本升级(从未镜像过、文件不存在)→ 旧记录并发给 main 迁入;
+  // 否则 main 快照,叠上降级期间旧版本的改动(有改动即发给 main 并入文件)。
   let storedRaw: Record<string, V>;
-  if (snap && !snap.needsImport) {
-    storedRaw = constrain(snap.record);
+  let working: Record<string, V>;
+  let sent = false;
+  if (!snap) {
+    storedRaw = working = readRecord<V>(legacyKey, readOpts);
+  } else if (!mirrorEnabled) {
+    storedRaw = working = constrain(snap.record);
   } else {
-    storedRaw = readRecord<V>(legacyKey, readOpts);
-    if (snap && Object.keys(storedRaw).length > 0) {
-      const legacy = storedRaw;
-      send(() => host!.importLegacy(scope, legacy));
+    const lc = readLegacyChanges<V>(legacyKey, readOpts);
+    if (!lc.mirrored && snap.needsImport) {
+      storedRaw = working = lc.legacy;
+      if (Object.keys(lc.legacy).length > 0) {
+        const legacy = lc.legacy;
+        send(() => host!.importLegacy(scope, legacy));
+        sent = true;
+      }
+    } else {
+      storedRaw = constrain(snap.record);
+      working = applyLegacyChanges(storedRaw, lc, opts.legacyIds);
     }
   }
-  const initial = migrate ? migrate(storedRaw) : storedRaw;
+  const initial = migrate ? migrate(working) : working;
   if (initial !== storedRaw) {
     const { set, remove } = diffRecords(storedRaw, initial);
     send(() => host!.update(scope, set, remove));
+    sent = true;
   }
+  // 没有要发的(旧版本没改过 / 首次镜像):现在就把权威记录镜像回旧键;有要发的 → 等 main 回复新状态时镜像(accept)。
+  if (!sent && snap) mirror(snap.record);
 
   host?.onChanged((payload) => {
     if (payload.scope !== scope) return;

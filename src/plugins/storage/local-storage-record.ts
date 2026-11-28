@@ -21,7 +21,7 @@ import { setOwnValue } from '../../../electron/shared/own-value';
  */
 const DEFAULT_MAX_RAW_LENGTH = 1024 * 1024; // 1 MiB
 
-function getLocalStorage(): Storage | undefined {
+export function getLocalStorage(): Storage | undefined {
   try {
     return globalThis.localStorage;
   } catch {

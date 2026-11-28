@@ -9,7 +9,7 @@
 //   override(新组合或解绑)覆盖命令的全部默认键(含附加默认键);格式与多默认键之前相同,旧数据原样可读。
 //
 // 持久化:主进程 userData/user-keybindings.json(同 settings values store,见 storage/user-settings-record.ts);
-// 旧版 localStorage 记录首次启动时一次性迁入。
+// 旧版 localStorage 键作为给降级后旧版本看的镜像双向同步(键名 / 值格式与旧版相同)。
 
 import { create } from 'zustand';
 import {
@@ -24,7 +24,7 @@ import { notify } from '../../notifications/notify';
 import { t } from '../../i18n';
 import { ownValue } from '../../../electron/shared/own-value';
 
-/** 旧版 localStorage 键(一次性迁移的来源)。 */
+/** 旧版 localStorage 键(首次迁入的来源 + 给降级后旧版本看的镜像)。 */
 const LEGACY_STORAGE_KEY = 'continuo.keybindings.overrides';
 
 export interface KeybindingsState {

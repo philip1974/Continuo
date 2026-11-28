@@ -1,6 +1,6 @@
 // @vitest-environment node
 // 主进程设置存储(electron/main/services/user-settings.service):真实磁盘读写。见同目录 README。
-import { chmod, readFile, readdir, writeFile } from 'node:fs/promises';
+import { chmod, readFile, readdir, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setupTempDirs } from '../_helpers/tmp-dir';
@@ -11,6 +11,7 @@ vi.mock('electron', () => ({ app: { getPath: () => h.dir } }));
 import {
   USER_SETTINGS_FILE_NAMES,
   _resetUserSettingsForTest,
+  adoptNewerLocale,
   getUserSettingsSnapshot,
   importUserSettings,
   loadUserSettings,
@@ -231,6 +232,55 @@ describe('一次性迁移(IMPORT)', () => {
   it('空记录不算迁移(仍可由别的窗口迁入)', async () => {
     await loadUserSettings();
     await importUserSettings('settings', {});
+    expect(getUserSettingsSnapshot().settings.needsImport).toBe(true);
+  });
+});
+
+// 语言两处存储(main settings.json 的 locale、user-settings.json 的 general.language)只改了一边时较新者胜。
+describe('语言:settings.json 与 general.language 不一致时较新者胜', () => {
+  const localeFile = (): string => path.join(h.dir, 'settings.json');
+  async function seed(language: string | null, locale: string, localeNewer: boolean): Promise<void> {
+    await writeFile(fileOf('settings'), JSON.stringify(language === null ? { x: 1 } : { 'general.language': language, x: 1 }));
+    await writeFile(localeFile(), JSON.stringify({ version: 1, locale }));
+    const older = new Date(Date.now() - 60_000);
+    const newer = new Date();
+    await utimes(localeNewer ? fileOf('settings') : localeFile(), older, older);
+    await utimes(localeNewer ? localeFile() : fileOf('settings'), newer, newer);
+  }
+
+  it('settings.json 较新(降级期间旧版本改了语言)→ general.language 跟上它', async () => {
+    await seed('en', 'zh', true);
+    await loadUserSettings();
+    await adoptNewerLocale('zh', 'en', localeFile());
+    expect(await readJson('settings')).toEqual({ 'general.language': 'zh', x: 1 });
+    expect(getUserSettingsSnapshot().settings.record).toEqual({ 'general.language': 'zh', x: 1 });
+  });
+
+  it('settings.json 较新且是系统默认语言 → 删掉 general.language(= 默认)', async () => {
+    await seed('ko', 'en', true);
+    await loadUserSettings();
+    await adoptNewerLocale('en', 'en', localeFile());
+    expect(await readJson('settings')).toEqual({ x: 1 });
+  });
+
+  it('user-settings.json 较新 → 不动(renderer 把 general.language 推给 main)', async () => {
+    await seed('ko', 'zh', false);
+    await loadUserSettings();
+    await adoptNewerLocale('zh', 'en', localeFile());
+    expect(await readJson('settings')).toEqual({ 'general.language': 'ko', x: 1 });
+  });
+
+  it('一致 / 文件不存在(首次迁入还没做)→ 不动', async () => {
+    await seed(null, 'en', true);
+    await loadUserSettings();
+    await adoptNewerLocale('en', 'en', localeFile());
+    expect(await readJson('settings')).toEqual({ x: 1 });
+
+    _resetUserSettingsForTest();
+    h.dir = await tmp.make('ui196-user-settings-');
+    await writeFile(localeFile(), JSON.stringify({ version: 1, locale: 'zh' }));
+    await loadUserSettings();
+    await adoptNewerLocale('zh', 'en', localeFile());
     expect(getUserSettingsSnapshot().settings.needsImport).toBe(true);
   });
 });
