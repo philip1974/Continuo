@@ -1,6 +1,9 @@
 // 终端右键菜单(对齐 VSCode 终端右键菜单):拆分终端(Create 组,带键位)/ 复制(有选区才可用)/ 粘贴 / 全选 / 清除终端。
 // 写法同 Explorer ContextMenu:Radix ContextMenu + design MenuItem(asChild)。终端不是可编辑元素,不走主进程通用编辑菜单。
 // 键盘 Shift+F10 / 菜单键由 useTerminal 在光标处派发 contextmenu 打开。
+// 右键行为按平台对齐 VSCode terminal.integrated.rightClickBehavior 默认值(`isMacintosh ? 'selectWord' : isWindows ? 'copyPaste' : 'default'`):
+// Windows 右键 = 有选区复制并清除选区、没有选区粘贴,不弹菜单(Shift+右键仍弹菜单,同 VSCode handleMouseEvent);mac 右键选词 + 菜单
+//(xterm rightClickSelectsWord 默认 mac 开)、Linux 弹菜单。BDD: src/__tests__/win-linux-parity/
 // BDD: src/__tests__/terminal-vscode-parity/
 
 import * as Menu from '@radix-ui/react-context-menu';
@@ -10,16 +13,25 @@ import { useT } from '@/i18n';
 import { CONTEXT_MENU_CONTENT_CLASS_NAME } from '@/lib/menu-surface';
 import { useRegisteredCommandHotkeyText } from '@/lib/hotkey-label';
 import { coApp } from '@/plugins/co-app';
-import { TERMINAL_CLEAR_COMMAND, TERMINAL_SPLIT_COMMAND_ID } from './terminal-hotkeys';
+import { detectTerminalOs, TERMINAL_CLEAR_COMMAND, TERMINAL_SPLIT_COMMAND_ID, type TerminalOs } from './terminal-hotkeys';
 
 export interface TerminalContextMenuActions {
   readonly hasSelection: () => boolean;
   readonly copy: () => void;
   readonly paste: () => void;
   readonly selectAll: () => void;
+  readonly clearSelection: () => void;
   readonly clear: () => void;
   /** 菜单关闭后焦点回到终端(触发区本身不可聚焦)。 */
   readonly focus: () => void;
+}
+
+/**
+ * 这次 contextmenu 是否按 Windows 的 copyPaste 处理(VSCode rightClickBehavior 默认:仅 Windows):鼠标右键(button 2)且没按 Shift;
+ * 键盘打开(Shift+F10 / 菜单键,button 0)与 Shift+右键照常弹菜单。
+ */
+export function isTerminalRightClickCopyPaste(event: Pick<MouseEvent, 'button' | 'shiftKey'>, os: TerminalOs = detectTerminalOs()): boolean {
+  return os === 'windows' && event.button === 2 && !event.shiftKey;
 }
 
 function Item({
@@ -69,7 +81,20 @@ export function TerminalContextMenu({
     >
       <Menu.Trigger
         asChild
-        onContextMenu={(e) => setPortalHost(e.currentTarget.ownerDocument.body)}
+        onContextMenu={(e) => {
+          if (isTerminalRightClickCopyPaste(e)) {
+            // preventDefault:Radix 不再打开菜单(composeEventHandlers 见 defaultPrevented 即跳过)。
+            e.preventDefault();
+            if (actions.hasSelection()) {
+              actions.copy();
+              actions.clearSelection();
+            } else {
+              actions.paste();
+            }
+            return;
+          }
+          setPortalHost(e.currentTarget.ownerDocument.body);
+        }}
       >
         {children}
       </Menu.Trigger>

@@ -78,8 +78,15 @@ describe.each([
     const view = submenuOf(top, 'viewMenu').map((m) => m.role).filter(Boolean);
     // 缩放是命令项(workbench.action.zoom*,所有窗口统一),不是 role
     expect(view).toEqual(['toggleDevTools', 'togglefullscreen']);
-    const win = submenuOf(top, 'windowMenu').map((m) => m.role).filter(Boolean);
-    expect(win).toContain('minimize');
+    // 最小化:非 mac 不用 role minimize(它自带 Ctrl+M,焦点不在编辑器时误最小化;VSCode Windows / Linux 无此键),改为无键位的显式项
+    const winItems = submenuOf(top, 'windowMenu');
+    if (isMac) {
+      expect(winItems.map((m) => m.role)).toContain('minimize');
+    } else {
+      expect(winItems.map((m) => m.role).filter(Boolean)).toEqual([]);
+      expect(winItems.map((m) => m.label)).toContain('menu.window.minimize');
+      expect(winItems.every((m) => m.accelerator === undefined)).toBe(true);
+    }
     // 非 mac 的 role close 自带 Ctrl+W(直接关整窗);关窗口在 File 菜单(⇧Ctrl+W)
     expect(flatten(top).some((m) => m.role === 'close')).toBe(false);
   });

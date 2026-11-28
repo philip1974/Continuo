@@ -259,7 +259,7 @@ describe('onDidMaximizedGroupChange focus dispatch (T6 / T6c)', () => {
       '@/panels/Terminal/terminal-panel-handles'
     );
     const fn = vi.fn();
-    registerTerminalPanelHandles('terminal-foo', { focus: fn, openSearch: vi.fn(), clear: vi.fn(), scroll: vi.fn(), readText: vi.fn(() => ""), readViewport: vi.fn(() => null) });
+    registerTerminalPanelHandles('terminal-foo', { focus: fn, openSearch: vi.fn(), clear: vi.fn(), scroll: vi.fn(), clipboard: vi.fn(), readText: vi.fn(() => ""), readViewport: vi.fn(() => null) });
 
     // simulate DockShell onDidMaximizedGroupChange handler
     const handler = (evt: {
@@ -285,7 +285,7 @@ describe('onDidMaximizedGroupChange focus dispatch (T6 / T6c)', () => {
       '@/panels/Terminal/terminal-panel-handles'
     );
     const fn = vi.fn();
-    registerTerminalPanelHandles('terminal-bar', { focus: fn, openSearch: vi.fn(), clear: vi.fn(), scroll: vi.fn(), readText: vi.fn(() => ""), readViewport: vi.fn(() => null) });
+    registerTerminalPanelHandles('terminal-bar', { focus: fn, openSearch: vi.fn(), clear: vi.fn(), scroll: vi.fn(), clipboard: vi.fn(), readText: vi.fn(() => ""), readViewport: vi.fn(() => null) });
 
     const handler = (evt: {
       isMaximized: boolean;
@@ -310,7 +310,7 @@ describe('onDidMaximizedGroupChange focus dispatch (T6 / T6c)', () => {
       '@/panels/Terminal/terminal-panel-handles'
     );
     const fn = vi.fn();
-    registerTerminalPanelHandles('editor', { focus: fn, openSearch: vi.fn(), clear: vi.fn(), scroll: vi.fn(), readText: vi.fn(() => ""), readViewport: vi.fn(() => null) });
+    registerTerminalPanelHandles('editor', { focus: fn, openSearch: vi.fn(), clear: vi.fn(), scroll: vi.fn(), clipboard: vi.fn(), readText: vi.fn(() => ""), readViewport: vi.fn(() => null) });
 
     const handler = (evt: {
       isMaximized: boolean;

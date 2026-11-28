@@ -131,6 +131,7 @@ describe('TerminalPlugin 注册滚动命令', () => {
       openSearch: vi.fn(),
       clear: vi.fn(),
       scroll,
+      clipboard: vi.fn(),
       readText: () => '',
       readViewport: () => null,
     });

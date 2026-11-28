@@ -1,5 +1,5 @@
 // macOS 顶部窗口标题栏:动态显示 workspace 名 · active file 名,
-// 同时承担 -webkit-app-region:drag 让用户拖窗。
+// 同时承担 -webkit-app-region:drag 让用户拖窗。Windows / Linux 用原生标题栏,不渲染(只同步 document.title)。
 // 无 workspace / 无文件 → 兜底"Continuo"。
 // 主窗活动的是终端等非编辑器面板 → 显示该面板名(不显示被挡住的文件);窗口标题(document.title)同步。
 // 文件取主窗正显示的编辑器组的活动 tab(useMainWindowEditorGroupId),不取全局活动 tab:活动编辑器组可能在 popout 子窗
@@ -126,6 +126,10 @@ export function TitleBar() {
   const mac = detectPlatform() === 'mac';
   const fullScreen = useMacFullScreen(mac);
   const titlePad = mac && !fullScreen ? TITLE_PAD_MAC_TRAFFIC_LIGHTS : TITLE_PAD_DEFAULT;
+  // Windows / Linux 是原生标题栏(titleBarStyle: 'default',显示 document.title)+ 原生菜单栏:不再画应用内标题栏,否则窗口顶部
+  // 两条标题(VSCode window.titleBarStyle = native 时同样只有原生标题栏)。窗口标题照常同步(上面的 effect)。
+  // BDD: src/__tests__/win-linux-parity/
+  if (!mac) return null;
 
   return (
     <header

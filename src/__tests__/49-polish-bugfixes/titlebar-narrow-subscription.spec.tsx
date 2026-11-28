@@ -25,10 +25,15 @@ function seedTab(content: string, dirty = false): void {
 }
 
 beforeEach(() => {
+  // 应用内标题栏只在 macOS 渲染(Windows / Linux 用原生标题栏,见 src/__tests__/win-linux-parity/)
+  Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true });
   useWorkspaceStore.setState({ root: '/work', recentRoots: [] });
   useEditorStore.setState({ tabs: [], activeTabId: null });
 });
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  Object.defineProperty(navigator, 'platform', { value: '', configurable: true });
+});
 
 describe('打磨 R22 — TitleBar 窄订阅', () => {
   it('content-only 变化 → 不触发 TitleBar 重渲(commit 次数不变)', () => {

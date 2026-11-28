@@ -13,10 +13,16 @@ import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
 import { toggleTerminal } from '@/shell/dock/toggle-terminal';
 import { terminalFocusCycleCommandSpecs } from '@/shell/dock/terminal-focus-cycle';
 import { splitActiveTerminal } from '@/shell/dock/terminal-split';
-import { clearTerminalPanel, openTerminalSearch, scrollTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
+import {
+  clearTerminalPanel,
+  openTerminalSearch,
+  runTerminalPanelClipboard,
+  scrollTerminalPanel,
+} from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import {
   TERMINAL_CLEAR_COMMAND,
+  TERMINAL_CLIPBOARD_COMMANDS,
   TERMINAL_NEW_COMMAND,
   TERMINAL_SCROLL_COMMANDS,
   TERMINAL_SCROLL_WHEN,
@@ -25,6 +31,7 @@ import {
   TERMINAL_SPLIT_WHEN,
   TERMINAL_TOGGLE_COMMAND,
   TERMINAL_ZOOM_COMMAND,
+  detectTerminalOs,
   terminalClearDefaultHotkey,
   terminalScrollDefaultHotkeys,
   terminalSplitDefaultHotkeys,
@@ -110,6 +117,26 @@ export default class TerminalPlugin extends Plugin {
           const active = api && activePanelInDocument(api, getCommandDocument());
           if (!active || active.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
           scrollTerminalPanel(active.id, scroll.action);
+        },
+      });
+    }
+    // VSCode workbench.action.terminal.copySelection / copyAndClearSelection / paste(Windows Ctrl+C 有选区 / Ctrl+V,Ctrl+Shift+C /
+    // Ctrl+Shift+V;mac 无默认键,⌘C / ⌘V 走原生复制粘贴):作用于活动终端;不是终端 → no-op。BDD: src/__tests__/win-linux-parity/
+    const os = detectTerminalOs(platform);
+    for (const clip of TERMINAL_CLIPBOARD_COMMANDS) {
+      this.addCommand({
+        id: clip.id,
+        title: clip.title,
+        titleKey: clip.titleKey,
+        category: 'Terminal',
+        categoryKey: 'commands.terminal.category',
+        ...clip.keys[os],
+        when: clip.when,
+        fn: () => {
+          const api = getDockApi();
+          const active = api && activePanelInDocument(api, getCommandDocument());
+          if (!active || active.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
+          runTerminalPanelClipboard(active.id, clip.action);
         },
       });
     }

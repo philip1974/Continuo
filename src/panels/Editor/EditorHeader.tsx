@@ -25,7 +25,7 @@ import { moveEditor, splitEditor } from './editor-groups-actions';
 import { useEditorTabBarDrop } from '@/shell/dock/explorer-editor-drop';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { groupSizeMenuEntries, toggleExpandGroup } from '@/shell/dock/group-sizes';
-import { useT } from '@/i18n';
+import { osVariantKey, useT } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import {
   Button,
@@ -394,7 +394,7 @@ export const EditorHeader = memo(function EditorHeader({
         {
           label: t('shell.tab.ctx.close'),
           onSelect: close('close'),
-          shortcut: commandHotkeyText(CLOSE_ACTIVE_EDITOR_COMMAND),
+          shortcut: commandHotkeyText(coApp.commands.get(CLOSE_ACTIVE_EDITOR_COMMAND.id) ?? CLOSE_ACTIVE_EDITOR_COMMAND),
           opensDialog: true,
         },
         { label: t('shell.tab.ctx.close_others'), onSelect: close('others'), disabled: tabsChrome.length <= 1, opensDialog: true },
@@ -425,7 +425,7 @@ export const EditorHeader = memo(function EditorHeader({
         'separator',
         // 文件已删除(orphaned)无处可显示。
         {
-          label: t('panels.explorer.ctx.reveal_in_finder'),
+          label: t(osVariantKey('panels.explorer.ctx.reveal_in_finder')),
           onSelect: () => void revealPathOrNotify(tab.filePath),
           disabled: tab.orphaned === true || untitled,
         },

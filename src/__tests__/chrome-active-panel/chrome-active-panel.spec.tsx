@@ -29,6 +29,8 @@ function createDock(): DockviewApi {
 const README = '/w/README.md';
 
 beforeEach(() => {
+  // 应用内标题栏只在 macOS 渲染(Windows / Linux 用原生标题栏,见 src/__tests__/win-linux-parity/)
+  Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true });
   useWorkspaceStore.setState({ root: '/w' });
   useEditorStore.setState({
     tabs: [{ id: README, filePath: README, content: '# hi\n', originalContent: '# hi\n', dirty: false }],
@@ -37,6 +39,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  Object.defineProperty(navigator, 'platform', { value: '', configurable: true });
   cleanup();
   act(() => setDockApi(null));
   vi.unstubAllGlobals();

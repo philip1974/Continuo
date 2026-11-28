@@ -23,12 +23,19 @@ vi.mock('@/lib/co-api', () => ({
   },
 }));
 
+// 应用内标题栏只在 macOS 渲染(Windows / Linux 是原生标题栏,见下方「非 macOS」用例与 src/__tests__/win-linux-parity/)。
+const setNavigatorPlatform = (value: string) => Object.defineProperty(navigator, 'platform', { value, configurable: true });
+
 beforeEach(() => {
+  setNavigatorPlatform('MacIntel');
   useEditorStore.setState({ tabs: [], activeTabId: null });
   useWorkspaceStore.setState({ root: null });
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  setNavigatorPlatform('');
+});
 
 describe('TitleBar', () => {
   it('无 workspace + 无 active → "Continuo"', () => {
@@ -147,11 +154,11 @@ describe('TitleBar · macOS 界面缩放下高度不变', () => {
     expect(header(container).style.zoom).toBe('');
   });
 
-  it('非 macOS(原生标题栏,无红绿灯)/ 取不到缩放系数:不反向缩放', () => {
+  it('非 macOS(原生标题栏)不渲染应用内标题栏;取不到缩放系数:不反向缩放', () => {
     setPlatform('Win32');
     h.zoom.mockReturnValue(0.8);
     const { container, unmount } = render(<TitleBar />);
-    expect(header(container).style.zoom).toBe('');
+    expect(container.querySelector('header')).toBeNull();
     unmount();
     setPlatform('MacIntel');
     h.zoom.mockImplementation(() => {
@@ -205,12 +212,12 @@ describe('TitleBar · macOS 红绿灯留位(VSCode mac window-controls-container
     expect(title(again.container).className).toContain('px-12');
   });
 
-  it('非 macOS(原生标题栏)不留红绿灯位、不查询全屏', async () => {
+  it('非 macOS(原生标题栏)不渲染应用内标题栏、不查询全屏', async () => {
     setPlatform('Win32');
     h.isFullScreen.mockClear();
     const { container } = render(<TitleBar />);
     await flush();
-    expect(title(container).className).toContain('px-12');
+    expect(container.querySelector('[data-title-text]')).toBeNull();
     expect(h.isFullScreen).not.toHaveBeenCalled();
   });
 });

@@ -78,7 +78,8 @@ import { __resetFileUndoForTest } from '../../panels/Explorer/file-undo';
 import { notify } from '@/notifications/notify';
 
 const COPY = '/work/beta copy.ts';
-const TRASH_LABEL = /^(移到废纸篓|Move to Trash)$/;
+// 本文件 Win32:Windows 文案「回收站 / Recycle Bin」(VSCode isWindows 选文案)
+const TRASH_LABEL = /^(移到回收站|Move to Recycle Bin)$/;
 
 const row = (container: HTMLElement, p: string) =>
   container.querySelector(`[title="${p}"]`) as HTMLElement | null;

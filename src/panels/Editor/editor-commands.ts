@@ -77,9 +77,9 @@ import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
 import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { isHotkeyShadowed } from '@/plugins/command-palette/useCommandHotkeys';
 import { coApp } from '@/plugins/co-app';
-import { t, tWithFallback } from '@/i18n';
+import { osVariantKey, t, tWithFallback } from '@/i18n';
 import { tabCloseTargets, type TabCloseKind } from '@/lib/tab-close-targets';
-import { stripRootPrefix } from '@/lib/path-cross';
+import { isWindowsRuntime, stripRootPrefix } from '@/lib/path-cross';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { revealPathOrNotify } from '@/panels/Explorer/reveal-or-notify';
 import { useWorkspaceStore } from '@/stores/workspace.store';
@@ -107,6 +107,16 @@ import {
 
 /** 命令 id 与默认键(终端按生效绑定让出 ⌘W / ⌘S 时与此约定一致)。 */
 export const CLOSE_ACTIVE_EDITOR_COMMAND = { id: 'workbench.action.closeActiveEditor', hotkey: 'mod+w' } as const;
+/**
+ * 关闭编辑器的默认键:Windows 同 VSCode(`win: { primary: Ctrl+F4, secondary: [Ctrl+W] }`,editorCommands CLOSE_EDITOR_COMMAND_ID),
+ * 其它平台 ⌘W / Ctrl+W。BDD: src/__tests__/win-linux-parity/
+ */
+export function closeActiveEditorDefaultHotkeys(windows: boolean): {
+  readonly hotkey: string;
+  readonly secondaryHotkeys?: readonly string[];
+} {
+  return windows ? { hotkey: 'ctrl+f4', secondaryHotkeys: [CLOSE_ACTIVE_EDITOR_COMMAND.hotkey] } : { hotkey: CLOSE_ACTIVE_EDITOR_COMMAND.hotkey };
+}
 export const SAVE_COMMAND = { id: 'workbench.action.files.save', hotkey: 'mod+s' } as const;
 /** 另存为(VSCode 同:⇧⌘S / Ctrl+Shift+S)。 */
 export const SAVE_AS_COMMAND = { id: 'workbench.action.files.saveAs', hotkey: 'mod+shift+s' } as const;
@@ -666,12 +676,13 @@ const MARKDOWN_MODE_COMMANDS: readonly { id: string; mode: EditorMode; title: st
  * 命令 spec(EditorPlugin 注册)。下一个 / 上一个编辑器的默认键按平台对齐 VSCode:
  * mac ⌥⌘→ / ⌥⌘←,其它 Ctrl+PageDown / Ctrl+PageUp。
  */
-export function editorCommandSpecs(platform: Platform): CommandSpec[] {
+export function editorCommandSpecs(platform: Platform, windows: boolean = isWindowsRuntime()): CommandSpec[] {
   const isMac = platform === 'mac';
   const navigationKeys = navigationCommandHotkeys(isMac);
   return [
     {
       ...CLOSE_ACTIVE_EDITOR_COMMAND,
+      ...closeActiveEditorDefaultHotkeys(windows),
       title: 'Close Editor',
       titleKey: 'commands.editor.close.title',
       category: 'View',
@@ -861,7 +872,8 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
     {
       id: 'revealFileInOS',
       title: 'Reveal Active File in Finder',
-      titleKey: 'commands.file.reveal.title',
+      // Windows「在文件资源管理器中显示」、Linux「打开所在的文件夹」(VSCode REVEAL_IN_OS_LABEL)
+      titleKey: osVariantKey('commands.file.reveal.title'),
       category: 'File',
       categoryKey: 'commands.file.category',
       fn: revealActiveFile,

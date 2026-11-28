@@ -68,9 +68,12 @@ const titleText = (container: HTMLElement) => container.querySelector('header')!
 const footerText = (container: HTMLElement) => container.querySelector('footer')!.textContent ?? '';
 
 beforeEach(() => {
+  // 应用内标题栏只在 macOS 渲染(Windows / Linux 用原生标题栏,见 src/__tests__/win-linux-parity/)
+  Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true });
   useWorkspaceStore.setState({ root: '/w' });
 });
 afterEach(() => {
+  Object.defineProperty(navigator, 'platform', { value: '', configurable: true });
   cleanup();
   for (const d of disposers.splice(0)) d.dispose();
   act(() => setDockApi(null));

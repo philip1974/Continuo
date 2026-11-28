@@ -106,7 +106,8 @@ function keyUp(el: HTMLElement, init: KeyboardEventInit) {
   });
 }
 
-const TRASH_LABEL = /^(移到废纸篓|Move to Trash)$/;
+// Windows(本文件默认 Win32)为「回收站 / Recycle Bin」,mac 用例为「废纸篓 / Trash」(VSCode isWindows 选文案)
+const TRASH_LABEL = /^(移到废纸篓|Move to Trash|移到回收站|Move to Recycle Bin)$/;
 const CANCEL_LABEL = /^(取消|Cancel)$/;
 
 /** 删除确认框弹出后点「移到废纸篓」。 */
@@ -382,7 +383,7 @@ describe('FolderTree · 删除确认(VSCode explorer.confirmDelete)', () => {
     key(row(container, '/work/bravo.ts')!, { key: 'Delete', code: 'Delete' });
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toMatch(/bravo\.ts/);
-    expect(dialog.textContent).toMatch(/废纸篓|Trash/);
+    expect(dialog.textContent).toMatch(/回收站|Recycle Bin/);
     const trashButton = within(dialog).getByRole('button', { name: TRASH_LABEL });
     await waitFor(() => expect(document.activeElement).toBe(trashButton));
     const cancel = within(dialog).getByRole('button', { name: CANCEL_LABEL });
@@ -600,7 +601,7 @@ describe('FolderTree · 选中随方向键高频变化后右键菜单仍按最�
     act(() => {
       fireEvent.contextMenu(row(container, '/work/beta.ts')!);
     });
-    const trash = await findByText(/Move to Trash|移到废纸篓/);
+    const trash = await findByText(/Move to Recycle Bin|移到回收站/);
     expect(trash.closest('[role="menuitem"]')!.textContent).toMatch(/2/);
   });
 });

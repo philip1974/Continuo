@@ -15,13 +15,14 @@ import {
 import { detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
 import { coApp } from '@/plugins/co-app';
+import { isWindowsRuntime } from '@/lib/path-cross';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { isContextMenuKey } from '@/lib/context-menu-key';
 import { tWithFallback } from '@/i18n';
 import { FOCUS_NEXT_PART_COMMAND, FOCUS_PREVIOUS_PART_COMMAND } from '@/shell/focus-parts';
 // 显示所有命令的附加默认键 F1:VSCode showCommands 在 commandsToSkipShell 默认列表里 → 终端里让出。
-import { SHOW_COMMANDS_COMMAND } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { isPickerToggleKey, SHOW_COMMANDS_COMMAND } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { WINDOW_ZOOM_COMMAND_IDS } from '../../../electron/shared/window-zoom';
 import {
   TERMINAL_FOCUS_NEXT_COMMAND_ID,
@@ -132,6 +133,82 @@ export function terminalSplitDefaultHotkeys(platform: Platform): {
 } {
   return platform === 'mac' ? { hotkey: 'mod+\\', secondaryHotkeys: ['ctrl+shift+5'] } : { hotkey: 'ctrl+shift+5' };
 }
+
+/**
+ * 终端复制 / 粘贴(VSCode terminal.clipboard.contribution 的 CopySelection / CopyAndClearSelection / Paste,同 id、同标题;都在
+ * commandsToSkipShell 默认列表里 → 胜出即让出)。默认键同 VSCode:
+ * - 复制所选内容:Windows / Linux Ctrl+Shift+C(when 终端获焦且有选区);
+ * - 复制并清除选区:Windows Ctrl+C(同 when —— 没有选区时不胜出,Ctrl+C 照常发 ^C 给 shell);
+ * - 粘贴到活动终端:Windows Ctrl+V(附加 Ctrl+Shift+V)、Linux Ctrl+Shift+V(when 终端获焦)。
+ * macOS 不设默认键:⌘C / ⌘V 照旧由浏览器原生复制 / 粘贴(粘贴经 installTerminalPasteSanitizer 净化)—— Continuo 偏离:VSCode mac
+ * 把 ⌘C / ⌘V 绑给这两个命令,行为相同。Linux 的 Shift+Insert(VSCode PasteSelection 粘贴主选区)未做:Chromium 默认把它当粘贴剪贴板。
+ * 键盘与右键菜单同走 useTerminal 的 contextMenuActions(粘贴先净化控制字符,防 pastejacking)。BDD: src/__tests__/win-linux-parity/
+ */
+export const TERMINAL_COPY_SELECTION_COMMAND_ID = 'workbench.action.terminal.copySelection';
+export const TERMINAL_COPY_AND_CLEAR_SELECTION_COMMAND_ID = 'workbench.action.terminal.copyAndClearSelection';
+export const TERMINAL_PASTE_COMMAND_ID = 'workbench.action.terminal.paste';
+export const TERMINAL_TEXT_SELECTED_WHEN = 'terminalTextSelectedFocus' as const;
+export const TERMINAL_FOCUS_WHEN = 'terminalFocus' as const;
+
+/** 操作系统(复制 / 粘贴默认键 Windows 与 Linux 不同;Platform 不区分)。 */
+export type TerminalOs = 'mac' | 'windows' | 'linux';
+
+export function detectTerminalOs(platform: Platform = detectPlatform()): TerminalOs {
+  if (platform === 'mac') return 'mac';
+  return isWindowsRuntime() ? 'windows' : 'linux';
+}
+
+type DefaultHotkeys = { readonly hotkey?: string; readonly secondaryHotkeys?: readonly string[] };
+
+export interface TerminalClipboardCommand {
+  readonly id: string;
+  readonly title: string;
+  readonly titleKey: string;
+  readonly when: typeof TERMINAL_TEXT_SELECTED_WHEN | typeof TERMINAL_FOCUS_WHEN;
+  readonly action: 'copy' | 'copyAndClear' | 'paste';
+  readonly keys: Readonly<Record<TerminalOs, DefaultHotkeys>>;
+}
+
+export const TERMINAL_CLIPBOARD_COMMANDS: readonly TerminalClipboardCommand[] = [
+  {
+    id: TERMINAL_COPY_SELECTION_COMMAND_ID,
+    title: 'Copy Selection',
+    titleKey: 'commands.terminal.copySelection.title',
+    when: TERMINAL_TEXT_SELECTED_WHEN,
+    action: 'copy',
+    keys: { mac: {}, windows: { hotkey: 'ctrl+shift+c' }, linux: { hotkey: 'ctrl+shift+c' } },
+  },
+  {
+    id: TERMINAL_COPY_AND_CLEAR_SELECTION_COMMAND_ID,
+    title: 'Copy and Clear Selection',
+    titleKey: 'commands.terminal.copyAndClearSelection.title',
+    when: TERMINAL_TEXT_SELECTED_WHEN,
+    action: 'copyAndClear',
+    keys: { mac: {}, windows: { hotkey: 'ctrl+c' }, linux: {} },
+  },
+  {
+    id: TERMINAL_PASTE_COMMAND_ID,
+    title: 'Paste into Active Terminal',
+    titleKey: 'commands.terminal.paste.title',
+    when: TERMINAL_FOCUS_WHEN,
+    action: 'paste',
+    keys: { mac: {}, windows: { hotkey: 'ctrl+v', secondaryHotkeys: ['ctrl+shift+v'] }, linux: { hotkey: 'ctrl+shift+v' } },
+  },
+];
+
+/**
+ * 调试工具栏命令(VSCode workbench.action.debug.continue / pause / stepOver / stepInto / stepOut / stop,都在 commandsToSkipShell 默认
+ * 列表里 → 胜出即让出):调试会话停住时焦点在终端也能按 F5 / F10 / F11 …(没有会话时 when 不成立、不胜出,F5 照常进 shell)。
+ * id 与 debug-commands 的 DEBUG_COMMANDS 一致(规范守护)。
+ */
+export const TERMINAL_YIELDED_DEBUG_COMMAND_IDS = [
+  'workbench.action.debug.continue',
+  'workbench.action.debug.pause',
+  'workbench.action.debug.stepOver',
+  'workbench.action.debug.stepInto',
+  'workbench.action.debug.stepOut',
+  'workbench.action.debug.stop',
+] as const;
 
 /** 终端滚动动作(终端面板句柄 scroll 执行:scrollToTop / scrollToBottom / scrollPages(±1) / scrollLines(±1))。 */
 export type TerminalScrollAction = 'top' | 'bottom' | 'pageUp' | 'pageDown' | 'lineUp' | 'lineDown';
@@ -263,15 +340,19 @@ const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> =
   ...WINDOW_ZOOM_COMMAND_IDS.map((id) => [id, { metaOnly: true }] as const),
   // 滚动(⌘Home / ⌘End / PageUp …):在 commandsToSkipShell 默认列表里 → 胜出即让出(when 限主缓冲,备用屏里不胜出)。
   ...TERMINAL_SCROLL_COMMANDS.map((c) => [c.id, { metaOnly: false }] as const),
+  // 复制 / 粘贴(Windows Ctrl+C 有选区 / Ctrl+V,Ctrl+Shift+C / Ctrl+Shift+V):在默认列表里 → 胜出即让出。
+  ...TERMINAL_CLIPBOARD_COMMANDS.map((c) => [c.id, { metaOnly: false }] as const),
+  ...TERMINAL_YIELDED_DEBUG_COMMAND_IDS.map((id) => [id, { metaOnly: false }] as const),
 ]);
 
 /** 终端判定涉及的命令的约定默认键(命令尚未注册时兜底;已注册以注册的 hotkey 为准)。按平台(clear 仅 mac 有默认键)。 */
-const TERMINAL_DEFAULTS: Readonly<Record<Platform, readonly DefaultCommand[]>> = {
-  mac: terminalDefaults('mac'),
-  other: terminalDefaults('other'),
+const TERMINAL_DEFAULTS: Readonly<Record<TerminalOs, readonly DefaultCommand[]>> = {
+  mac: terminalDefaults('mac', 'mac'),
+  windows: terminalDefaults('other', 'windows'),
+  linux: terminalDefaults('other', 'linux'),
 };
 
-function terminalDefaults(platform: Platform): readonly DefaultCommand[] {
+function terminalDefaults(platform: Platform, os: TerminalOs): readonly DefaultCommand[] {
   return [
     TERMINAL_ZOOM_COMMAND,
     TERMINAL_SEARCH_COMMAND,
@@ -295,6 +376,7 @@ function terminalDefaults(platform: Platform): readonly DefaultCommand[] {
       ...terminalScrollDefaultHotkeys(c, platform),
       when: TERMINAL_SCROLL_WHEN,
     })),
+    ...TERMINAL_CLIPBOARD_COMMANDS.map((c) => ({ id: c.id, ...c.keys[os], when: c.when })),
   ];
 }
 
@@ -312,7 +394,7 @@ function terminalWinner(
   registry: CommandLookup,
 ): string | null {
   if (event.type !== 'keydown' || event.isComposing || isModalOpenFor(event)) return null;
-  const commands = withDefaultCommands(registry.getAll(), TERMINAL_DEFAULTS[platform]);
+  const commands = withDefaultCommands(registry.getAll(), TERMINAL_DEFAULTS[detectTerminalOs(platform)]);
   return winningCommandFor(event, commands, platform, overrides)?.id ?? null;
 }
 
@@ -435,6 +517,16 @@ export function terminalSendSequenceForKey(
 export function isTerminalUnboundMetaKey(event: KeyboardEvent, platform: Platform = detectPlatform()): boolean {
   if (platform !== 'mac' || event.type !== 'keydown' || event.isComposing || !event.metaKey) return false;
   return event.key.length > 1 && event.key !== 'Meta';
+}
+
+/**
+ * 转到文件 / 命令面板的开关键(Windows / Linux Ctrl+P / Ctrl+Shift+P,mac ⌘P / ⇧⌘P):VSCode commandsToSkipShell 默认列表含
+ * workbench.action.quickOpen / showCommands → 终端获焦时不交给 xterm(Ctrl+P 不再发 ^P 给 shell),事件照常冒泡给 picker 的 document
+ * 监听打开面板。有 Modal 开着时不让出(picker 监听同样不动)。BDD: src/__tests__/win-linux-parity/
+ */
+export function isTerminalPickerToggleKey(event: KeyboardEvent, platform: Platform = detectPlatform()): boolean {
+  if (event.type !== 'keydown' || event.isComposing || isModalOpenFor(event)) return false;
+  return isPickerToggleKey(event, platform === 'mac');
 }
 
 /** 键盘打开终端右键菜单:Shift+F10 / 菜单键(Windows / Linux 约定,mac 上同样可用)。 */

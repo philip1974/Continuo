@@ -45,6 +45,7 @@ import {
 import {
   isTerminalContextMenuKey,
   isTerminalKeptHotkey,
+  isTerminalPickerToggleKey,
   isTerminalSearchHotkey,
   isTerminalUnboundMetaKey,
   isTerminalZoomHotkey,
@@ -52,10 +53,11 @@ import {
   runTerminalZoomFromKey,
   terminalSendSequenceForKey,
   terminalYieldedCommandId,
+  type TerminalClipboardCommand,
   type TerminalScrollAction,
 } from './terminal-hotkeys';
 import type { TerminalViewport } from './terminal-panel-handles';
-import { TERMINAL_ALT_BUFFER_ATTR, TERMINAL_ATTR } from '@/lib/editor-text-focus';
+import { TERMINAL_ALT_BUFFER_ATTR, TERMINAL_ATTR, TERMINAL_SELECTION_ATTR } from '@/lib/editor-text-focus';
 import { createOutputCoalescer } from './output-coalescer';
 import { createTerminalWebgl, type TerminalWebgl } from './terminal-webgl';
 import { installTerminalPasteSanitizer, sanitizeTerminalPaste } from './terminal-paste-sanitize';
@@ -569,6 +571,11 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     };
     syncAltBufferAttr();
     const bufferChangeDisposable = term.buffer?.onBufferChange?.(syncAltBufferAttr);
+    // 复制命令的 when(terminalTextSelectedFocus):有选区时容器另加标记 → Windows Ctrl+C 有选区才复制,否则照常发 ^C。
+    // 测试桩可能不带 onSelectionChange → 可选链。
+    const selectionDisposable = term.onSelectionChange?.(() => {
+      container.toggleAttribute(TERMINAL_SELECTION_ATTR, term.hasSelection());
+    });
     if (inputAriaLabelRef.current) term.textarea?.setAttribute('aria-label', inputAriaLabelRef.current);
     // 安全(pastejacking):粘贴先剥离控制字符(防伪造 \x1b[201~ 跳出 bracketed paste),见 terminal-paste-sanitize。
     const disposePasteSanitizer = installTerminalPasteSanitizer(container, term);
@@ -637,7 +644,9 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
         runTerminalZoomFromKey(event);
         return false;
       }
-      // 让出给工作台命令(清屏 / 关闭 / 保存,VSCode commandsToSkipShell):不交给 xterm / shell。
+      // 转到文件 / 命令面板(Windows / Linux Ctrl+P / Ctrl+Shift+P):不交给 xterm,冒泡给 picker 监听(VSCode commandsToSkipShell)。
+      if (isTerminalPickerToggleKey(event)) return false;
+      // 让出给工作台命令(清屏 / 关闭 / 保存 / 复制 / 粘贴,VSCode commandsToSkipShell):不交给 xterm / shell。
       const yielded = terminalYieldedCommandId(event);
       if (yielded) {
         runTerminalCommandFromKey(event, yielded);
@@ -895,8 +904,10 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
         onDataDisposable.dispose();
         disposePasteSanitizer();
         bufferChangeDisposable?.dispose();
+        selectionDisposable?.dispose();
         container.removeAttribute(TERMINAL_ATTR);
         container.removeAttribute(TERMINAL_ALT_BUFFER_ATTR);
+        container.removeAttribute(TERMINAL_SELECTION_ATTR);
         osc7Disposable.dispose();
         reportCwd.cancel(); // 卸载丢弃待发 cwd(会话将随面板关闭/改绑)
         fileLinksDisposable.dispose();
@@ -1105,10 +1116,24 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
           );
       },
       selectAll: () => termRef.current?.selectAll(),
+      clearSelection: () => termRef.current?.clearSelection(),
       clear,
       focus,
     }),
     [clear, focus],
+  );
+
+  // 终端复制 / 粘贴命令(Windows Ctrl+C 有选区 / Ctrl+V 等,见 terminal-hotkeys TERMINAL_CLIPBOARD_COMMANDS):与右键菜单同一实现。
+  const runClipboard = useCallback(
+    (action: TerminalClipboardCommand['action']) => {
+      if (action === 'paste') {
+        contextMenuActions.paste();
+        return;
+      }
+      contextMenuActions.copy();
+      if (action === 'copyAndClear') contextMenuActions.clearSelection();
+    },
+    [contextMenuActions],
   );
 
   // issue #42 #1: single dispatch routes through applyTerminalSearchEffect
@@ -1260,6 +1285,7 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     readText,
     readViewport,
     contextMenuActions,
+    runClipboard,
     searchApi,
     setRendererVisible,
   };

@@ -16,6 +16,7 @@ function actions(over: Partial<TerminalContextMenuActions> = {}): TerminalContex
     copy: vi.fn(),
     paste: vi.fn(),
     selectAll: vi.fn(),
+    clearSelection: vi.fn(),
     clear: vi.fn(),
     focus: vi.fn(),
     ...over,

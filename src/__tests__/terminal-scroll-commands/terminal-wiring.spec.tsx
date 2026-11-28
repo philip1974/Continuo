@@ -87,7 +87,7 @@ let host: HTMLElement | null = null;
 function Host() {
   const { containerRef, scroll, focus, clear, readText, readViewport } = useTerminal('term-k');
   useEffect(
-    () => registerTerminalPanelHandles('term-panel', { focus, openSearch: () => {}, clear, scroll, readText, readViewport }),
+    () => registerTerminalPanelHandles('term-panel', { focus, openSearch: () => {}, clear, scroll, clipboard: () => {}, readText, readViewport }),
     [focus, clear, scroll, readText, readViewport],
   );
   return createElement('div', { 'data-testid': 'host', ref: containerRef });

@@ -7,6 +7,7 @@ import { app, BrowserWindow, type KeyboardEvent, type MenuItemConstructorOptions
 import { runEditUndoRedo, sendMenuCommand } from './lib/menu-command';
 import { menuAcceleratorOf } from './menu-keybindings';
 import { menuCheckedOf } from './menu-checked';
+import { applyMenuMnemonics } from './menu-mnemonic';
 import { HELP_LINKS, PRODUCT_NAME } from './help-links';
 import type { MenuCheckboxId, MenuCommandId } from '../shared/window-channels';
 import type { MainT } from './i18n';
@@ -296,18 +297,26 @@ export function appMenuTemplate(
   ];
 
   // 同 Electron 默认 windowMenu;其它平台不带 role close(其 Ctrl+W 直接关整窗,关窗口在 File 菜单 ⇧Ctrl+W)。
-  const windowSubmenu: Item[] = [
-    { role: 'minimize', label: t('menu.window.minimize') },
-    ...(isMac
-      ? ([
-          { role: 'zoom', label: t('menu.window.zoom') },
-          SEPARATOR,
-          { role: 'front', label: t('menu.window.front') },
-        ] satisfies Item[])
-      : []),
-  ];
+  // 最小化:macOS 用 role(⌘M,系统惯例);其它平台不用 role —— 它自带 Ctrl+M,焦点不在编辑器 / 终端时一按就把窗口最小化
+  //(VSCode Windows / Linux 没有最小化键,Ctrl+M 是「切换 Tab 键移动焦点」)。
+  const windowSubmenu: Item[] = isMac
+    ? [
+        { role: 'minimize', label: t('menu.window.minimize') },
+        { role: 'zoom', label: t('menu.window.zoom') },
+        SEPARATOR,
+        { role: 'front', label: t('menu.window.front') },
+      ]
+    : [
+        {
+          label: t('menu.window.minimize'),
+          click: (_item, win) => {
+            if (win instanceof BrowserWindow) win.minimize();
+          },
+        },
+      ];
 
-  return [
+  // 标签助记符:Windows / Linux 顶层菜单 Alt+F / Alt+E …(catalog 的 `&&`),文本里的 `&` 转义;macOS 去掉(见 menu-mnemonic)。
+  return applyMenuMnemonics([
     ...(isMac
       ? ([
           {
@@ -337,5 +346,5 @@ export function appMenuTemplate(
     { role: 'windowMenu', label: t('menu.window.label'), submenu: windowSubmenu },
     // role help:macOS 帮助菜单带系统搜索框
     { role: 'help', label: t('menu.help.label'), submenu: helpSubmenu },
-  ];
+  ], isMac);
 }

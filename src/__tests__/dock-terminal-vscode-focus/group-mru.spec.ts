@@ -15,7 +15,7 @@ const noop = () => {};
 const flushMicrotasks = () => new Promise<void>((r) => queueMicrotask(r));
 function registerFocusSpy(panelId: string) {
   const focus = vi.fn();
-  registerTerminalPanelHandles(panelId, { focus, openSearch: noop, clear: noop, scroll: noop, readText: () => '', readViewport: () => null });
+  registerTerminalPanelHandles(panelId, { focus, openSearch: noop, clear: noop, scroll: noop, clipboard: noop, readText: () => '', readViewport: () => null });
   return focus;
 }
 

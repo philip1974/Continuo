@@ -129,7 +129,7 @@ describe('Explorer 删除有未保存修改的文件', () => {
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toContain(WARNING());
     act(() => {
-      fireEvent.click(within(dialog).getByRole('button', { name: t('panels.explorer.ctx.trash') }));
+      fireEvent.click(within(dialog).getByRole('button', { name: t('panels.explorer.ctx.trash_win') }));
     });
     await waitFor(() => expect(coApi.fs.trash).toHaveBeenCalledWith('/work/beta.md'));
     await waitFor(() => expect(useEditorStore.getState().tabs[0]).toMatchObject({ id: '/work/beta.md', orphaned: true }));
@@ -148,7 +148,7 @@ describe('Explorer 删除有未保存修改的文件', () => {
     });
     expect(saveToDisk).not.toHaveBeenCalled();
     act(() => {
-      fireEvent.click(within(dialog).getByRole('button', { name: t('panels.explorer.ctx.trash') }));
+      fireEvent.click(within(dialog).getByRole('button', { name: t('panels.explorer.ctx.trash_win') }));
     });
     await waitFor(() => expect(coApi.fs.trash).toHaveBeenCalledWith('/work/beta.md'));
     await waitFor(() =>
@@ -172,7 +172,7 @@ describe('Explorer 删除有未保存修改的文件', () => {
     await deleteRow('/work/beta.md');
     const dialog = await screen.findByRole('alertdialog');
     act(() => {
-      fireEvent.click(within(dialog).getByRole('button', { name: t('panels.explorer.ctx.trash') }));
+      fireEvent.click(within(dialog).getByRole('button', { name: t('panels.explorer.ctx.trash_win') }));
     });
     await waitFor(() => expect(coApi.fs.trash).toHaveBeenCalledWith('/work/beta.md'));
     await act(async () => {

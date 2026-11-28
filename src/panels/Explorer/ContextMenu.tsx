@@ -4,7 +4,7 @@ import { MenuItem, type MenuItemVariant } from '@/design';
 import { ExplorerVisibleContext } from './visibility';
 import { createMenuFocusRestore, type MenuFocusRestore } from './menu-close-focus';
 import type { FileEntry } from '@/lib/fs/types';
-import { useT } from '@/i18n';
+import { osVariantKey, useT } from '@/i18n';
 import { CONTEXT_MENU_CONTENT_CLASS_NAME } from '@/lib/menu-surface';
 import {
   filterVisible,
@@ -355,7 +355,7 @@ function ContextMenuContent({
 
             {/* 系统集成段 */}
             <CtxItem onSelect={() => actions.onRevealInFinder(target!.path)}>
-              {t('panels.explorer.ctx.reveal_in_finder')}
+              {t(osVariantKey('panels.explorer.ctx.reveal_in_finder'))}
             </CtxItem>
             {isFolder && (
               <CtxItem onSelect={() => actions.onOpenInTerminal(target!.path)}>
@@ -376,7 +376,7 @@ function ContextMenuContent({
               trailing={countTrailing}
               shortcut={keyOf(trashHotkey(platform))}
             >
-              {t('panels.explorer.ctx.trash')}
+              {t(osVariantKey('panels.explorer.ctx.trash'))}
             </CtxItem>
           </>
         )}

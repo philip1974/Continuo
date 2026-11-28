@@ -10,6 +10,8 @@
 // - `terminalSplitFocus`:terminalFocus 且按键所在窗口有不止一个终端窗格(VSCode `terminalFocus && terminalSplitActive`,窗格切换
 //   命令用它):没有分屏时不成立,同键让给后面的绑定(mac ⌥⌘→ / ⌥⌘← = 下一个 / 上一个编辑器)。是否分屏由 dock 层注入
 //  (provideTerminalSplitActive),本模块不依赖 dock。
+// - `terminalTextSelectedFocus`:terminalFocus 且该终端有选区(VSCode `terminalTextSelected && terminalFocus`,终端复制命令用它):
+//   没有选区时不成立,Windows 的 Ctrl+C 照常发 ^C 给 shell。终端容器有选区时带 TERMINAL_SELECTION_ATTR。BDD: src/__tests__/win-linux-parity/
 // - `markdownEditorFocus`:editorFocus 且是 Markdown 文档(VSCode `editorFocus && resourceLangId == markdown`,切换预览 ⇧⌘V 用它):
 //   Markdown 编辑 / 预览(Milkdown 外层),或源码模式的 CodeEditor(语言为 Markdown 时 .cm-editor 另带 MARKDOWN_SOURCE_ATTR)。
 //   其它文件的编辑器里不成立(Windows / Linux 的 Ctrl+Shift+V 照常粘贴)。BDD: src/__tests__/workbench-vscode-default-keys/
@@ -31,6 +33,8 @@ export const MARKDOWN_SOURCE_ATTR = 'data-co-markdown-source';
 /** 终端容器(useTerminal 挂 xterm 的元素)上的标记属性;备用屏(alternate screen)激活时另带 TERMINAL_ALT_BUFFER_ATTR。 */
 export const TERMINAL_ATTR = 'data-co-terminal';
 export const TERMINAL_ALT_BUFFER_ATTR = 'data-co-terminal-alt-buffer';
+/** 终端有选区时容器上另带的标记属性(terminalTextSelectedFocus 用)。 */
+export const TERMINAL_SELECTION_ATTR = 'data-co-terminal-selection';
 
 /** 命令的上下文条件(CommandSpec.when)。 */
 export type CommandWhen =
@@ -40,11 +44,17 @@ export type CommandWhen =
   | 'terminalFocus'
   | 'terminalNormalBufferFocus'
   | 'terminalSplitFocus'
+  | 'terminalTextSelectedFocus'
   | 'inDebugMode'
   | 'debugStopped'
   | 'debugRunning';
 
-const TERMINAL_WHENS: ReadonlySet<unknown> = new Set<CommandWhen>(['terminalFocus', 'terminalNormalBufferFocus', 'terminalSplitFocus']);
+const TERMINAL_WHENS: ReadonlySet<unknown> = new Set<CommandWhen>([
+  'terminalFocus',
+  'terminalNormalBufferFocus',
+  'terminalSplitFocus',
+  'terminalTextSelectedFocus',
+]);
 const DEBUG_WHENS: ReadonlySet<unknown> = new Set<CommandWhen>(['inDebugMode', 'debugStopped', 'debugRunning']);
 
 export function isCommandWhen(value: unknown): value is CommandWhen {
@@ -87,7 +97,8 @@ export function provideTerminalSplitActive(probe: (doc: Document) => boolean): v
 
 /**
  * 条件 a 成立处 b 是否必然成立(a 的上下文被 b 完全覆盖):b 无条件、两者相同,或 a = editorTextFocus / markdownEditorFocus 而
- * b = editorFocus(正文 / Markdown 编辑器是编辑器的一部分),或 a = terminalNormalBufferFocus / terminalSplitFocus 而 b = terminalFocus(主缓冲 / 有分屏是终端的一种状态)。
+ * b = editorFocus(正文 / Markdown 编辑器是编辑器的一部分),或 a = terminalNormalBufferFocus / terminalSplitFocus / terminalTextSelectedFocus 而
+ * b = terminalFocus(主缓冲 / 有分屏 / 有选区是终端的一种状态)。
  * 分发表里前面的绑定 b 在后面同键绑定 a 的全部上下文里都胜出时,a 算冲突落败。
  */
 export function whenCoveredBy(a: CommandWhen | undefined, b: CommandWhen | undefined): boolean {
@@ -95,7 +106,7 @@ export function whenCoveredBy(a: CommandWhen | undefined, b: CommandWhen | undef
     b === undefined ||
     a === b ||
     ((a === 'editorTextFocus' || a === 'markdownEditorFocus') && b === 'editorFocus') ||
-    ((a === 'terminalNormalBufferFocus' || a === 'terminalSplitFocus') && b === 'terminalFocus') ||
+    ((a === 'terminalNormalBufferFocus' || a === 'terminalSplitFocus' || a === 'terminalTextSelectedFocus') && b === 'terminalFocus') ||
     ((a === 'debugStopped' || a === 'debugRunning') && b === 'inDebugMode')
   );
 }
@@ -143,6 +154,7 @@ function holdsFor(when: CommandWhen, el: Element | null): boolean {
   if (when === 'terminalFocus') return isTerminalElement(el);
   if (when === 'terminalSplitFocus') return isTerminalElement(el) && terminalSplitActive(el!.ownerDocument);
   if (when === 'terminalNormalBufferFocus') return isTerminalNormalBufferElement(el);
+  if (when === 'terminalTextSelectedFocus') return el?.closest?.(`[${TERMINAL_ATTR}]`)?.hasAttribute(TERMINAL_SELECTION_ATTR) === true;
   if (when === 'markdownEditorFocus') return isMarkdownEditorElement(el);
   return when === 'editorFocus' ? isEditorElement(el) : isEditorTextElement(el);
 }

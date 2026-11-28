@@ -103,7 +103,7 @@ import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { useExplorerClipboardStore } from './clipboard-store';
-import { t, useT } from '@/i18n';
+import { osVariantKey, t, useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { openDroppedFiles, openFilesToSide } from '@/shell/dock/explorer-editor-drop';
@@ -220,7 +220,7 @@ function notifyRemoveFailure(
   f: RemoveFailure,
 ): void {
   notify.error(
-    t(key, { name: basenamePreserveTrailing(f.path), message: localizeErrorByCode(f.code, f.message) }),
+    t(osVariantKey(key), { name: basenamePreserveTrailing(f.path), message: localizeErrorByCode(f.code, f.message) }),
     { code: f.code, mirror: false },
   );
 }
@@ -1387,9 +1387,9 @@ export function FolderTree({ root }: { root: string }) {
           if (o.status === 'done') {
             // 撤销删除:没能重建的(过大 / 读不了;符号链接另说原因)与只重建成空文件夹的,提示可从废纸篓找回(VSCode 静默,这里明说)。
             const names = (paths: readonly string[] | undefined) => paths?.map(basenamePreserveTrailing).join(', ');
-            if (o.notRestored) notify.info(t('panels.explorer.undo_delete_not_restored', { names: names(o.notRestored)! }), { mirror: false });
-            if (o.notRestoredLinks) notify.info(t('panels.explorer.undo_delete_link_not_restored', { names: names(o.notRestoredLinks)! }), { mirror: false });
-            if (o.emptyFolders) notify.info(t('panels.explorer.undo_delete_empty_folder', { names: names(o.emptyFolders)! }), { mirror: false });
+            if (o.notRestored) notify.info(t(osVariantKey('panels.explorer.undo_delete_not_restored'), { names: names(o.notRestored)! }), { mirror: false });
+            if (o.notRestoredLinks) notify.info(t(osVariantKey('panels.explorer.undo_delete_link_not_restored'), { names: names(o.notRestoredLinks)! }), { mirror: false });
+            if (o.emptyFolders) notify.info(t(osVariantKey('panels.explorer.undo_delete_empty_folder'), { names: names(o.emptyFolders)! }), { mirror: false });
             if (o.reveal !== null) {
               // 撤销后选中并显示恢复的项(同改名后的定位;DOM 焦点已不在树里则不抢)。
               expandAncestors(o.reveal);
@@ -1665,10 +1665,10 @@ export function FolderTree({ root }: { root: string }) {
                 {unsavedWarning(trashConfirm.unsaved, singleFile)}
               </p>
             )}
-            <p>{tt('panels.explorer.trash_confirm.detail')}</p>
+            <p>{tt(osVariantKey('panels.explorer.trash_confirm.detail'))}</p>
           </>
         }
-        confirmLabel={tt('panels.explorer.ctx.trash')}
+        confirmLabel={tt(osVariantKey('panels.explorer.ctx.trash'))}
         destructive
         // 移到废纸篓可从废纸篓恢复:回车即执行(VSCode 删除确认的主按钮默认);永久删除等不可恢复的确认不这样做。
         defaultAction="confirm"
@@ -1695,8 +1695,8 @@ export function FolderTree({ root }: { root: string }) {
     const paths = permanentDeleteConfirm ?? EMPTY_PATH_LIST;
     const title =
       paths.length === 1
-        ? tt('panels.explorer.delete_permanently.single', { name: basenamePreserveTrailing(paths[0]!) })
-        : tt('panels.explorer.delete_permanently.multiple', { count: paths.length });
+        ? tt(osVariantKey('panels.explorer.delete_permanently.single'), { name: basenamePreserveTrailing(paths[0]!) })
+        : tt(osVariantKey('panels.explorer.delete_permanently.multiple'), { count: paths.length });
     return (
       <ConfirmDialog
         open={permanentDeleteConfirm !== null}
@@ -1704,7 +1704,7 @@ export function FolderTree({ root }: { root: string }) {
         description={
           <>
             {paths.length > 1 && <ConfirmNameList names={paths.map(basenamePreserveTrailing)} />}
-            <p className="text-fg">{tt('panels.explorer.delete_permanently.detail')}</p>
+            <p className="text-fg">{tt(osVariantKey('panels.explorer.delete_permanently.detail'))}</p>
           </>
         }
         confirmLabel={tt('panels.explorer.delete_permanently.confirm')}
@@ -1791,17 +1791,17 @@ export function FolderTree({ root }: { root: string }) {
         open
         title={
           names.length === 1
-            ? tt('panels.explorer.undo_create_confirm.single', { name: names[0]! })
-            : tt('panels.explorer.undo_create_confirm.multiple', { count: names.length })
+            ? tt(osVariantKey('panels.explorer.undo_create_confirm.single'), { name: names[0]! })
+            : tt(osVariantKey('panels.explorer.undo_create_confirm.multiple'), { count: names.length })
         }
         description={
           <>
             {names.length > 1 && <ConfirmNameList names={names} />}
             {unsaved > 0 && <p className="mb-2 text-fg">{unsavedWarning(unsaved, singleFile)}</p>}
-            <p>{tt('panels.explorer.trash_confirm.detail')}</p>
+            <p>{tt(osVariantKey('panels.explorer.trash_confirm.detail'))}</p>
           </>
         }
-        confirmLabel={tt('panels.explorer.ctx.trash')}
+        confirmLabel={tt(osVariantKey('panels.explorer.ctx.trash'))}
         destructive
         // 同删除确认:移到废纸篓可恢复,回车即执行。
         defaultAction="confirm"

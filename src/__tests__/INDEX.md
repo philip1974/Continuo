@@ -2440,6 +2440,13 @@
 
 - [`wc-gone-hook-navigation.spec.ts`](./wc-gone-hook/wc-gone-hook-navigation.spec.ts)
 
+## [Windows / Linux 用户视角对齐 VSCode](./win-linux-parity/README.md)
+
+- [`platform-labels.spec.tsx`](./win-linux-parity/platform-labels.spec.tsx)
+- [`terminal-clipboard.spec.tsx`](./win-linux-parity/terminal-clipboard.spec.tsx)
+- [`terminal-right-click.spec.tsx`](./win-linux-parity/terminal-right-click.spec.tsx)
+- [`title-bar-menu.spec.tsx`](./win-linux-parity/title-bar-menu.spec.tsx)
+
 ## [window-aware-agent-session](./window-aware-agent-session/README.md) `[integration]`
 
 - [`cross-window-isolation.spec.ts`](./window-aware-agent-session/cross-window-isolation.spec.ts)

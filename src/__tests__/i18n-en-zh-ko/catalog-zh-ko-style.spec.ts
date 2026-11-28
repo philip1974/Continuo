@@ -11,8 +11,11 @@ import { zh } from '../../../electron/shared/i18n-locales/zh';
 
 const CJK = '[\\u3400-\\u9fff]';
 
-/** 去掉反引号代码段(其内标点按代码原样)。 */
-const stripCode = (value: string): string => value.replace(/`[^`]*`/g, '');
+/**
+ * 去掉反引号代码段(其内标点按代码原样)与菜单助记符后缀「(&&F)」(Windows 原生菜单惯例的半角括号,同 VSCode 中文 / 韩文语言包
+ *「文件(&&F)」;macOS 上整体去掉,见 electron/main/menu-mnemonic)。
+ */
+const stripCode = (value: string): string => value.replace(/`[^`]*`/g, '').replace(/\(&&\w\)/g, '');
 
 const ZH_RULES: ReadonlyArray<readonly [string, RegExp]> = [
   ['半角逗号 / 分号 / 问号 / 叹号紧邻汉字', new RegExp(`${CJK}[,;?!]|[,;?!] ?${CJK}`)],

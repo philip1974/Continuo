@@ -45,7 +45,7 @@ function addPanel(api: DockviewApi, id: string, component: 'editor' | 'terminal'
   el.dataset['testId'] = id;
   panel.view.content.element.appendChild(el);
   if (component === 'terminal') {
-    registerTerminalPanelHandles(id, { focus: () => el.focus(), openSearch: () => {}, clear: () => {}, scroll: () => {}, readText: () => '', readViewport: () => null });
+    registerTerminalPanelHandles(id, { focus: () => el.focus(), openSearch: () => {}, clear: () => {}, scroll: () => {}, clipboard: () => {}, readText: () => '', readViewport: () => null });
   }
   return panel;
 }

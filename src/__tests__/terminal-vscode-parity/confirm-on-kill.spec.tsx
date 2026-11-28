@@ -244,7 +244,7 @@ describe('popout 子窗里的终端:确认框画在该子窗,取消后焦点还�
   it('取消 → 焦点还给该终端', async () => {
     __resetTerminalPanelHandlesForTest();
     const focus = vi.fn();
-    registerTerminalPanelHandles('terminal-refocus', { focus, openSearch: vi.fn(), clear: vi.fn(), scroll: vi.fn(), readText: () => '', readViewport: () => null });
+    registerTerminalPanelHandles('terminal-refocus', { focus, openSearch: vi.fn(), clear: vi.fn(), scroll: vi.fn(), clipboard: vi.fn(), readText: () => '', readViewport: () => null });
     useTerminalStore.setState({ sessions: [session('refocus')] });
     hoisted.runningProcess.mockResolvedValue({ ok: true, data: { process: 'sleep' } });
     render(createElement(TerminalKillConfirmHost));

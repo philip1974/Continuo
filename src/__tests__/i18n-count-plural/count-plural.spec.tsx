@@ -97,7 +97,8 @@ describe('守护:en 中带 {count} 的文案', () => {
         if (en[`${pair[1]}_one`] === undefined || en[`${pair[1]}_other`] === undefined) bad.push(`${key}(缺另一半)`);
         continue;
       }
-      if (text.includes('(s)') || key in NO_PLURAL_NEEDED) continue;
+      // 平台变体(`<key>_win` / `<key>_linux`,见 osVariantKey)随基础 key 豁免
+      if (text.includes('(s)') || key in NO_PLURAL_NEEDED || key.replace(/_(win|linux)$/, '') in NO_PLURAL_NEEDED) continue;
       bad.push(`${key}: ${text}`);
     }
     expect(bad).toEqual([]);

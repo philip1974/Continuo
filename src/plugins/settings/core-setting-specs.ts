@@ -8,6 +8,7 @@ import type { SettingItemSpec, SettingItemValue } from '../registries/SettingIte
 import type { ThemeMode } from '@/theme/ThemeProvider';
 import type { Locale } from '../../../electron/shared/i18n-types';
 import { DEFAULT_ZOOM_LEVEL, MAX_ZOOM_LEVEL, MIN_ZOOM_LEVEL } from '../../../electron/shared/window-zoom';
+import { osVariantKey } from '@/i18n/translate';
 
 /** 带值类型的内置设置项 spec(default 的类型即消费方拿到的值类型)。 */
 export type CoreSettingSpec<T extends SettingItemValue> = SettingItemSpec & { readonly default: T };
@@ -446,7 +447,8 @@ export const EXPLORER_CONFIRM_DELETE: CoreSettingSpec<boolean> = {
   category: 'explorer',
   title: 'Confirm delete',
   titleKey: 'settings.explorer.confirm_delete',
-  descriptionKey: 'settings.explorer.confirm_delete.desc',
+  // Windows「回收站」(VSCode isWindows 选 Recycle Bin 文案)
+  descriptionKey: osVariantKey('settings.explorer.confirm_delete.desc'),
   type: 'boolean',
   default: true,
   priority: 3,

@@ -36,5 +36,5 @@
 - 全屏:红绿灯隐藏(VSCode `.monaco-workbench.fullscreen .window-controls-container { display: none }`),两侧回到 48px。
   全屏状态:挂载时 `coApi.window.isFullScreen()`(`window:is-full-screen`)查询初值,之后跟随 main 在
   `enter-full-screen` / `leave-full-screen` 时推送的 `window:full-screen-changed`;推送先到时不被迟到的初值覆盖。
-- 非 macOS(原生标题栏):48px,不查询全屏。
+- 非 macOS(原生标题栏):不渲染应用内标题栏、不查询全屏,只同步 `document.title`(见 `win-linux-parity` 第 3 条)。
 - 规范:`title-bar.spec.tsx`(渲染)、`title-bar-full-screen-ipc.spec.ts`(main)

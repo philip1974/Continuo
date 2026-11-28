@@ -115,6 +115,19 @@ function isPKey(key: string): boolean {
   return key === 'p' || key === 'P';
 }
 
+/**
+ * 按键是否是 Quick Open / 命令面板的开关键(mac ⌘P / ⇧⌘P,其它 Ctrl+P / Ctrl+Shift+P;shift 指定时只认对应那个)。下方 document 监听
+ * 与终端(useTerminal:VSCode commandsToSkipShell 含 workbench.action.quickOpen / showCommands,终端获焦时 Ctrl+P 不发 ^P 给 shell、
+ * 交给 picker)共用。只认平台主修饰键:mac = Cmd(meta),其它 = Ctrl。
+ *  - 非 mac 不认 meta:否则 Windows/Linux 的 Super/Win 键会误触发面板(跨平台审计 P2)。
+ *  - mac 不认 Ctrl:Ctrl+P 是终端 readline 的「上一条历史」等 Control 序列,认了的话焦点在终端时
+ *    shell 收到按键的同时面板也弹出来抢焦点(与 useCommandHotkeys 的 R15 规则一致)。
+ */
+export function isPickerToggleKey(e: KeyboardEvent, isMac: boolean, shift?: boolean): boolean {
+  const mod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+  return mod && !e.altKey && (shift === undefined || e.shiftKey === shift) && isPKey(e.key);
+}
+
 type PickerGetState = () => Pick<PickerSlice, 'isOpen' | 'hostDocument' | 'open' | 'close'>;
 
 /** 当前挂载的 picker(互斥用:打开一个前关掉其余)。 */
@@ -133,16 +146,12 @@ export function usePickerToggleHotkey(
     };
   }, [getState]);
   useEffect(() => {
-    // 只认平台主修饰键:mac = Cmd(meta),其它 = Ctrl。
-    //  - 非 mac 不认 meta:否则 Windows/Linux 的 Super/Win 键会误触发面板(跨平台审计 P2)。
-    //  - mac 不认 Ctrl:Ctrl+P 是终端 readline 的「上一条历史」等 Control 序列,认了的话焦点在终端时
-    //    shell 收到按键的同时面板也弹出来抢焦点(与 useCommandHotkeys 的 R15 规则一致)。
+    // 只认平台主修饰键(见 isPickerToggleKey)。
     const isMac = detectPlatform() === 'mac';
     const handlerFor = (doc: Document) => (e: KeyboardEvent): void => {
       // 输入法组字中的按键属于输入法,不当开关键(同全局命令分发 useCommandHotkeys)
       if (isImeComposing(e)) return;
-      const mod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
-      if (mod && !e.altKey && e.shiftKey === shift && isPKey(e.key)) {
+      if (isPickerToggleKey(e, isMac, shift)) {
         // 选择器画在按键所在窗口(VSCode:Quick Input 画在触发它的窗口,见 picker-window)。picker 所在窗口 = hostDocument
         //(null = 主窗)。
         const here = doc === document ? null : doc;

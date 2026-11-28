@@ -134,6 +134,7 @@ function TerminalPanelContent({
     readText,
     readViewport,
     contextMenuActions,
+    runClipboard,
     searchApi,
     setRendererVisible,
   } = useTerminal(sessionId, { onExitDismiss, focusOnInit, inputAriaLabel, isVisible });
@@ -155,9 +156,18 @@ function TerminalPanelContent({
   // 对外句柄:focus 供 DockShell 在 exit-maximize 后拉回 xterm 焦点(topic-22:
   // 同一 panel 已 active 时 onDidActiveChange 不会再触发);openSearch 供
   // terminal.search.toggle command 打开搜索条;clear 供 terminal.clear command 清屏。
+  // clipboard 供终端复制 / 粘贴命令(Windows Ctrl+C / Ctrl+V 等),与右键菜单同一实现。
   useEffect(() => {
-    return registerTerminalPanelHandles(api.id, { focus, openSearch: searchApi.open, clear, scroll, readText, readViewport });
-  }, [api.id, focus, searchApi.open, clear, scroll, readText, readViewport]);
+    return registerTerminalPanelHandles(api.id, {
+      focus,
+      openSearch: searchApi.open,
+      clear,
+      scroll,
+      clipboard: runClipboard,
+      readText,
+      readViewport,
+    });
+  }, [api.id, focus, searchApi.open, clear, scroll, runClipboard, readText, readViewport]);
 
   // issue #38 R2: ref-capture latest searchApi.isOpen so the
   // onDidActiveChange handler reads fresh value without re-creating

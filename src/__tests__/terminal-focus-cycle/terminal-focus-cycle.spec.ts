@@ -62,7 +62,7 @@ function addPanel(api: DockviewApi, id: string, component: 'editor' | 'terminal'
     focusable = document.createElement('textarea');
     host.appendChild(focusable);
     panel.view.content.element.appendChild(host);
-    registerTerminalPanelHandles(id, { focus: () => focusable.focus(), openSearch: () => {}, clear: () => {}, scroll: () => {}, readText: () => '', readViewport: () => null });
+    registerTerminalPanelHandles(id, { focus: () => focusable.focus(), openSearch: () => {}, clear: () => {}, scroll: () => {}, clipboard: () => {}, readText: () => '', readViewport: () => null });
   }
   focusable.dataset['testId'] = id;
   return panel;
@@ -413,7 +413,7 @@ describe('popout 子窗:只在本窗口的终端间轮转', () => {
     input.dataset['testId'] = 't4';
     host.appendChild(input);
     t4.view.content.element.appendChild(host);
-    registerTerminalPanelHandles('t4', { focus: () => input.focus(), openSearch: () => {}, clear: () => {}, scroll: () => {}, readText: () => '', readViewport: () => null });
+    registerTerminalPanelHandles('t4', { focus: () => input.focus(), openSearch: () => {}, clear: () => {}, scroll: () => {}, clipboard: () => {}, readText: () => '', readViewport: () => null });
     expect(t4.group).toBe(popoutGroup);
     const child = popoutGroup.element.ownerDocument;
     expect(child).not.toBe(document);

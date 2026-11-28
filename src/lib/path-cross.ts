@@ -48,6 +48,12 @@ export function isMacRuntime(): boolean {
   return (navigator.platform ?? '').slice(0, 3).toLowerCase() === 'mac';
 }
 
+/** 当前 renderer 是否跑在 Linux(navigator.platform 以 linux 开头,如 Electron 的 `Linux x86_64`;大小写不敏感)。 */
+export function isLinuxRuntime(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return (navigator.platform ?? '').slice(0, 5).toLowerCase() === 'linux';
+}
+
 // 路径字符级 helper 的 renderer 单一来源(Explorer path-utils / Editor editor-path-utils /
 // link-resolve 共用;此前各自逐字复制)。
 export function isPathSeparatorCode(code: number): boolean {

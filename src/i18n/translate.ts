@@ -7,6 +7,7 @@ import {
 } from '@shared/i18n-interpolate';
 import type { Locale } from '@shared/i18n-types';
 import { ownValue } from '@shared/own-value';
+import { isLinuxRuntime, isWindowsRuntime } from '@/lib/path-cross';
 
 export type { Locale } from '@shared/i18n-types';
 export type { TranslateParams } from '@shared/i18n-interpolate';
@@ -83,6 +84,18 @@ export function translateCount(baseKey: string, count: number): string {
 /** Spec helper — 重置 DEV warn 去重集合，便于测试断言"只 warn 一次"。 */
 export function resetMissingKeyWarningsForTest(): void {
   missingWarned.clear();
+}
+
+/**
+ * 按运行平台选文案变体(VSCode 按 isWindows / isMacintosh 选文案,如 REVEAL_IN_OS_LABEL「Reveal in File Explorer / Reveal in Finder /
+ * Open Containing Folder」、删除确认的 Recycle Bin / Trash):Windows → `<key>_win`、Linux → `<key>_linux`(en catalog 有该变体时),
+ * 否则原 key —— 基础文案是 macOS 措辞(平台无法识别时也用它)。BDD: src/__tests__/win-linux-parity/
+ */
+export function osVariantKey(key: TranslationKey): TranslationKey {
+  const suffix = isWindowsRuntime() ? '_win' : isLinuxRuntime() ? '_linux' : null;
+  if (suffix === null) return key;
+  const variant = `${key}${suffix}`;
+  return ownValue(LOCALE_DICTS.en, variant) === undefined ? key : (variant as TranslationKey);
 }
 
 /** 非 React 处调用（设置项、main throw 站点的 catalog lookup 等） — 等价 translate 别名。 */
