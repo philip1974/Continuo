@@ -627,6 +627,8 @@ export const en = {
   // 只读图片预览 / Markdown 图片占位(对齐 VSCode media-preview)。BDD: src/__tests__/editor-image-preview/
   'editor.image.aria': '{name}, Image Preview',
   'editor.image.too_large': 'The image is too large to preview (over {max}).',
+  'editor.external_sync.too_large':
+    '“{name}” is now larger than {max}, the most the editor can open, so it is no longer refreshed from disk. Refreshing resumes once the file is smaller.',
   'editor.image.load_failed': 'An error occurred while loading the image: {reason}',
   'editor.image.decode_failed': 'An error occurred while loading the image.',
   'editor.image.zoom_fit': 'Whole Image',

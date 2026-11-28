@@ -25,7 +25,12 @@ import { readImage } from './fs/read-image';
 import { guardPluginOpenedPath } from '../services/plugin-fs.service';
 import { getWorkspaceRoot, isAnyWorkspaceRoot, setWorkspaceRootListener } from '../services/window-workspace-roots.service';
 import { isSameOrInsidePath } from '../lib/path-inside';
-import { isEditorDocument, recordEditorDocument } from '../services/window-editor-documents.service';
+import {
+  isEditorDocument,
+  isEditorFile,
+  recordEditorDocument,
+  recordEditorFile,
+} from '../services/window-editor-documents.service';
 import {
   atomicReplaceFileNoFollow,
   atomicWriteFile,
@@ -166,6 +171,7 @@ export const selectDirectoryInputSchema = z.undefined();
 
 const watchInputSchema = z.object({ path: fsPath() }).strict();
 const unwatchInputSchema = z.object({ path: fsPath() }).strict();
+const watchFileInputSchema = z.object({ path: fsPath() }).strict();
 
 // handler 入参类型(本文件内用;preload / renderer 的类型在 fs-channels.ts / fs-list-dir-schema.ts)
 export type ListDirInput = z.infer<typeof listDirInputSchema>;
@@ -282,7 +288,10 @@ export const recordingReadFileHandler = async (
   senderWindowId: number | null,
 ): Promise<FsReadFileData> => {
   const data = await guardedReadFileHandler(input);
-  if (senderWindowId !== null) recordEditorDocument(senderWindowId, input.path);
+  if (senderWindowId !== null) {
+    recordEditorDocument(senderWindowId, input.path);
+    recordEditorFile(senderWindowId, input.path);
+  }
   return data;
 };
 export const guardedWriteFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
@@ -529,8 +538,67 @@ const watchOwnerByWc = new Map<number, number>();
 const attachWatchWcGoneHook = makeWcGoneHook((wcId) => {
   const ownerId = watchOwnerByWc.get(wcId);
   watchOwnerByWc.delete(wcId); // reload 后新文档的 watch 会重新登记;关窗后不留残项
-  if (ownerId !== undefined) watcherPool.unwatchByOwner(ownerId);
+  if (ownerId !== undefined) {
+    watcherPool.unwatchByOwner(ownerId);
+    fileWatcherPool.unwatchByOwner(ownerId);
+  }
 });
+
+// ── 工作区外可见文件的父目录 watcher(fs:watch-file)──────────────────────
+// VSCode editorService.handleVisibleEditorsChange:可见编辑器里不在工作区内的资源单独 fileService.watch(resource),不再可见即释放。
+// 这里 watch 文件的**父目录**、非递归(原子写 = 临时文件 + rename 会让盯文件本身的 watcher 失效;父目录事件带文件名,
+// 与工作区 watcher 走同一条 DIR_CHANGED 广播,renderer 外部同步按目录 + 文件名命中 tab)。按目录引用计数(同目录两个可见文件
+// 共用一个 watcher),按窗口记账(关窗 / reload 释放)。独立于工作区 watcher 池:那边在 macOS / Windows 是递归 watcher,
+// 对 ~/Downloads、/ 之类的父目录递归监视代价不可控。
+// 安全:只接受本窗口经 fs:read-file 读过的文件(main 记账,见 window-editor-documents.service),renderer 不能借此 watch 任意目录;
+// 路径须是规范的绝对路径(不含 `..` / 多余分隔符)。数量上限 MAX_FILE_WATCHERS:超出拒绝(fail-closed,不 LRU 驱逐别人的 watcher)。
+// BDD: src/__tests__/external-sync-outside-workspace/
+export const MAX_FILE_WATCHERS = 32;
+
+// 生产 creator(导出仅供回归测试):非递归,回调的变更目录恒为被 watch 的目录本身。
+export const createParentDirWatcher: WatcherCreator = (dirPath, onChange, onError) => {
+  const watcher = fs.watch(dirPath, { persistent: false, recursive: false }, (eventType, filename) => {
+    if (!filename) {
+      onChange(dirPath);
+      return;
+    }
+    onChange(dirPath, resolveWatchChangedFileName(filename), eventType);
+  });
+  watcher.on('error', (err) => {
+    console.warn('[fs] file watcher error, closing:', dirPath, err);
+    onError(err);
+  });
+  return { close: () => watcher.close() };
+};
+
+const fileWatcherPool = createWatcherPool(createParentDirWatcher);
+
+/** fs:watch-file 的目标目录:规范绝对路径的父目录;不规范 → null。 */
+function fileWatchDir(filePath: string): string | null {
+  if (!path.isAbsolute(filePath) || path.resolve(filePath) !== filePath) return null;
+  const dir = path.dirname(filePath);
+  return dir === filePath ? null : dir;
+}
+
+export function watchFileHandler(filePath: string, ownerId: number): void {
+  const dir = fileWatchDir(filePath);
+  if (dir === null || !isEditorFile(ownerId, filePath)) {
+    throw fsError(ERROR_CODES.FS_DENIED, `not an opened editor file: ${filePath}`);
+  }
+  if (!fileWatcherPool.has(dir) && fileWatcherPool.size() >= MAX_FILE_WATCHERS) {
+    throw fsError(ERROR_CODES.FS_DENIED, `too many file watchers (${MAX_FILE_WATCHERS})`);
+  }
+  try {
+    fileWatcherPool.watch(dir, queueDirChangedBroadcast, ownerId);
+  } catch (err) {
+    throw fsError(mapNodeErrnoCode(err), `watch failed: ${dir}`);
+  }
+}
+
+export function unwatchFileHandler(filePath: string, ownerId: number): void {
+  const dir = fileWatchDir(filePath);
+  if (dir !== null) fileWatcherPool.unwatch(dir, ownerId);
+}
 
 // 导出仅供 R66 回归测试(验证单窗口 send 抛错不中断广播);生产仍只经 watcherPool onChange 调用。
 export function broadcastDirChanged(
@@ -653,6 +721,17 @@ export function registerFsIpc(): void {
     (input, { event }) =>
       watcherPool.unwatch(input.path, senderWindowOrThrow(event, ERROR_CODES.NO_WINDOW).id),
   );
+
+  // 工作区外可见文件(见上方 fileWatcherPool)。owner 记账与 wc-gone 释放同 fs:watch。
+  safeHandleWithCtx(FS_CHANNELS.WATCH_FILE, watchFileInputSchema, (input, { event }) => {
+    const ownerId = senderWindowOrThrow(event, ERROR_CODES.NO_WINDOW).id;
+    watchOwnerByWc.set(event.sender.id, ownerId);
+    attachWatchWcGoneHook(event.sender);
+    watchFileHandler(input.path, ownerId);
+  });
+  safeHandleWithCtx(FS_CHANNELS.UNWATCH_FILE, watchFileInputSchema, (input, { event }) =>
+    unwatchFileHandler(input.path, senderWindowOrThrow(event, ERROR_CODES.NO_WINDOW).id),
+  );
 }
 
 /**
@@ -672,4 +751,5 @@ export function configureSaveRecovery(userDataPath: string): void {
 /** 窗口关闭时释放该窗口持有的全部 fs watcher 引用(审计 P2 资源泄漏)。 */
 export function releaseFsWatchersForWindow(windowId: number): void {
   watcherPool.unwatchByOwner(windowId);
+  fileWatcherPool.unwatchByOwner(windowId);
 }

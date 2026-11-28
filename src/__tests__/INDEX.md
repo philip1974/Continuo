@@ -628,6 +628,10 @@
 
 - [`dirty-close-save.spec.tsx`](./editor-dirty-close/dirty-close-save.spec.tsx)
 
+## [外部追加时光标跟随(editor-external-append-cursor)](./editor-external-append-cursor/README.md)
+
+- [`external-append-cursor.spec.tsx`](./editor-external-append-cursor/external-append-cursor.spec.tsx)
+
 ## [editor-external-link-feedback](./editor-external-link-feedback/)
 
 - [`external-link-feedback.spec.tsx`](./editor-external-link-feedback/external-link-feedback.spec.tsx)
@@ -1139,6 +1143,15 @@
 - [`open-external-confirm.spec.ts`](./external-link-trusted-domains/open-external-confirm.spec.ts)
 - [`trusted-domains-settings.spec.tsx`](./external-link-trusted-domains/trusted-domains-settings.spec.tsx)
 - [`trusted-domains.spec.ts`](./external-link-trusted-domains/trusted-domains.spec.ts)
+
+## [工作区外文件的外部修改同步(external-sync-outside-workspace)](./external-sync-outside-workspace/README.md)
+
+- [`outside-workspace-watch.spec.tsx`](./external-sync-outside-workspace/outside-workspace-watch.spec.tsx)
+- [`watch-file-main.spec.ts`](./external-sync-outside-workspace/watch-file-main.spec.ts)
+
+## [外部重读时文件超过读取上限(external-sync-too-large)](./external-sync-too-large/README.md)
+
+- [`too-large-reload.spec.tsx`](./external-sync-too-large/too-large-reload.spec.tsx)
 
 ## [file-failure-reason(打开 / 保存失败提示:动作 + 文件名 + 本地化原因)](./file-failure-reason/README.md)
 

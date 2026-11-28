@@ -1,6 +1,7 @@
 // 本窗内本地分发「目录重新可观察」:Explorer 的 useFsWatcher 在 fs:watch-lost 后重装 watcher 成功时
 // emit。断线期间的外部变化 main 不会补推 fs:dir-changed,订阅者(编辑器外部同步)按一次 dir-changed
 // 处理,重读该目录下的 clean tab。纯 renderer 内事件,不经 IPC(main 不知道哪次 watchDir 是重装)。
+// 路径也可以是单个文件:工作区外文件再次可见 / 窗口获焦时 stat 变了(useExternalSyncRootWatch),只复查这一个 tab。
 
 type Listener = (dir: string) => void;
 

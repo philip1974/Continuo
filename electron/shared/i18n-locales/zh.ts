@@ -611,6 +611,7 @@ export const zh: Record<TranslationKey, string> = {
   // 只读图片预览 / Markdown 图片占位(对齐 VSCode media-preview)。BDD: src/__tests__/editor-image-preview/
   'editor.image.aria': '{name}，图片预览',
   'editor.image.too_large': '图片过大，无法预览（超过 {max}）。',
+  'editor.external_sync.too_large': '「{name}」已超过编辑器可打开的上限（{max}），已停止自动刷新；文件变小后自动恢复。',
   'editor.image.load_failed': '加载图片时出错：{reason}',
   'editor.image.decode_failed': '加载图片时出错。',
   'editor.image.zoom_fit': '整个图像',

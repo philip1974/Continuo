@@ -5,7 +5,8 @@
 // 重读磁盘并通过 store.reloadFromDisk 同步。dirty tab 跳过,保护用户编辑。
 //
 // 本 hook 不主动 watchDir:watcher 来自 Explorer 已展开目录,以及有打开 tab 时 useExternalSyncRootWatch
-// 持有的 workspace root watcher(不依赖侧栏 / 文件树是否挂载,见该文件)。
+// 持有的 workspace root watcher(不依赖侧栏 / 文件树是否挂载,见该文件);工作区外可见的文件由同一 hook 经 fs:watch-file
+// 监视其父目录(再次可见 / 窗口获焦时 stat 变了 → watch-restored 复查该文件)。
 // watcher 因 error 被驱逐后由 Explorer 重装成功时,断线期间的变化不会有 dir-changed;
 // 订阅本地 watch-restored(src/lib/fs-watch-restored.ts),复查该目录子树内的 tab。
 //
@@ -36,6 +37,10 @@ import { readEditorFile } from './editor-image';
 import { readEncodingOf, readOptionsForTab } from './editor-encoding';
 import type { TextEncodingId } from '../../../electron/shared/text-encoding';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
+import { MAX_WRITE_BYTES } from '../../../electron/shared/fs-limits';
+import { notify } from '@/notifications/notify';
+import { t } from '@/i18n';
+import { formatBinarySize } from './editor-image';
 
 /** watch-restored 子树重读的最大同时在途 readFile 数(与 hydrateEditorTabs RESTORE_READ_CONCURRENCY 同口径). */
 const RESTORED_RELOAD_CONCURRENCY = 32;
@@ -55,6 +60,10 @@ type ReadResult =
   | null;
 
 const isNotFound = (r: ReadResult): boolean => r !== null && !r.ok && r.code === ERROR_CODES.FS_NOT_FOUND;
+const isTooLarge = (r: ReadResult): boolean => r !== null && !r.ok && r.code === ERROR_CODES.FS_FILE_TOO_LARGE;
+
+/** 「文件已超过上限、已停止自动刷新」通知的合并键(每个文件只留一条)。 */
+export const tooLargeNotifyKey = (path: string): string => `external-sync-too-large:${path}`;
 
 /**
  * 性能:编辑器自己保存的回声识别。原子写(tmp + rename)让 watcher 上报被保存文件本身,此前保存后
@@ -98,6 +107,10 @@ export function useExternalFileSync(): void {
     // 合并安全。
     const inFlight = new Set<string>();
     const pending = new Set<string>();
+    // 外部重读遇到 FS_FILE_TOO_LARGE(文件涨过读取上限,如持续写入的日志)的文件:此前静默不刷新,tab 停在旧内容且无任何提示。
+    // 首次遇到时提示一次(同一文件不重复),之后的读取照常尝试 —— 文件变小(轮转 / 截断)读成功即恢复自动刷新并清除记录,
+    // 再次超限会再提示。
+    const tooLarge = new Set<string>();
 
     // resolve/reject 两路共用收尾:无论成功失败都清 inFlight 并尾随重读 pending。
     // 数据安全(P2):readFile 的 promise reject(桥/进程/通道异常,非 handler 的
@@ -116,6 +129,16 @@ export function useExternalFileSync(): void {
       inFlight.delete(path);
       const superseded = pending.delete(path); // 在途期间又有事件?
       // 未被尾随事件取代且读成功 → 应用。r=null(reject)本次不 reloadFromDisk(不拿失败/陈旧覆盖)。
+      if (!superseded && r && r.ok) tooLarge.delete(path);
+      if (!superseded && isTooLarge(r) && !tooLarge.has(path)) {
+        const live = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+        if (live !== null && live === tabRef) {
+          tooLarge.add(path);
+          notify.warn(t('editor.external_sync.too_large', { name: basename(path), max: formatBinarySize(MAX_WRITE_BYTES) }), {
+            replaceKey: tooLargeNotifyKey(path),
+          });
+        }
+      }
       if (!superseded && r && r.ok) {
         // race(R97):tab.id===filePath,close+reopen 同路径会得到同 id 的**新** tab 对象;旧读迟到
         // 回写会覆盖新 tab(新 tab 可能已是更新内容 / 用户随后编辑保存把较新内容回退)。store 更新

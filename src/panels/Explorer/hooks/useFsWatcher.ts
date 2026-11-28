@@ -12,6 +12,18 @@ const DEBOUNCE_MAX_WAIT_MS = 1000;
 const LOST_RETRY_BASE_MS = 2000;
 const LOST_RETRY_MAX_MS = 60_000;
 
+/** 装 / 拆 watcher 的 IPC(默认 = 目录 watcher fs:watch;工作区外文件用 fs:watch-file,见 useExternalSyncRootWatch)。 */
+export interface FsWatchApi {
+  readonly watch: (path: string) => Promise<{ ok: boolean }>;
+  readonly unwatch: (path: string) => Promise<unknown>;
+}
+
+// 调用时才取 coApi.fs(模块级 Proxy;单测按用例替换 watchDir / unwatchDir)。
+const DIR_WATCH_API: FsWatchApi = {
+  watch: (p) => coApi.fs.watchDir(p),
+  unwatch: (p) => coApi.fs.unwatchDir(p),
+};
+
 function bumpGen(watchGen: Map<string, number>, p: string): number {
   const g = (watchGen.get(p) ?? 0) + 1;
   watchGen.set(p, g);
@@ -32,11 +44,14 @@ function bumpGen(watchGen: Map<string, number>, p: string): number {
  * root(可选):本 Explorer 的工作区根。fs:dir-changed 是全窗口广播(其它窗口工作区的目录变化
  * 同样送达),传入后 root 外路径在进入 debouncer 前丢弃 —— 它们不可能对应本树节点,却会让
  * onChange 走 invalidation→listDir 白做 IPC + 读盘(性能审计 #2)。不影响其它 onDirChanged 订阅者。
+ *
+ * api(可选):装 / 拆 watcher 的 IPC,缺省 fs:watch / fs:unwatch。fs:watch-lost 只认已装的 path,与之无关的不受影响。
  */
 export function useFsWatcher(
   expandedPaths: ReadonlySet<string>,
   onChange: (path: string) => void,
   root?: string,
+  api: FsWatchApi = DIR_WATCH_API,
 ): void {
   const prevPathsRef = useRef<Set<string>>(new Set());
   // race(R37):每个 path 的 watch 尝试代际。watchDir 失败撤销记账(R14)若无代际校验:旧 expand /a
@@ -48,6 +63,8 @@ export function useFsWatcher(
   const cancelledRef = useRef(false);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  // api 挂载时取定(installWatch / 卸载清理引用稳定)
+  const apiRef = useRef(api);
   // 读最新 root 而不重订阅(重订阅会 cancel debouncer 丢掉在途刷新)。
   const rootRef = useRef(root);
   rootRef.current = root;
@@ -82,7 +99,7 @@ export function useFsWatcher(
     const myGen = bumpGen(watchGen, p);
     void (async () => {
       try {
-        const r = await coApi.fs.watchDir(p);
+        const r = await apiRef.current.watch(p);
         if (r.ok) {
           // race(R109):watchDir 在途期间该 path 已不再被需要 —— 组件卸载(cancelledRef),或
           // collapse 且未 re-expand(installed 已不含 p)。两种情况下卸载/折叠路径都已 fire 过
@@ -92,7 +109,7 @@ export function useFsWatcher(
           // 路径是 no-op,故 double-unwatch 安全。re-expand 时 installed.has(p) 为真 → 不补发
           // (现有 watch/unwatch 记账已平衡)。
           if (cancelledRef.current || !installed.has(p)) {
-            void coApi.fs.unwatchDir(p);
+            void apiRef.current.unwatch(p);
           } else if (watchGen.get(p) === myGen && pendingRestoreRef.current.delete(p)) {
             onChangeRef.current(p);
             emitWatchRestored(p);
@@ -119,7 +136,7 @@ export function useFsWatcher(
       installed.delete(p);
       // race(R37):bump 代际作废任何对该 path 在途的 add —— 其迟到的失败撤销不再误删后续记账。
       bumpGen(watchGenRef.current, p);
-      void coApi.fs.unwatchDir(p);
+      void apiRef.current.unwatch(p);
     }
     // 折叠即复位 watch-lost 退避并取消待重装:lost 已把 path 移出账本,diffSets 不会将其列入 removed,
     // 故按「不再展开」判定,不论是否在账本中(否则折叠—重开后的下一次失效沿用旧退避)。
@@ -196,10 +213,11 @@ export function useFsWatcher(
   // 卸载时全 unwatch(防 watcher 泄漏)
   useEffect(() => {
     cancelledRef.current = false; // race(R109):(重)挂载复位,StrictMode 双挂 / HMR 不误判已卸载
+    const watchApi = apiRef.current;
     return () => {
       cancelledRef.current = true; // race(R109):令在途 watchDir 成功后补发 unwatch 抵消孤儿
       for (const p of prevPathsRef.current) {
-        void coApi.fs.unwatchDir(p);
+        void watchApi.unwatch(p);
       }
       prevPathsRef.current = new Set();
     };

@@ -37,6 +37,8 @@ const makeFs = (overrides: Partial<FsApi> = {}): FsApi => ({
   selectDirectory: vi.fn(async () => ok(null)),
   watchDir: vi.fn(async () => ok(undefined as void)),
   unwatchDir: vi.fn(async () => ok(undefined as void)),
+  watchFile: vi.fn(async () => ok(undefined as void)),
+  unwatchFile: vi.fn(async () => ok(undefined as void)),
   onDirChanged: vi.fn(() => () => {}),
   onWatchLost: vi.fn(() => () => {}),
   onRootPresenceChanged: vi.fn(() => () => {}),

@@ -14,7 +14,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { EditorView } from 'codemirror';
 import { codeEditorBasicSetup } from './codemirror-basic-setup';
 import { codeEditorTextCommands } from './codemirror-text-commands';
-import { minimalChange } from './minimal-change';
+import { minimalChange, selectionGrowingAtEdges } from './minimal-change';
 import { Compartment, EditorState, StateEffect, type Extension } from '@codemirror/state';
 import { keymap, scrollPastEnd, type ViewUpdate } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
@@ -557,9 +557,11 @@ export function CodeEditor({
     const nextDoc = view.state.toText(value);
     // 另一编辑器组在编辑同一文件(store 内容是共享文本源,BDD: src/__tests__/editor-groups/):只派发公共前后缀之间
     // 那一段,本视图的光标 / 选区随变化映射,不跳动。
+    // 恰在光标 / 选区边上的插入并入选区、空光标跟到插入之后(VSCode AlwaysGrowsWhenTypingAtEdges:光标在末尾时外部追加跟随到新末尾)。
     const change = minimalChange(doc.toString(), nextDoc.toString());
     if (change) {
-      view.dispatch({ changes: change });
+      const changes = view.state.changes(change);
+      view.dispatch({ changes, selection: selectionGrowingAtEdges(view.state.selection, changes) });
       lastSyncedValueRef.current = value;
       return;
     }

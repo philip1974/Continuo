@@ -612,6 +612,8 @@ export const ko: Record<TranslationKey, string> = {
   // 只读图片预览 / Markdown 图片占位(对齐 VSCode media-preview)。BDD: src/__tests__/editor-image-preview/
   'editor.image.aria': '{name}, 이미지 미리 보기',
   'editor.image.too_large': '이미지가 너무 커서 미리 볼 수 없습니다({max} 초과).',
+  'editor.external_sync.too_large':
+    '“{name}”이(가) 편집기에서 열 수 있는 최대 크기({max})를 넘어 디스크에서 자동으로 새로 고치지 않습니다. 파일이 작아지면 다시 새로 고칩니다.',
   'editor.image.load_failed': '이미지를 로드하는 동안 오류가 발생했습니다: {reason}',
   'editor.image.decode_failed': '이미지를 로드하는 동안 오류가 발생했습니다.',
   'editor.image.zoom_fit': '전체 이미지',

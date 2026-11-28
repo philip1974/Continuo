@@ -46,6 +46,12 @@ export const FS_CHANNELS = {
   SAVE_DOCUMENT_IMAGE: 'fs:save-document-image',
   WATCH: 'fs:watch',
   UNWATCH: 'fs:unwatch',
+  /**
+   * 工作区外(或无文件夹时)可见的文件 tab:main 对其父目录装**非递归** watcher(VSCode editorService 对可见的工作区外资源
+   * 单独 fileService.watch)。只接受本窗口经 fs:read-file 读过的文件;变化照常经 DIR_CHANGED 广播。见 fs.ipc。
+   */
+  WATCH_FILE: 'fs:watch-file',
+  UNWATCH_FILE: 'fs:unwatch-file',
   /** main → renderer event(非 invoke),webContents.send(path) 通知目录变更 */
   DIR_CHANGED: 'fs:dir-changed',
   /** main → renderer event:watcher 异步失效被驱逐,payload 同 DIR_CHANGED({ path }),只推给持有者窗口 */

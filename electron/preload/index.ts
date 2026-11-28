@@ -375,6 +375,11 @@ const api = {
       ipcRenderer.invoke(FS_CHANNELS.WATCH, { path }),
     unwatchDir: (path: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.UNWATCH, { path }),
+    /** 监视工作区外的已打开文件(main watch 其父目录,非递归;变化经 onDirChanged 送达)。path = tab 的文件路径. */
+    watchFile: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.WATCH_FILE, { path }),
+    unwatchFile: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.UNWATCH_FILE, { path }),
     /**
      * 订阅目录变更 push 事件;返回 unsubscribe。files:该目录本次变更项名字(可选,
      * undefined = 未知,按整个目录处理;畸形/超限同样退化为 undefined)。changeOnly:true = 仅内容
