@@ -4,7 +4,9 @@
 //   - 删去单独的 d="" 静态描边(我们 mask 了底图,不需要);
 //   - 移除 "use client";
 //   - 用 useMemo 锁随机数,避免每次 render 都重新摇 transition,降低重绘;
-//   - reduced-motion 下渐变不动(MotionConfig 不会替 linearGradient 属性关动画)。
+//   - reduced-motion 下渐变不动(MotionConfig 不会替 linearGradient 属性关动画);
+//   - 只播一轮(上游 repeat: Infinity):VSCode 空编辑区水印是静态的,无限循环让空闲的空态窗口一直每帧补间 ~200 个
+//     SVG 属性(实测空闲 CPU / GPU 约 16–18%),播完即静止。BDD: src/__tests__/empty-state/
 import { memo, useMemo } from 'react';
 import { m, useReducedMotionConfig } from 'motion/react';
 import clsx from 'clsx';
@@ -78,7 +80,7 @@ interface BeamTransition {
 
 const BEAM_GRADIENT_INITIAL = { x1: '0%', x2: '0%', y1: '0%', y2: '0%' } as const;
 
-/** 单条 beam 渐变的 motion 属性;reduced-motion 时只给 initial,停在静态渐变。 */
+/** 单条 beam 渐变的 motion 属性:只播一轮(不循环);reduced-motion 时只给 initial,停在静态渐变。 */
 export function beamGradientMotion(reduced: boolean, t: BeamTransition) {
   if (reduced) return { initial: BEAM_GRADIENT_INITIAL };
   return {
@@ -92,7 +94,6 @@ export function beamGradientMotion(reduced: boolean, t: BeamTransition) {
     transition: {
       duration: t.duration,
       ease: 'easeInOut' as const,
-      repeat: Infinity,
       delay: t.delay,
     },
   };

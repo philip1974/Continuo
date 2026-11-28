@@ -87,6 +87,14 @@ describe('EmptyState', () => {
     expect(svgs.length).toBeGreaterThanOrEqual(2);
   });
 
+  // 面板都在 popout 子窗里时主窗空态只是占位:不放装饰动画(否则主窗聚焦时空闲 CPU / GPU 一直被动画占着)。
+  it('elsewhere:窗口可见且有焦点也不渲染 BackgroundBeams', () => {
+    setVisibility('visible');
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    const { container } = render(<EmptyState onRestore={vi.fn()} elsewhere />);
+    expect(container.querySelectorAll('svg')).toHaveLength(1); // 只剩内置 icon
+  });
+
   it('visibilitychange → hidden 时移除 BackgroundBeams', () => {
     setVisibility('visible');
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);

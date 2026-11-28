@@ -65,7 +65,8 @@ export function EmptyState({ onRestore, elsewhere = false }: { onRestore: () => 
       // [container:empty/size]:宽高都可做容器查询(dock 在最小窗口下只有约 145px 宽、200px 高)。
       className="absolute inset-0 z-10 flex h-full w-full overflow-hidden bg-canvas outline-none [container:empty/size]"
     >
-      {visible && focused && <BackgroundBeams />}
+      {/* 面板都在 popout 子窗里:用户在子窗里干活,主窗空态只是占位 → 不放装饰动画(VSCode 空编辑区水印静态)。 */}
+      {!elsewhere && visible && focused && <BackgroundBeams />}
       <div className="relative z-10 m-auto flex min-w-0 max-w-full flex-col items-center gap-4">
         {/* Icon 容器(参考 stitch_desktop_design_reviewer):圆形面板 + 边框,
          *  让"无面板"状态自成一个视觉单元而非孤立文案。窄(< 16rem)/ 矮(< 220px)时隐藏,不被裁成半圆。 */}

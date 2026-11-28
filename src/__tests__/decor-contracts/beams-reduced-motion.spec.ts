@@ -7,10 +7,12 @@ import { beamGradientMotion } from '@/shell/decor/BackgroundBeams';
 const transition = { duration: 10, delay: 2, y2End: '93%' };
 
 describe('BackgroundBeams · reduced-motion', () => {
-  it('正常模式:渐变循环动画', () => {
+  // 只播一轮:无限循环让空闲的空态窗口一直每帧补间 SVG 属性(VSCode 空编辑区水印是静态的)。
+  it('正常模式:渐变动画只播一轮,不循环', () => {
     const props = beamGradientMotion(false, transition);
     expect(props.animate).toBeDefined();
-    expect(props.transition).toMatchObject({ duration: 10, delay: 2, repeat: Infinity });
+    expect(props.transition).toMatchObject({ duration: 10, delay: 2 });
+    expect(props.transition).not.toHaveProperty('repeat');
   });
 
   it('reduced-motion:不带 animate / transition,停在初始静态渐变', () => {

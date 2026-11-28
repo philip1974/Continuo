@@ -19,7 +19,9 @@ visibilityState='hidden' 或窗口失焦时不挂载装饰用 BackgroundBeams �
   min-width:auto 会被最长单词撑宽而越出右边);容器
   (`[container:empty/size]`)窄于 16rem 或矮于 220px 时隐藏装饰圆形图标(不被裁成半圆)
 - 点「恢复默认布局」 → onRestore
-- visibilityState !== 'hidden' → 渲染 BackgroundBeams(SVG)
+- visibilityState !== 'hidden' → 渲染 BackgroundBeams(SVG);渐变动画只播一轮、播完静止(不循环;VSCode 空编辑区水印是静态的,
+  无限循环让空闲的空态窗口一直每帧补间 SVG 属性,实测空闲 CPU / GPU 约 16–18%);减弱动效下不播放
+- `elsewhere`(面板都在 popout 子窗里)→ 不渲染 BackgroundBeams(用户在子窗里干活,主窗空态只是占位)
 - visibilityState === 'hidden' → 不渲染 BackgroundBeams
 - visibilitychange 事件 → 切换显示
 - 窗口 blur → 不渲染 BackgroundBeams;focus → 恢复
