@@ -19,6 +19,7 @@ import { basename, isWindowsRuntime } from '@/lib/path-cross';
 import { coApp } from '@/plugins/co-app';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { createTerminalFileLinkProvider } from './terminal-file-links';
+import { useTerminalMouseWheelZoom } from './terminal-font-zoom';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
   EDITOR_FONT_FAMILY,
@@ -522,6 +523,8 @@ export interface UseTerminalOptions {
  */
 export function useTerminal(termId: string, options?: UseTerminalOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // 按住 ⌘ / Ctrl 滚轮改终端字号(terminal.integrated.mouseWheelZoom;BDD: src/__tests__/font-zoom/)
+  useTerminalMouseWheelZoom(containerRef);
   const onExitDismissRef = useRef(options?.onExitDismiss);
   onExitDismissRef.current = options?.onExitDismiss;
   const focusOnInitRef = useRef(options?.focusOnInit);

@@ -177,6 +177,12 @@ export const MENU_COMMAND_IDS = [
   'workbench.action.zoomReset',
   'workbench.action.zoomIn',
   'workbench.action.zoomOut',
+  // 显示 › 外观(VSCode MenubarAppearanceMenu)
+  'workbench.action.toggleFullScreen',
+  'workbench.action.toggleStatusbarVisibility',
+  'workbench.action.toggleActivityBarVisibility',
+  'workbench.action.showMultipleEditorTabs',
+  'workbench.action.hideEditorTabs',
   'workbench.action.splitEditor',
   'workbench.action.splitEditorDown',
   // 转到
@@ -202,7 +208,14 @@ export const MENU_COMMAND_IDS = [
 export type MenuCommandId = (typeof MENU_COMMAND_IDS)[number];
 
 /** 勾选类菜单项(type: 'checkbox';勾选状态由 renderer 经 SET_MENU_CHECKED 推送)。 */
-export const MENU_CHECKBOX_IDS = ['workbench.action.toggleAutoSave'] as const satisfies readonly MenuCommandId[];
+export const MENU_CHECKBOX_IDS = [
+  'workbench.action.toggleAutoSave',
+  // 显示 › 外观:状态栏 / 活动栏可见、标签栏「多个标签页 / 隐藏」(VSCode toggled 条件同)
+  'workbench.action.toggleStatusbarVisibility',
+  'workbench.action.toggleActivityBarVisibility',
+  'workbench.action.showMultipleEditorTabs',
+  'workbench.action.hideEditorTabs',
+] as const satisfies readonly MenuCommandId[];
 export type MenuCheckboxId = (typeof MENU_CHECKBOX_IDS)[number];
 
 const MENU_CHECKBOX_ID_SET: ReadonlySet<string> = new Set(MENU_CHECKBOX_IDS);

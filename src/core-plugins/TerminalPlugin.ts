@@ -20,6 +20,7 @@ import {
   scrollTerminalPanel,
 } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
+import { terminalFontZoomCommandSpecs } from '@/panels/Terminal/terminal-font-zoom';
 import {
   TERMINAL_CLEAR_COMMAND,
   TERMINAL_CLIPBOARD_COMMANDS,
@@ -46,6 +47,8 @@ const TerminalPanelView = lazy(() =>
 
 export default class TerminalPlugin extends Plugin {
   onload(): void {
+    // 终端: 放大 / 缩小 / 重置字体大小(改 terminal.integrated.fontSize;BDD: src/__tests__/font-zoom/)
+    for (const spec of terminalFontZoomCommandSpecs()) this.addCommand(spec);
     this.registerPanel({
       type: TERMINAL_PANEL_TYPE,
       title: 'Terminal',

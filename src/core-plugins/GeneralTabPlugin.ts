@@ -11,7 +11,12 @@ import {
   EDITOR_ACCESSIBILITY_SUPPORT,
   GENERAL_RESTORE_WINDOWS,
   GENERAL_THEME,
+  SCREENCAST_FONT_SIZE,
+  SCREENCAST_KEYBOARD_OVERLAY_TIMEOUT,
+  SCREENCAST_VERTICAL_OFFSET,
   WINDOW_ZOOM_LEVEL,
+  WORKBENCH_ACTIVITY_BAR_LOCATION,
+  WORKBENCH_STATUS_BAR_VISIBLE,
   WORKBENCH_TRUSTED_DOMAINS,
 } from '@/plugins/settings/core-setting-specs';
 
@@ -37,5 +42,12 @@ export default class GeneralTabPlugin extends Plugin {
     this.addSettingItem(EDITOR_ACCESSIBILITY_SUPPORT);
     // 外链受信域名(VSCode 链接保护的受信域名;值在 main,行由 TrustedDomainsSettingRow 渲染)
     this.addSettingItem(WORKBENCH_TRUSTED_DOMAINS);
+    // 状态栏 / 活动栏显隐(VSCode workbench.statusBar.visible / workbench.activityBar.location;BDD: src/__tests__/workbench-layout-visibility/)
+    this.addSettingItem(WORKBENCH_STATUS_BAR_VISIBLE);
+    this.addSettingItem(WORKBENCH_ACTIVITY_BAR_LOCATION);
+    // 屏幕录制模式的按键浮层(VSCode screencastMode.*;BDD: src/__tests__/screencast-mode/)
+    this.addSettingItem(SCREENCAST_FONT_SIZE);
+    this.addSettingItem(SCREENCAST_VERTICAL_OFFSET);
+    this.addSettingItem(SCREENCAST_KEYBOARD_OVERLAY_TIMEOUT);
   }
 }

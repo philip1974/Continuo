@@ -76,8 +76,8 @@ describe.each([
     // 撤销 / 重做是按焦点分派的自定义项(文件树聚焦撤销文件操作,见 app-menu-bar 第 6 条)
     expect(editItems.map((m) => m.id)).toEqual(expect.arrayContaining(['undo', 'redo']));
     const view = submenuOf(top, 'viewMenu').map((m) => m.role).filter(Boolean);
-    // 缩放是命令项(workbench.action.zoom*,所有窗口统一),不是 role
-    expect(view).toEqual(['toggleDevTools', 'togglefullscreen']);
+    // 缩放是命令项(workbench.action.zoom*,所有窗口统一)、全屏是外观子菜单的命令项(workbench.action.toggleFullScreen),不是 role
+    expect(view).toEqual(['toggleDevTools']);
     // 最小化:非 mac 不用 role minimize(它自带 Ctrl+M,焦点不在编辑器时误最小化;VSCode Windows / Linux 无此键),改为无键位的显式项
     const winItems = submenuOf(top, 'windowMenu');
     if (isMac) {

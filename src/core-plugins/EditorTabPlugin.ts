@@ -8,6 +8,9 @@ import {
   AUTO_SAVE_DELAY_MS,
   AUTO_SAVE_MARKDOWN_ENABLED,
   EDITOR_COPY_WITH_SYNTAX_HIGHLIGHTING,
+  EDITOR_CURSOR_BLINKING,
+  EDITOR_CURSOR_STYLE,
+  EDITOR_CURSOR_WIDTH,
   EDITOR_DECORATIONS_BADGES,
   EDITOR_DECORATIONS_COLORS,
   EDITOR_DETECT_INDENTATION,
@@ -18,12 +21,14 @@ import {
   EDITOR_FONT_SIZE,
   EDITOR_LINE_HEIGHT,
   EDITOR_LINE_NUMBERS,
+  EDITOR_MOUSE_WHEEL_ZOOM,
   EDITOR_SCROLL_BEYOND_LAST_LINE,
   EDITOR_GUIDES_INDENTATION,
   EDITOR_OCCURRENCES_HIGHLIGHT,
   EDITOR_WORD_WRAP,
   FILES_AUTO_SAVE,
   FILES_AUTO_SAVE_DELAY,
+  WORKBENCH_EDITOR_SHOW_TABS,
 } from '@/plugins/settings/core-setting-specs';
 import { renderCategoryTab } from './lazy-category-tab';
 import { EditorIcon } from '@/plugins/settings/tab-icons';
@@ -44,7 +49,13 @@ export default class EditorTabPlugin extends Plugin {
     this.addSettingItem(EDITOR_FONT_FAMILY);
     this.addSettingItem(EDITOR_FONT_SIZE);
     this.addSettingItem(EDITOR_LINE_HEIGHT);
+    // 按住 ⌘ 滚轮缩放字体(BDD: src/__tests__/font-zoom/)
+    this.addSettingItem(EDITOR_MOUSE_WHEEL_ZOOM);
     this.addSettingItem(EDITOR_LINE_NUMBERS);
+    // 光标样式 / 宽度 / 闪烁(BDD: src/__tests__/editor-cursor-options/)
+    this.addSettingItem(EDITOR_CURSOR_STYLE);
+    this.addSettingItem(EDITOR_CURSOR_WIDTH);
+    this.addSettingItem(EDITOR_CURSOR_BLINKING);
     this.addSettingItem(EDITOR_WORD_WRAP);
     this.addSettingItem(EDITOR_SCROLL_BEYOND_LAST_LINE);
     this.addSettingItem(EDITOR_GUIDES_INDENTATION);
@@ -62,7 +73,8 @@ export default class EditorTabPlugin extends Plugin {
     this.addSettingItem(AUTO_SAVE_MARKDOWN_ENABLED);
     this.addSettingItem(AUTO_SAVE_DELAY_MS);
 
-    // ── Tabs ──
+    // ── Tabs ──(tab 栏显示 / 隐藏:BDD: src/__tests__/workbench-layout-visibility/)
+    this.addSettingItem(WORKBENCH_EDITOR_SHOW_TABS);
     this.addSettingItem(EDITOR_ENABLE_PREVIEW);
     this.addSettingItem(EDITOR_DECORATIONS_COLORS);
     this.addSettingItem(EDITOR_DECORATIONS_BADGES);

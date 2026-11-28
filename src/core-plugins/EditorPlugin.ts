@@ -8,6 +8,7 @@ import { Plugin } from '@/plugins/Plugin';
 import { lazyPanel } from '@/lib/lazy-panel';
 import { loadEditorPanelModule } from '@/panels/Editor/editor-engine-loaders';
 import { editorCommandSpecs } from '@/panels/Editor/editor-commands';
+import { editorFontZoomCommandSpecs } from '@/panels/Editor/editor-font-zoom';
 import { encodingCommandSpecs } from '@/plugins/editor-encoding/encoding-actions';
 import { indentationCommandSpecs } from '@/plugins/editor-encoding/indentation-actions';
 import { installIndentationSync } from '@/panels/Editor/editor-indentation';
@@ -46,6 +47,8 @@ export default class EditorPlugin extends Plugin {
     for (const spec of conflictCompareCommandSpecs()) this.addCommand(spec);
     // ⌘W 关闭编辑器 / ⌘S 保存 / 下一个·上一个编辑器(VSCode 同名命令)。
     for (const spec of editorCommandSpecs(detectPlatform())) this.addCommand(spec);
+    // 放大 / 缩小 / 重置编辑器字体(临时缩放,不改设置;BDD: src/__tests__/font-zoom/)
+    for (const spec of editorFontZoomCommandSpecs()) this.addCommand(spec);
     // 文件:切换自动保存(VSCode workbench.action.toggleAutoSave;BDD: src/__tests__/files-auto-save/)
     for (const spec of autoSaveCommandSpecs()) this.addCommand(spec);
     // 更改文件编码 / 更改行尾序列(VSCode workbench.action.editor.changeEncoding / changeEOL;BDD: src/__tests__/editor-text-encoding/)

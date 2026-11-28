@@ -675,9 +675,9 @@ function menuReload(win: MockWin, force = false): void {
 }
 
 describe('主窗 Reload / Force Reload:与关窗同一的脏确认 + flush', () => {
-  it('View 菜单保留其余默认项(DevTools / 全屏;缩放为命令项,见 window-zoom)', () => {
+  it('View 菜单保留其余默认项(DevTools;缩放为命令项,见 window-zoom;全屏为外观子菜单的命令项,见 workbench-layout-visibility)', () => {
     const roles = viewSubmenu().map((m) => m.role).filter(Boolean);
-    expect(roles).toEqual(['toggleDevTools', 'togglefullscreen']);
+    expect(roles).toEqual(['toggleDevTools']);
   });
 
   it('有脏 tab → 先弹确认框(挂在该窗口上),回答前不 reload、不 flush、不隐藏窗口', async () => {

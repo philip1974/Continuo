@@ -189,9 +189,38 @@ export function appMenuTemplate(
   // 同 Electron 默认 viewMenu,只把 reload / forceReload 换成先走脏确认 + flush 的自定义项(role 项的 click 会被 role
   // 动作抢先执行,无法拦截)。
   // 前半是 VSCode 显示菜单的命令项(命令面板 / 各视图 / 侧栏 / 自动换行)。
+  const checkbox = (id: MenuCheckboxId, labelKey: TranslationKey): Item => ({
+    ...command(id, labelKey),
+    type: 'checkbox',
+    checked: checkedOf(id),
+  });
+
+  // 外观 ▸(VSCode MenubarAppearanceMenu:1_toggle_view 全屏 | 2_workbench_layout 状态栏 / 活动栏 | 3_workbench_layout_move 标签栏 ▸)。
+  // 全屏是命令项(workbench.action.toggleFullScreen,F11 / mac ⌃⌘F 由 renderer 分发、可改键);没有可用主窗时直接切换获焦窗口。
+  // BDD: src/__tests__/workbench-layout-visibility/
+  const appearanceSubmenu: Item[] = [
+    command('workbench.action.toggleFullScreen', 'menu.view.full_screen', () => {
+      const win = BrowserWindow.getFocusedWindow();
+      win?.setFullScreen(!win.isFullScreen());
+    }),
+    SEPARATOR,
+    checkbox('workbench.action.toggleStatusbarVisibility', 'menu.view.status_bar'),
+    checkbox('workbench.action.toggleActivityBarVisibility', 'menu.view.activity_bar'),
+    SEPARATOR,
+    {
+      label: t('menu.view.tab_bar'),
+      submenu: [
+        checkbox('workbench.action.showMultipleEditorTabs', 'menu.view.tab_bar_multiple'),
+        checkbox('workbench.action.hideEditorTabs', 'menu.view.tab_bar_hidden'),
+      ],
+    },
+  ];
+
   const viewSubmenu: Item[] = [
     command('workbench.action.showCommands', 'menu.view.command_palette'),
     SEPARATOR,
+    // 外观 ▸(VSCode 2_appearance,在编辑器布局之前)
+    { label: t('menu.view.appearance'), submenu: appearanceSubmenu },
     // 编辑器布局 ▸(VSCode MenubarLayoutMenu 1_split:只有本项目已有的向右 / 向下拆分)
     {
       label: t('menu.view.editor_layout'),
@@ -232,8 +261,6 @@ export function appMenuTemplate(
     command('workbench.action.zoomReset', 'menu.view.reset_zoom'),
     command('workbench.action.zoomIn', 'menu.view.zoom_in'),
     command('workbench.action.zoomOut', 'menu.view.zoom_out'),
-    SEPARATOR,
-    { role: 'togglefullscreen', label: t('menu.view.toggle_full_screen') },
   ];
 
   const goSubmenu: Item[] = [

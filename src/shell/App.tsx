@@ -15,6 +15,7 @@ import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
 import { useExternalFileSync } from '@/panels/Editor/useExternalFileSync';
 import { useExternalSyncRootWatch } from '@/panels/Editor/useExternalSyncRootWatch';
 import { PickerModals } from './PickerModals';
+import { ScreencastHost } from './screencast/ScreencastHost';
 import { useQuickOpenHotkey } from '@/plugins/quick-open/useQuickOpenHotkey';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
 import { PluginFailureNotifier } from '@/plugins/PluginFailureNotifier';
@@ -40,6 +41,7 @@ import { NotificationsProvider } from '@/notifications/NotificationsProvider';
 import { ToastViewport } from '@/notifications/ToastViewport';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
 import { EditorFontFromSettings } from '@/plugins/settings/EditorFontFromSettings';
+import { WorkbenchLayoutFromSettings } from './workbench-layout';
 import { RestoreWindowsFromSettings } from '@/plugins/settings/RestoreWindowsFromSettings';
 import { ZoomLevelFromSettings } from '@/plugins/settings/ZoomLevelFromSettings';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
@@ -191,6 +193,8 @@ function MainApp() {
       <WorkspaceTrustModal />
       {/* 插件激活 / 渲染失败主动 error 通知(BDD: plugin-failure-notify) */}
       <PluginFailureNotifier />
+      {/* 开发人员: 切换屏幕录制模式(BDD: src/__tests__/screencast-mode/) */}
+      <ScreencastHost />
       {showSplash && <Splash />}
     </>
   );
@@ -209,6 +213,7 @@ export function App() {
       <WindowBackgroundSync />
       <LanguageFromSettings />
       <EditorFontFromSettings />
+      <WorkbenchLayoutFromSettings />
       <NotificationsProvider>
         <ToastViewport />
         <LazyMotion features={loadMotionFeatures} strict>

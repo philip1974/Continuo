@@ -8,6 +8,7 @@ import {
   TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE,
   TERMINAL_LINE_HEIGHT,
+  TERMINAL_MOUSE_WHEEL_ZOOM,
 } from '@/plugins/settings/core-setting-specs';
 import { renderCategoryTab } from './lazy-category-tab';
 import { TerminalIcon } from '@/plugins/settings/tab-icons';
@@ -27,6 +28,8 @@ export default class TerminalTabPlugin extends Plugin {
     this.addSettingItem(TERMINAL_FONT_FAMILY);
     this.addSettingItem(TERMINAL_FONT_SIZE);
     this.addSettingItem(TERMINAL_LINE_HEIGHT);
+    // 按住 ⌘ 滚轮改终端字号(BDD: src/__tests__/font-zoom/)
+    this.addSettingItem(TERMINAL_MOUSE_WHEEL_ZOOM);
 
     this.addSettingItem(TERMINAL_CURSOR_STYLE);
   }

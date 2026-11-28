@@ -620,6 +620,10 @@
 
 - [`code-editor-crlf.spec.tsx`](./editor-crlf-line-endings/code-editor-crlf.spec.tsx)
 
+## [编辑器光标样式 / 宽度 / 闪烁(VSCode editor.cursorStyle / cursorWidth / cursorBlinking)](./editor-cursor-options/README.md)
+
+- [`editor-cursor-options.spec.tsx`](./editor-cursor-options/editor-cursor-options.spec.tsx)
+
 ## [关闭未保存的编辑器 tab(保存 / 不保存 / 取消)](./editor-dirty-close/README.md)
 
 - [`dirty-close-save.spec.tsx`](./editor-dirty-close/dirty-close-save.spec.tsx)
@@ -1183,6 +1187,10 @@
 
 - [`font-settings.spec.tsx`](./font-settings/font-settings.spec.tsx)
 - [`terminal-font-settings.spec.tsx`](./font-settings/terminal-font-settings.spec.tsx)
+
+## [放大 / 缩小编辑器与终端字体(VSCode fontZoom 命令 + mouseWheelZoom)](./font-zoom/README.md)
+
+- [`font-zoom.spec.tsx`](./font-zoom/font-zoom.spec.tsx)
 
 ## [强制颜色模式下的选中 / 高亮 / 按下状态](./forced-colors-states/README.md)
 
@@ -2032,6 +2040,10 @@
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
 - [`scoped-app.spec.ts`](./scoped-app/scoped-app.spec.ts)
 
+## [屏幕录制模式(VSCode「开发人员: 切换屏幕录制模式」)](./screencast-mode/README.md)
+
+- [`screencast-mode.spec.tsx`](./screencast-mode/screencast-mode.spec.tsx)
+
 ## [SDK Contract BDD](./sdk-contract/README.md) `[contract]`
 
 - [`integration/ipc-plugin-data-store.spec.ts`](./sdk-contract/integration/ipc-plugin-data-store.spec.ts)
@@ -2577,6 +2589,11 @@
 - [`popout-hotkeys.spec.tsx`](./workbench-editor-commands/popout-hotkeys.spec.tsx)
 - [`save-hotkey-label.spec.tsx`](./workbench-editor-commands/save-hotkey-label.spec.tsx)
 - [`window-close-ipc.spec.ts`](./workbench-editor-commands/window-close-ipc.spec.ts)
+
+## [查看 › 外观:状态栏 / 活动栏 / 标签栏显隐、最大化编辑器组、切换全屏](./workbench-layout-visibility/README.md)
+
+- [`layout-menu.spec.ts`](./workbench-layout-visibility/layout-menu.spec.ts)
+- [`layout-visibility.spec.tsx`](./workbench-layout-visibility/layout-visibility.spec.tsx)
 
 ## [workbench-missing-commands](./workbench-missing-commands/README.md)
 

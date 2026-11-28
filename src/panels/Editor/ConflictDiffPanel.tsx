@@ -31,12 +31,12 @@ import { basename, isSameOrInsidePath } from '@/lib/path-cross';
 import { onWatchRestored } from '@/lib/fs-watch-restored';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { useTheme } from '@/theme';
-import { useSettingValue } from '@/plugins/settings/values-store';
-import { EDITOR_FONT_SIZE } from '@/plugins/settings/core-setting-specs';
 import { useEditorStore } from '@/stores/editor.store';
 import { errorCodeOf, errorMessage } from '../../../electron/shared/error-message';
 import { codeEditorBasicSetup } from './codemirror-basic-setup';
 import { codeEditorTheme } from './code-editor-theme';
+import { editorCursor, useEditorCursorOptions } from './codemirror-cursor';
+import { useEditorFontSize, useEditorFontStyle, useEditorMouseWheelZoom } from './editor-font-zoom';
 import { codeMirrorContentLabel, codeMirrorPhrases } from './codemirror-phrases';
 import { detectLineEnding, languageDescriptionFor, pickLanguage } from './CodeEditor';
 import { minimalChange } from './minimal-change';
@@ -211,6 +211,11 @@ function MergeHost({ layout, tabId, filePath, diskText, onChunksChanged, navRef 
   const { resolved } = useTheme();
   const locale = useLocale();
   const themeCompartment = useRef(new Compartment());
+  // 光标样式 / 宽度 / 闪烁同代码编辑器(BDD: src/__tests__/editor-cursor-options/)
+  const cursorCompartment = useRef(new Compartment());
+  const cursorOptions = useEditorCursorOptions();
+  const cursorRef = useRef(cursorOptions);
+  cursorRef.current = cursorOptions;
   const phrasesCompartment = useRef(new Compartment());
   const labelA = useRef(new Compartment());
   const labelB = useRef(new Compartment());
@@ -226,7 +231,10 @@ function MergeHost({ layout, tabId, filePath, diskText, onChunksChanged, navRef 
   const onChunksRef = useRef(onChunksChanged);
   onChunksRef.current = onChunksChanged;
   const content = useEditorStore((s) => findEditorFileTabById(s.tabs, tabId)?.content ?? null);
-  const fontSize = useSettingValue(EDITOR_FONT_SIZE.id, EDITOR_FONT_SIZE.default);
+  // 字号含字体缩放(editor.action.fontZoomIn 等;BDD: src/__tests__/font-zoom/)
+  const fontSize = useEditorFontSize();
+  const fontStyle = useEditorFontStyle();
+  useEditorMouseWheelZoom(hostRef);
 
   const report = useCallback((view: EditorView, side: 'a' | 'b') => {
     const chunks = getChunks(view.state)?.chunks ?? [];
@@ -287,6 +295,7 @@ function MergeHost({ layout, tabId, filePath, diskText, onChunksChanged, navRef 
       codeEditorBasicSetup,
       navKeys,
       themeCompartment.current.of(codeEditorTheme(resolved)),
+      cursorCompartment.current.of(editorCursor(cursorRef.current)),
       phrasesCompartment.current.of(codeMirrorPhrases()),
       diffTheme,
       EditorView.theme({ '&': { fontSize: 'inherit' }, '.cm-gutters': { border: 'none' } }),
@@ -466,12 +475,20 @@ function MergeHost({ layout, tabId, filePath, diskText, onChunksChanged, navRef 
     mv?.b.requestMeasure();
   }, [fontSize]);
 
+  useEffect(() => {
+    const mv = mvRef.current;
+    if (!mv) return;
+    const effects = cursorCompartment.current.reconfigure(editorCursor(cursorOptions));
+    mv.a?.dispatch({ effects });
+    mv.b.dispatch({ effects });
+  }, [cursorOptions]);
+
   return (
     <div
       ref={hostRef}
       data-conflict-diff-editors=""
       className="h-full w-full overflow-hidden bg-canvas"
-      style={{ fontSize: `${fontSize}px` }}
+      style={fontStyle}
     />
   );
 }

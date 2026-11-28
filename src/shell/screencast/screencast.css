@@ -1,0 +1,78 @@
+/* 屏幕录制模式浮层(src/shell/screencast/ScreencastOverlay.tsx)。
+ * Ported from microsoft/vscode (MIT, © Microsoft Corporation; see LICENSE-3RD-PARTY.md):
+ * src/vs/workbench/browser/actions/media/actions.css 的 .screencast-keyboard / .screencast-mouse(整宽横条、居中单行、溢出省略、
+ * 淡出 0.3s ease-out;鼠标 2px 圆圈)。
+ * 刻意差异:颜色走语义 token(VSCode 写死半透明黑底 + 浅灰字、红色圆圈),亮 / 暗 / 高对比度主题各自取值;强制颜色下用系统色。 */
+
+.wm-screencast-keyboard {
+  position: fixed;
+  left: 0;
+  width: 100%;
+  z-index: var(--z-screencast);
+  pointer-events: none;
+  line-height: 1.75em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background-color: color-mix(in srgb, var(--md-surface-container-highest) 92%, transparent);
+  color: var(--md-on-surface);
+  border-block: 1px solid var(--md-outline);
+  opacity: 1;
+  transition: opacity 0.3s ease-out;
+}
+
+.wm-screencast-keyboard[data-visible='false'] {
+  opacity: 0;
+}
+
+/* 减弱动效:直接出现 / 消失(VSCode 只在 monaco-enable-motion 时加过渡) */
+@media (prefers-reduced-motion: reduce) {
+  .wm-screencast-keyboard {
+    transition: none;
+  }
+}
+
+.wm-screencast-press {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.wm-screencast-title {
+  font-weight: 600;
+  margin-right: 0.25em;
+}
+
+/* design KeyCap 按浮层字号放大(组件默认 18px 高 / 10px 字,用于行内快捷键提示) */
+.wm-keycap.wm-screencast-key {
+  height: auto;
+  min-width: 1.5em;
+  padding: 0 0.3em;
+  margin-right: 0.15em;
+  font-size: 1em;
+  line-height: 1.5em;
+  border-radius: 0.12em;
+  color: var(--md-on-surface);
+}
+
+.wm-screencast-mouse {
+  position: fixed;
+  z-index: var(--z-screencast);
+  pointer-events: none;
+  border: 2px solid var(--md-error);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+@media (forced-colors: active) {
+  .wm-screencast-keyboard {
+    background-color: Canvas;
+    color: CanvasText;
+    border-color: CanvasText;
+  }
+  .wm-screencast-mouse {
+    forced-color-adjust: none;
+    border-color: Highlight;
+  }
+}

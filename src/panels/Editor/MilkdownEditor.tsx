@@ -26,10 +26,8 @@ import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/frame-dark.css';
 // 必须在 Crepe theme 之后,才能 override 它的 px 字号(详见文件注释)
 import '@/styles/milkdown-font-override.css';
-import { useSettingValue } from '@/plugins/settings/values-store';
-import {
-  EDITOR_FONT_SIZE,
-} from '@/plugins/settings/core-setting-specs';
+import { useEditorFontSize, useEditorFontStyle, useEditorMouseWheelZoom } from './editor-font-zoom';
+import { nativeCaretStyle, useEditorCursorOptions } from './codemirror-cursor';
 import { t, useLocale, type TranslationKey } from '@/i18n';
 import { useTheme } from '@/theme';
 import {
@@ -797,11 +795,16 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   // Crepe theme 内部很多元素是相对单位(em/rem),容器 font-size 变,
   // ProseMirror 文本会跟着变。如果某些元素用 px 绝对值,可在
   // src/styles/milkdown-font-override.css(本文件顶部已导入)里 override
-  const fontSize = useSettingValue(EDITOR_FONT_SIZE.id, EDITOR_FONT_SIZE.default);
+  // 字号含字体缩放(editor.action.fontZoomIn 等;BDD: src/__tests__/font-zoom/)
+  const fontSize = useEditorFontSize();
+  const fontStyle = useEditorFontStyle();
+  // 光标形状 / 是否闪烁跟随 editor.cursorStyle / cursorBlinking(原生光标能做到的部分;BDD: src/__tests__/editor-cursor-options/)
+  const caretStyle = nativeCaretStyle(useEditorCursorOptions());
   // 主题变化(含跟随系统的自动切换,可能发生在输入途中):mermaid 图的配色在渲染时定死,
   // 就地重画即可,不重挂载编辑器(会丢光标 / 滚动 / 尚未落 store 的输入)。
   const { resolved: theme } = useTheme();
   const wrapperRef = useRef<HTMLDivElement>(null);
+  useEditorMouseWheelZoom(wrapperRef);
   const drawnThemeRef = useRef(theme);
   useEffect(() => {
     if (drawnThemeRef.current === theme) return;
@@ -1202,7 +1205,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
         ref={wrapperRef}
         className="h-full w-full overflow-auto"
         // --crepe-base-font-size:Crepe 代码块占位层等按它算字号(覆写 CSS 让 .milkdown 继承此值)
-        style={{ fontSize: `${fontSize}px`, '--crepe-base-font-size': `${fontSize}px` } as React.CSSProperties}
+        style={{ ...fontStyle, ...caretStyle, '--crepe-base-font-size': `${fontSize}px` } as React.CSSProperties}
         onClick={handleClick}
         onAuxClick={handleAuxClick}
         onKeyDown={handleKeyDown}

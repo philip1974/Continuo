@@ -41,7 +41,8 @@ import { GOTO_LINE_COMMAND } from '@/panels/Editor/editor-commands';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { useRegisteredCommandHotkeyText, withHotkey } from '@/lib/hotkey-label';
 import type { TextEncodingId } from '../../electron/shared/text-encoding';
-import { RestrictedModeStatusItem } from './workspace-trust/WorkspaceTrust';
+import { RestrictedModeStatusItem, useWorkspaceRestricted } from './workspace-trust/WorkspaceTrust';
+import { useStatusBarVisible } from './workbench-layout';
 
 /** MCP 复制按钮在窄状态栏下的图标(lucide copy 字形;只在容器 < xl 时显示,替代文字)。 */
 const MCP_COPY_ICON = (
@@ -67,6 +68,8 @@ const MCP_COPY_ICON = (
  * 与内嵌焦点环(组容器 overflow-hidden,外扩的焦点环会被上下裁掉)。
  */
 const STATUS_ITEM_CLASS = 'flex shrink-0 items-center self-stretch whitespace-nowrap px-1.5';
+/** 受限模式项(完整 / 精简状态栏共用)。 */
+const RESTRICTED_ITEM_CLASS = `${STATUS_ITEM_CLASS} transition-colors hover:bg-hover hover:text-fg focus-visible:-outline-offset-1`;
 export const STATUS_ITEM_BUTTON_CLASS = `${STATUS_ITEM_CLASS} text-fg-dim transition-colors hover:bg-hover hover:text-fg focus-visible:-outline-offset-1`;
 
 const EMPTY_STATUS_ITEMS: readonly StatusBarItemSpec[] = [];
@@ -379,6 +382,9 @@ export function StatusBar() {
   // 插件工具域、外部客户端授权同理:任一「本次启动期间允许」都须能撤销(单一来源 hasAnySessionGrant)。
   const anyAgentGrant = useAgentAuthStore(hasAnySessionGrant);
   const showAgentRevoke = agentSessionCount > 0 || anyAgentGrant;
+  // 查看 › 外观 › 状态栏(workbench.statusBar.visible;BDD: src/__tests__/workbench-layout-visibility/)
+  const visible = useStatusBarVisible();
+  const restricted = useWorkspaceRestricted();
 
   // 只订阅 active tab 的派生 primitive(打磨 R24 + 合并优化 R46)。非 active tab 的
   // content / originalContent / reloadEpoch 变化不触发状态栏重渲;active 内容变化
@@ -435,6 +441,63 @@ export function StatusBar() {
       ? translateCount('statusbar.agent_sessions', agentSessionCount)
       : t('statusbar.agent_authorized');
 
+  const revokeButton = showAgentRevoke && (
+    // native button:同上(24px 状态栏行内文本按钮)。
+    <button
+      type="button"
+      data-agent-revoke
+      onClick={() => void openRevokeConfirm()}
+      title={agentRevokeTooltip}
+      // a11y(A74,A2 同族):按钮可见文本只表「N 个 agent 会话」,撤销动作语义仅在 title
+      //(SR 有可见文本时不一定读 title)→ 名称补上撤销说明;WCAG 2.5.3(Label in Name):以可见文字开头
+      //(「N 个 agent，撤销授权并终止…」),语音控制按可见文字能点到。
+      aria-label={t('statusbar.agent_revoke_aria', { label: agentRevokeText, action: agentRevokeTooltip })}
+      className={`${STATUS_ITEM_CLASS} gap-1 text-accent transition-colors hover:bg-hover hover:text-fg focus-visible:-outline-offset-1`}
+    >
+      <span aria-hidden>●</span>
+      {agentRevokeText}
+    </button>
+  );
+  const revokeDialog = (
+    // 撤销确认走 design Modal(项目约束:对话框不用原生确认框)。
+    <ConfirmDialog
+      open={revokeConfirm !== null}
+      title={t('permissions.revoke_all.title')}
+      description={
+        <span className="whitespace-pre-line">
+          {revokeConfirmCount !== null && revokeConfirmCount > 0
+            ? t('permissions.revoke_all.confirm', { count: revokeConfirmCount })
+            : t('permissions.revoke_all.confirm_grant_only')}
+        </span>
+      }
+      destructive
+      onCancel={() => setRevokeConfirm(null)}
+      onConfirm={() => {
+        setRevokeConfirm(null);
+        void handleRevokeAgentTerminals();
+      }}
+    />
+  );
+  const restrictedItem = <RestrictedModeStatusItem className={RESTRICTED_ITEM_CLASS} />;
+
+  if (!visible) {
+    // 状态栏隐藏:安全指示 / 出口(受限模式、agent 授权与撤销)不随之消失 —— 只在它们存在时留一条只含它们的状态栏(VSCode 的
+    // 受限模式另有不随状态栏隐藏的横幅;本项目没有横幅,撤销 agent 授权也只有状态栏这一个入口)。
+    if (!restricted && !showAgentRevoke) return null;
+    return (
+      <footer
+        data-statusbar=""
+        data-workbench-part="statusbar"
+        data-statusbar-minimal=""
+        className="flex h-statusbar shrink-0 items-center justify-between gap-3 border-t border-line bg-panel px-1.5 text-2xs text-fg-dim select-none"
+      >
+        <div className="flex min-w-0 items-center gap-0.5 self-stretch overflow-hidden">{restrictedItem}</div>
+        <div className="flex min-w-0 items-center gap-0.5 self-stretch overflow-hidden">{revokeButton}</div>
+        {revokeDialog}
+      </footer>
+    );
+  }
+
   return (
     // data-statusbar:ToastViewport.css 据此(:has)在有状态栏的窗口把 toast 抬到状态栏上方;高度 token 两处共用。
     // data-workbench-part:F6 / ⇧F6 区域切换的「状态栏」区域(src/shell/focus-parts.ts)。
@@ -447,9 +510,7 @@ export function StatusBar() {
     >
       <div className="flex min-w-0 items-center gap-0.5 self-stretch overflow-hidden">
         {/* 工作区信任:未受信任时最左侧显示「受限模式」(VSCode status.workspaceTrust 位于左侧最前),点击打开管理。 */}
-        <RestrictedModeStatusItem
-          className={`${STATUS_ITEM_CLASS} transition-colors hover:bg-hover hover:text-fg focus-visible:-outline-offset-1`}
-        />
+        {restrictedItem}
         {root ? (
           <span className="truncate px-1.5" title={root}>
             {basenameForChrome(root)}
@@ -488,23 +549,7 @@ export function StatusBar() {
         <span style={SR_ONLY_STYLE} role="status">
           {mcpCopy.announcement}
         </span>
-        {showAgentRevoke && (
-          // native button:同上(24px 状态栏行内文本按钮)。
-          <button
-            type="button"
-            data-agent-revoke
-            onClick={() => void openRevokeConfirm()}
-            title={agentRevokeTooltip}
-            // a11y(A74,A2 同族):按钮可见文本只表「N 个 agent 会话」,撤销动作语义仅在 title
-            //(SR 有可见文本时不一定读 title)→ 名称补上撤销说明;WCAG 2.5.3(Label in Name):以可见文字开头
-            //(「N 个 agent，撤销授权并终止…」),语音控制按可见文字能点到。
-            aria-label={t('statusbar.agent_revoke_aria', { label: agentRevokeText, action: agentRevokeTooltip })}
-            className={`${STATUS_ITEM_CLASS} gap-1 text-accent transition-colors hover:bg-hover hover:text-fg focus-visible:-outline-offset-1`}
-          >
-            <span aria-hidden>●</span>
-            {agentRevokeText}
-          </button>
-        )}
+        {revokeButton}
         {activeFilePath !== null && !editorHidden ? (
           <>
             <span className="truncate max-w-[280px] px-1.5" title={isUntitledPath(activeFilePath) ? editorTabTitle(activeFilePath) : activeFilePath}>
@@ -535,24 +580,7 @@ export function StatusBar() {
           </>
         ) : null}
       </div>
-      {/* 撤销确认走 design Modal(项目约束:对话框不用原生确认框)。 */}
-      <ConfirmDialog
-        open={revokeConfirm !== null}
-        title={t('permissions.revoke_all.title')}
-        description={
-          <span className="whitespace-pre-line">
-            {revokeConfirmCount !== null && revokeConfirmCount > 0
-              ? t('permissions.revoke_all.confirm', { count: revokeConfirmCount })
-              : t('permissions.revoke_all.confirm_grant_only')}
-          </span>
-        }
-        destructive
-        onCancel={() => setRevokeConfirm(null)}
-        onConfirm={() => {
-          setRevokeConfirm(null);
-          void handleRevokeAgentTerminals();
-        }}
-      />
+      {revokeDialog}
     </footer>
   );
 }

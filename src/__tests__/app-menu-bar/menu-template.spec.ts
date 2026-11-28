@@ -165,8 +165,9 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
       'editor.action.addSelectionToNextFindMatch',
       'editor.action.selectHighlights',
     ]);
-    expect(commandsOf(submenu(top, 'menu.view.label')).slice(0, 9)).toEqual([
+    expect(commandsOf(submenu(top, 'menu.view.label')).slice(0, 10)).toEqual([
       'workbench.action.showCommands',
+      'menu.view.appearance',
       'menu.view.editor_layout',
       'workbench.view.explorer',
       'workbench.action.findInFiles',
@@ -180,15 +181,21 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
       'workbench.action.splitEditor',
       'workbench.action.splitEditorDown',
     ]);
+    // 外观 ▸(VSCode MenubarAppearanceMenu;见 workbench-layout-visibility)
+    expect(commandsOf(submenu(submenu(top, 'menu.view.label'), 'menu.view.appearance'))).toEqual([
+      'workbench.action.toggleFullScreen',
+      'workbench.action.toggleStatusbarVisibility',
+      'workbench.action.toggleActivityBarVisibility',
+      'menu.view.tab_bar',
+    ]);
     // 外观相关保留
-    expect(commandsOf(submenu(top, 'menu.view.label')).slice(9)).toEqual([
+    expect(commandsOf(submenu(top, 'menu.view.label')).slice(10)).toEqual([
       'menu.view.reload',
       'menu.view.force_reload',
       'toggleDevTools',
       'workbench.action.zoomReset',
       'workbench.action.zoomIn',
       'workbench.action.zoomOut',
-      'togglefullscreen',
     ]);
     expect(commandsOf(submenu(top, 'menu.go.label'))).toEqual([
       'workbench.action.navigateBack',

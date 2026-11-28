@@ -70,7 +70,7 @@ describe('文件 → 自动保存', () => {
   });
 
   it('勾选项是菜单命令;推送通道已登记', () => {
-    expect(MENU_CHECKBOX_IDS).toEqual([ID]);
+    expect(MENU_CHECKBOX_IDS).toContain(ID);
     expect(MENU_COMMAND_IDS).toContain(ID);
     expect(WINDOW_CHANNELS.SET_MENU_CHECKED).toBe('window:set-menu-checked');
   });

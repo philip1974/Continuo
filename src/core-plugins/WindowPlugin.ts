@@ -15,6 +15,8 @@ import { switchWindowCommandSpec } from '@/plugins/switch-window/switch-window-c
 import { dockCommandSpecs } from '@/shell/dock/dock-panel-actions';
 import { themeCommandSpecs } from '@/plugins/theme-picker/theme-commands';
 import { manageWorkspaceTrustCommandSpec } from '@/shell/workspace-trust/WorkspaceTrust';
+import { workbenchLayoutCommandSpecs } from '@/shell/workbench-layout';
+import { screencastCommandSpec } from '@/shell/screencast/screencast-store';
 
 export default class WindowPlugin extends Plugin {
   onload(): void {
@@ -86,5 +88,9 @@ export default class WindowPlugin extends Plugin {
     for (const spec of themeCommandSpecs()) this.addCommand(spec);
     // 工作区: 管理工作区信任(VSCode workbench.trust.manage;BDD: src/__tests__/workspace-trust/)
     this.addCommand(manageWorkspaceTrustCommandSpec());
+    // 查看: 切换状态栏 / 活动栏、显示 / 隐藏编辑器标签、切换最大化编辑器组(BDD: src/__tests__/workbench-layout-visibility/)
+    for (const spec of workbenchLayoutCommandSpecs()) this.addCommand(spec);
+    // 开发人员: 切换屏幕录制模式(BDD: src/__tests__/screencast-mode/)
+    this.addCommand(screencastCommandSpec());
   }
 }

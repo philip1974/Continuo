@@ -46,6 +46,8 @@ const KEYED_COMMANDS = new Set([
   'workbench.view.debug',
   'copyFilePath',
   'copyRelativeFilePath',
+  // 切换全屏:F11 / mac ⌃⌘F(VSCode 同;见 workbench-layout-visibility)
+  'workbench.action.toggleFullScreen',
 ]);
 
 describe('常用动作注册为命令', () => {

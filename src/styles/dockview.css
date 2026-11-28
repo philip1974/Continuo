@@ -108,3 +108,9 @@
 .dv-split-view-container > .dv-view-container > .dv-view {
   overflow: clip;
 }
+
+/* 查看 › 外观 › 标签栏 › 隐藏(workbench.editor.showTabs = none;src/shell/workbench-layout.ts 在各窗口 <html> 标记):dock 组不显示
+ * tab 栏(连同其中的组操作,VSCode 同),内容占满整组。dockview 自己的 header.hidden 也只是 display: none。 */
+:root[data-editor-show-tabs='none'] .dv-groupview > .dv-tabs-and-actions-container {
+  display: none !important;
+}

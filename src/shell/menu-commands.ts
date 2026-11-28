@@ -19,7 +19,13 @@ import { isHotkeyShadowed } from '@/plugins/command-palette/useCommandHotkeys';
 import { canonicalHotkey, detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 import { getPopoutDocuments, runInCommandDocument } from '@/shell/dock/popout-documents';
 import { useSettingValue } from '@/plugins/settings/values-store';
-import { FILES_AUTO_SAVE, type FilesAutoSaveMode } from '@/plugins/settings/core-setting-specs';
+import {
+  FILES_AUTO_SAVE,
+  WORKBENCH_EDITOR_SHOW_TABS,
+  type EditorShowTabs,
+  type FilesAutoSaveMode,
+} from '@/plugins/settings/core-setting-specs';
+import { useActivityBarVisible, useStatusBarVisible } from './workbench-layout';
 import { isExplorerTreeFocused } from '@/panels/Explorer/tree-keyboard';
 import { requestExplorer } from '@/panels/Explorer/explorer-requests';
 import { useWorkspaceStore } from '@/stores/workspace.store';
@@ -134,8 +140,25 @@ export function menuKeybindings(
 }
 
 /** 勾选类菜单项的勾选状态:文件 → 自动保存 = files.autoSave ≠ off(VSCode toggled: config.files.autoSave != off)。 */
-export function menuCheckedState(autoSave: FilesAutoSaveMode): Record<MenuCheckboxId, boolean> {
+export function menuCheckedState(autoSave: FilesAutoSaveMode): Partial<Record<MenuCheckboxId, boolean>> {
   return { 'workbench.action.toggleAutoSave': autoSave !== 'off' };
+}
+
+/**
+ * 显示 › 外观的勾选状态(VSCode toggled:config.workbench.statusBar.visible、activityBar.location ≠ hidden、
+ * config.workbench.editor.showTabs == multiple / none)。BDD: src/__tests__/workbench-layout-visibility/
+ */
+export function layoutMenuCheckedState(
+  statusBarVisible: boolean,
+  activityBarVisible: boolean,
+  showTabs: EditorShowTabs,
+): Partial<Record<MenuCheckboxId, boolean>> {
+  return {
+    'workbench.action.toggleStatusbarVisibility': statusBarVisible,
+    'workbench.action.toggleActivityBarVisibility': activityBarVisible,
+    'workbench.action.showMultipleEditorTabs': showTabs === 'multiple',
+    'workbench.action.hideEditorTabs': showTabs === 'none',
+  };
 }
 
 export function useMenuCommands(commands: CommandRegistry): void {
@@ -158,10 +181,14 @@ export function useMenuCommands(commands: CommandRegistry): void {
 
   // 勾选状态随设置变化推送(别的窗口改的设置经跨窗同步到达后同样推送,菜单是全应用共用的一份)。
   const autoSave = useSettingValue(FILES_AUTO_SAVE.id, FILES_AUTO_SAVE.default);
+  const statusBarVisible = useStatusBarVisible();
+  const activityBarVisible = useActivityBarVisible();
+  const showTabs = useSettingValue(WORKBENCH_EDITOR_SHOW_TABS.id, WORKBENCH_EDITOR_SHOW_TABS.default);
   useEffect(() => {
+    const checked = { ...menuCheckedState(autoSave), ...layoutMenuCheckedState(statusBarVisible, activityBarVisible, showTabs) };
     // 推送失败只影响菜单勾选显示,不打扰用户(测试替身可能没有该方法:同样吞掉)
     void Promise.resolve()
-      .then(() => coApi.window.setMenuChecked(menuCheckedState(autoSave)))
+      .then(() => coApi.window.setMenuChecked(checked))
       .catch(() => undefined);
-  }, [autoSave]);
+  }, [autoSave, statusBarVisible, activityBarVisible, showTabs]);
 }

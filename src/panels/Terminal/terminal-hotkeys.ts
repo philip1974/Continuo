@@ -31,6 +31,9 @@ import {
   TERMINAL_FOCUS_PREVIOUS_PANE_COMMAND_ID,
 } from '@/shell/dock/terminal-focus-cycle';
 
+/** 切换全屏命令 id(window-commands 注册;终端让出用,规范守护两处一致)。 */
+export const TOGGLE_FULL_SCREEN_COMMAND_ID = 'workbench.action.toggleFullScreen';
+
 export const TERMINAL_ZOOM_COMMAND = { id: 'terminal.zoom.toggle', hotkey: 'shift+mod+enter' } as const;
 export const TERMINAL_SEARCH_COMMAND = { id: 'terminal.search.toggle', hotkey: 'mod+f' } as const;
 /** terminal.clear;hotkey 是 mac 默认键,其它平台默认不绑(见 terminalClearDefaultHotkey)。 */
@@ -338,6 +341,8 @@ const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> =
   // 放大 / 缩小 / 重置缩放(⌘= / ⌘- / ⌘0):不在 commandsToSkipShell 默认列表 → 只有带 Meta 时让出(VSCode 同;Win/Linux 的
   // Ctrl+= / Ctrl+- 照常进 shell)。BDD: src/__tests__/window-zoom/
   ...WINDOW_ZOOM_COMMAND_IDS.map((id) => [id, { metaOnly: true }] as const),
+  // 切换全屏(F11 / mac ⌃⌘F):在 commandsToSkipShell 默认列表里 → 胜出即让出(BDD: src/__tests__/workbench-layout-visibility/)
+  [TOGGLE_FULL_SCREEN_COMMAND_ID, { metaOnly: false }],
   // 滚动(⌘Home / ⌘End / PageUp …):在 commandsToSkipShell 默认列表里 → 胜出即让出(when 限主缓冲,备用屏里不胜出)。
   ...TERMINAL_SCROLL_COMMANDS.map((c) => [c.id, { metaOnly: false }] as const),
   // 复制 / 粘贴(Windows Ctrl+C 有选区 / Ctrl+V,Ctrl+Shift+C / Ctrl+Shift+V):在默认列表里 → 胜出即让出。

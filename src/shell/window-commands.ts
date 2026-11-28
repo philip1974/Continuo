@@ -5,6 +5,7 @@
 // 关闭窗口只关该子窗(同菜单 ⇧⌘W:子窗关闭,dockview 把其组收回主窗)、切换全屏只让子窗全屏;重新加载窗口重载主窗(子窗界面
 // 属于主窗 renderer,VSCode 辅助窗口里同样重载其主窗;走同一的脏确认 + flush,子窗布局随 dock 布局恢复)。⌘P / ⇧⌘P 是 Quick Open / 命令面板保留键(picker 监听处理,
 // 两条命令只显示该键、不分发,见 PICKER_TOGGLE_COMMAND_IDS)。
+// 切换全屏默认键 F11 / mac ⌃⌘F(VSCode 同;BDD: src/__tests__/workbench-layout-visibility/)。
 // 放大 / 缩小 / 重置缩放(VSCode windowActions ZoomIn / ZoomOut / ZoomReset,window.zoomPerWindow=false 语义):改设置项
 // window.zoomLevel(所有窗口统一,ZoomLevelFromSettings 推给 main),默认键同 VSCode(⌘= / ⌘- 及 ⇧ / 小键盘附加键;重置另留 ⌘0)。
 // WindowPlugin 注册。
@@ -17,6 +18,7 @@ import { useQuickOpenStore } from '@/plugins/quick-open/store';
 import { useCommandPaletteStore } from '@/plugins/command-palette/store';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { SHOW_COMMANDS_COMMAND } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 import { getStoredSettingValue, useSettingsValuesStore } from '@/plugins/settings/values-store';
 import { WINDOW_ZOOM_LEVEL } from '@/plugins/settings/core-setting-specs';
 import type { WindowViewAction } from '../../electron/shared/window-channels';
@@ -91,12 +93,21 @@ const ZOOM_COMMANDS: readonly CommandSpec[] = [
   },
 ].map((c) => ({ ...c, category: 'View', categoryKey: 'commands.view.category' }));
 
+/**
+ * 切换全屏的默认键(VSCode windowActions ToggleFullScreen:F11,mac ⌃⌘F)。mac 上 ⌃⌘F 也是系统「进入全屏幕」的标准键:应用菜单的
+ * 全屏项改为命令项(只显示键位,按键由 renderer 分发),两条路径效果相同;🌐F / fn F 由系统直接处理窗口全屏,不经应用。
+ */
+export function toggleFullScreenHotkey(platform: Platform = detectPlatform()): string {
+  return platform === 'mac' ? 'ctrl+mod+f' : 'f11';
+}
+
 const VIEW_ACTION_COMMANDS: readonly {
   readonly id: string;
   readonly action: WindowViewAction;
   readonly title: string;
   readonly titleKey: string;
   readonly window?: true;
+  readonly hotkey?: () => string;
 }[] = [
   { id: 'workbench.action.reloadWindow', action: 'reload', title: 'Reload Window', titleKey: 'commands.window.reload.title', window: true },
   {
@@ -104,6 +115,7 @@ const VIEW_ACTION_COMMANDS: readonly {
     action: 'toggleFullScreen',
     title: 'Toggle Full Screen',
     titleKey: 'commands.view.toggle_full_screen.title',
+    hotkey: toggleFullScreenHotkey,
   },
 ];
 
@@ -140,6 +152,7 @@ export function windowCommandSpecs(): CommandSpec[] {
         id: c.id,
         title: c.title,
         titleKey: c.titleKey,
+        ...(c.hotkey ? { hotkey: c.hotkey() } : {}),
         ...(c.window
           ? { category: 'Window', categoryKey: 'commands.window.category' }
           : { category: 'View', categoryKey: 'commands.view.category' }),

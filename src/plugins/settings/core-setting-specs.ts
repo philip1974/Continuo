@@ -694,3 +694,230 @@ export const EDITOR_ACCESSIBILITY_SUPPORT: CoreSettingSpec<AccessibilitySupport>
 export function languageSettingSpec(systemDefault: Locale): CoreSettingSpec<Locale> {
   return { ...GENERAL_LANGUAGE, default: systemDefault };
 }
+
+// ── 光标(VSCode editor.cursorStyle / cursorWidth / cursorBlinking)──────────────────────────────────────────────────
+
+/** 光标样式(VSCode editor.cursorStyle 同名同取值,默认 line)。 */
+export const EDITOR_CURSOR_STYLES = ['line', 'block', 'underline', 'line-thin', 'block-outline', 'underline-thin'] as const;
+export type EditorCursorStyle = (typeof EDITOR_CURSOR_STYLES)[number];
+
+/** 光标闪烁(VSCode editor.cursorBlinking 同名同取值,默认 blink)。 */
+export const EDITOR_CURSOR_BLINKINGS = ['blink', 'smooth', 'phase', 'expand', 'solid'] as const;
+export type EditorCursorBlinking = (typeof EDITOR_CURSOR_BLINKINGS)[number];
+
+const CURSOR_STYLE_LABELS: Record<EditorCursorStyle, string> = {
+  line: 'Line',
+  block: 'Block',
+  underline: 'Underline',
+  'line-thin': 'Line (thin)',
+  'block-outline': 'Block outline',
+  'underline-thin': 'Underline (thin)',
+};
+
+const CURSOR_BLINKING_LABELS: Record<EditorCursorBlinking, string> = {
+  blink: 'Blink',
+  smooth: 'Smooth',
+  phase: 'Phase',
+  expand: 'Expand',
+  solid: 'Solid',
+};
+
+/**
+ * 编辑器光标样式(VSCode editor.cursorStyle):作用于代码编辑器、Markdown 源码模式与冲突比较(CodeMirror 自绘光标)。
+ * BDD: src/__tests__/editor-cursor-options/
+ */
+export const EDITOR_CURSOR_STYLE: CoreSettingSpec<EditorCursorStyle> = {
+  id: 'editor.cursorStyle',
+  category: 'editor',
+  group: 'appearance',
+  groupKey: 'settings.group.appearance',
+  title: 'Cursor style',
+  titleKey: 'settings.editor.cursor_style',
+  descriptionKey: 'settings.editor.cursor_style.desc',
+  type: 'select',
+  default: 'line',
+  enum: EDITOR_CURSOR_STYLES.map((value) => ({
+    value,
+    label: CURSOR_STYLE_LABELS[value],
+    labelKey: `settings.editor.cursor_style.${value.replace('-', '_')}`,
+  })),
+  priority: 2.1,
+};
+
+/**
+ * 线形光标宽度(VSCode editor.cursorWidth,默认 0):0 = 默认 2px(VSCode viewCursor 同);> 0 = 该像素宽,不超过一个字符宽。
+ * 只作用于 cursorStyle = line。BDD: src/__tests__/editor-cursor-options/
+ */
+export const EDITOR_CURSOR_WIDTH: CoreSettingSpec<number> = {
+  id: 'editor.cursorWidth',
+  category: 'editor',
+  group: 'appearance',
+  groupKey: 'settings.group.appearance',
+  title: 'Cursor width',
+  titleKey: 'settings.editor.cursor_width',
+  descriptionKey: 'settings.editor.cursor_width.desc',
+  type: 'number',
+  default: 0,
+  min: 0,
+  max: 50,
+  step: 1,
+  unit: 'px',
+  priority: 2.2,
+};
+
+/** 光标闪烁动画(VSCode editor.cursorBlinking)。BDD: src/__tests__/editor-cursor-options/ */
+export const EDITOR_CURSOR_BLINKING: CoreSettingSpec<EditorCursorBlinking> = {
+  id: 'editor.cursorBlinking',
+  category: 'editor',
+  group: 'appearance',
+  groupKey: 'settings.group.appearance',
+  title: 'Cursor blinking',
+  titleKey: 'settings.editor.cursor_blinking',
+  descriptionKey: 'settings.editor.cursor_blinking.desc',
+  type: 'select',
+  default: 'blink',
+  enum: EDITOR_CURSOR_BLINKINGS.map((value) => ({
+    value,
+    label: CURSOR_BLINKING_LABELS[value],
+    labelKey: `settings.editor.cursor_blinking.${value}`,
+  })),
+  priority: 2.3,
+};
+
+// ── 字体缩放(VSCode editor.mouseWheelZoom / terminal.integrated.mouseWheelZoom)─────────────────────────────────────
+
+/** 按住 ⌘(Windows / Linux Ctrl)滚动鼠标滚轮缩放编辑器字体(VSCode editor.mouseWheelZoom,默认关)。BDD: src/__tests__/font-zoom/ */
+export const EDITOR_MOUSE_WHEEL_ZOOM: CoreSettingSpec<boolean> = {
+  id: 'editor.mouseWheelZoom',
+  category: 'editor',
+  group: 'appearance',
+  groupKey: 'settings.group.appearance',
+  title: 'Mouse wheel zoom',
+  titleKey: 'settings.editor.mouse_wheel_zoom',
+  descriptionKey: 'settings.editor.mouse_wheel_zoom.desc',
+  type: 'boolean',
+  default: false,
+  priority: 1.2,
+};
+
+/** 按住 ⌘(Windows / Linux Ctrl)滚动鼠标滚轮改终端字号(VSCode terminal.integrated.mouseWheelZoom,默认关)。BDD: src/__tests__/font-zoom/ */
+export const TERMINAL_MOUSE_WHEEL_ZOOM: CoreSettingSpec<boolean> = {
+  id: 'terminal.integrated.mouseWheelZoom',
+  category: 'terminal',
+  title: 'Mouse wheel zoom',
+  titleKey: 'settings.terminal.mouse_wheel_zoom',
+  descriptionKey: 'settings.terminal.mouse_wheel_zoom.desc',
+  type: 'boolean',
+  default: false,
+  priority: 1.2,
+};
+
+// ── 工作台布局(VSCode workbench.statusBar.visible / workbench.activityBar.location / workbench.editor.showTabs)──────
+
+/** 显示状态栏(VSCode workbench.statusBar.visible,默认开)。BDD: src/__tests__/workbench-layout-visibility/ */
+export const WORKBENCH_STATUS_BAR_VISIBLE: CoreSettingSpec<boolean> = {
+  id: 'workbench.statusBar.visible',
+  category: 'general',
+  title: 'Show status bar',
+  titleKey: 'settings.general.status_bar_visible',
+  descriptionKey: 'settings.general.status_bar_visible.desc',
+  type: 'boolean',
+  default: true,
+  priority: 7,
+};
+
+/** 活动栏位置(VSCode workbench.activityBar.location 的 default / hidden 两档;Continuo 活动栏只在侧边)。 */
+export type ActivityBarLocation = 'default' | 'hidden';
+
+/** 活动栏位置 / 隐藏(VSCode workbench.activityBar.location)。BDD: src/__tests__/workbench-layout-visibility/ */
+export const WORKBENCH_ACTIVITY_BAR_LOCATION: CoreSettingSpec<ActivityBarLocation> = {
+  id: 'workbench.activityBar.location',
+  category: 'general',
+  title: 'Activity bar',
+  titleKey: 'settings.general.activity_bar_location',
+  descriptionKey: 'settings.general.activity_bar_location.desc',
+  type: 'select',
+  default: 'default',
+  enum: [
+    { value: 'default', label: 'Default', labelKey: 'settings.general.activity_bar_location.default' },
+    { value: 'hidden', label: 'Hidden', labelKey: 'settings.general.activity_bar_location.hidden' },
+  ],
+  priority: 8,
+};
+
+/** 编辑器 tab 栏(VSCode workbench.editor.showTabs 的 multiple / none 两档)。 */
+export type EditorShowTabs = 'multiple' | 'none';
+
+/** dock 组的 tab 栏显示 / 隐藏(VSCode workbench.editor.showTabs)。BDD: src/__tests__/workbench-layout-visibility/ */
+export const WORKBENCH_EDITOR_SHOW_TABS: CoreSettingSpec<EditorShowTabs> = {
+  id: 'workbench.editor.showTabs',
+  category: 'editor',
+  group: 'tabs',
+  groupKey: 'settings.group.tabs',
+  title: 'Tab bar',
+  titleKey: 'settings.editor.show_tabs',
+  descriptionKey: 'settings.editor.show_tabs.desc',
+  type: 'select',
+  default: 'multiple',
+  enum: [
+    { value: 'multiple', label: 'Multiple tabs', labelKey: 'settings.editor.show_tabs.multiple' },
+    { value: 'none', label: 'Hidden', labelKey: 'settings.editor.show_tabs.none' },
+  ],
+  priority: 19,
+};
+
+// ── 屏幕录制模式(VSCode screencastMode.*)──────────────────────────────────────────────────────────────────────────
+
+/** 屏幕录制模式按键浮层的字号(VSCode screencastMode.fontSize,默认 56,20..100)。BDD: src/__tests__/screencast-mode/ */
+export const SCREENCAST_FONT_SIZE: CoreSettingSpec<number> = {
+  id: 'screencastMode.fontSize',
+  category: 'general',
+  group: 'screencast',
+  groupKey: 'settings.group.screencast',
+  title: 'Keyboard overlay font size',
+  titleKey: 'settings.screencast.font_size',
+  descriptionKey: 'settings.screencast.font_size.desc',
+  type: 'number',
+  default: 56,
+  min: 20,
+  max: 100,
+  step: 1,
+  unit: 'px',
+  priority: 20,
+};
+
+/** 按键浮层离窗口底部的距离,占窗口高度的百分比(VSCode screencastMode.verticalOffset,默认 20,0..90)。 */
+export const SCREENCAST_VERTICAL_OFFSET: CoreSettingSpec<number> = {
+  id: 'screencastMode.verticalOffset',
+  category: 'general',
+  group: 'screencast',
+  groupKey: 'settings.group.screencast',
+  title: 'Keyboard overlay vertical offset',
+  titleKey: 'settings.screencast.vertical_offset',
+  descriptionKey: 'settings.screencast.vertical_offset.desc',
+  type: 'number',
+  default: 20,
+  min: 0,
+  max: 90,
+  step: 1,
+  unit: '%',
+  priority: 21,
+};
+
+/** 按键浮层显示多久后淡出(毫秒,VSCode screencastMode.keyboardOverlayTimeout,默认 800,500..5000)。 */
+export const SCREENCAST_KEYBOARD_OVERLAY_TIMEOUT: CoreSettingSpec<number> = {
+  id: 'screencastMode.keyboardOverlayTimeout',
+  category: 'general',
+  group: 'screencast',
+  groupKey: 'settings.group.screencast',
+  title: 'Keyboard overlay timeout',
+  titleKey: 'settings.screencast.keyboard_overlay_timeout',
+  descriptionKey: 'settings.screencast.keyboard_overlay_timeout.desc',
+  type: 'number',
+  default: 800,
+  min: 500,
+  max: 5000,
+  step: 100,
+  unit: 'ms',
+  priority: 22,
+};

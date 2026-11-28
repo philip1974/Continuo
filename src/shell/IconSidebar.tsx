@@ -19,6 +19,7 @@ import { useT } from '@/i18n';
 import { useRegisteredCommandHotkeyText, withHotkey } from '@/lib/hotkey-label';
 import { SEARCH_PANEL_ID } from '@/shell/dock/side-panel';
 import { closeVisiblePanelOfType, usePanelTypeVisible } from '@/shell/dock/visible-panel-type';
+import { useActivityBarVisible } from './workbench-layout';
 
 interface IconBarItemConfig {
   id: string;
@@ -118,6 +119,7 @@ export function IconSidebar() {
   const debugHotkey = useRegisteredCommandHotkeyText(coApp.commands, ACTIVITY_DEBUG_COMMAND_ID);
   const searchVisible = usePanelTypeVisible(SEARCH_PANEL_ID);
   const debugVisible = usePanelTypeVisible(DEBUG_PANEL_TYPE);
+  const visible = useActivityBarVisible();
 
   const explorerLabel = sidebarOpen ? t('shell.iconbar.hide_explorer') : t('shell.iconbar.show_explorer');
   const explorerItem: IconBarItemConfig = {
@@ -195,6 +197,9 @@ export function IconSidebar() {
       {item.node}
     </NavRailButton>
   );
+
+  // 查看 › 外观 › 活动栏(workbench.activityBar.location = hidden;BDD: src/__tests__/workbench-layout-visibility/)
+  if (!visible) return null;
 
   return (
     <aside className="flex w-12 shrink-0 flex-col items-center justify-between border-r border-line bg-panel py-2">

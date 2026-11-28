@@ -29,7 +29,6 @@ import { languages } from '@codemirror/language-data';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
   EDITOR_FONT_FAMILY,
-  EDITOR_FONT_SIZE,
   EDITOR_LINE_HEIGHT,
   EDITOR_DETECT_INDENTATION,
   EDITOR_GUIDES_INDENTATION,
@@ -84,6 +83,8 @@ import { codeEditorContextMenuMarker } from './codemirror-context-menu';
 import { editorGuides, type EditorGuidesOptions } from './codemirror-editor-guides';
 import { editorWordWrap } from './codemirror-wrapping-indent';
 import { goToDefinitionExtension } from './codemirror-go-to-definition';
+import { editorCursor, useEditorCursorOptions } from './codemirror-cursor';
+import { useEditorFontSize, useEditorFontStyle, useEditorMouseWheelZoom } from './editor-font-zoom';
 
 interface CodeEditorProps {
   tabId: string;
@@ -305,6 +306,12 @@ export function CodeEditor({
   const latestLineNumbersRef = useRef(lineNumbers);
   latestLineNumbersRef.current = lineNumbers;
   const appliedLineNumbersRef = useRef(lineNumbers);
+  // 光标样式 / 宽度 / 闪烁(editor.cursorStyle / cursorWidth / cursorBlinking):变化时 reconfigure。BDD: src/__tests__/editor-cursor-options/
+  const cursorCompartment = useRef(new Compartment());
+  const cursorOptions = useEditorCursorOptions();
+  const latestCursorRef = useRef(cursorOptions);
+  latestCursorRef.current = cursorOptions;
+  const appliedCursorRef = useRef(cursorOptions);
   const indentation = useTabIndentation(tabId);
   // 打开时的缩进默认值(经 useSettingValue 取:按 spec 规整;设置之后的变化由 installIndentationSync 统一重定)
   const indentSettings = {
@@ -366,6 +373,7 @@ export function CodeEditor({
     appliedScrollBeyondRef.current = latestScrollBeyondRef.current;
     appliedGuidesRef.current = latestGuidesRef.current;
     appliedLineNumbersRef.current = latestLineNumbersRef.current;
+    appliedCursorRef.current = latestCursorRef.current;
     appliedIndentRef.current = ensureTabIndentation(tabId, fileName, value, indentSettings);
 
     const publishSelectionStatus = (state: EditorState) =>
@@ -394,6 +402,7 @@ export function CodeEditor({
       // 回车自动缩进 / Tab / ⇧Tab / ⌘] / ⌘[ 都按文档缩进(4 空格文件缩 4 格,tab 文件插 tab;此前写死 CodeMirror 默认 2 空格)
       indentCompartment.current.of(indentationExtension(appliedIndentRef.current)),
       lineNumbersCompartment.current.of(lineNumbersAttrs(appliedLineNumbersRef.current)),
+      cursorCompartment.current.of(editorCursor(appliedCursorRef.current)),
       // 缩进参考线按上面的文档缩进计级(Markdown 源码模式同样显示,VSCode 同)
       guidesCompartment.current.of(editorGuides(appliedGuidesRef.current)),
       debugDecorationsExtension(),
@@ -623,8 +632,11 @@ export function CodeEditor({
   }, [locale]);
 
   // 外层 div 设 fontSize,内部 .cm-editor / .cm-content / .cm-gutters
-  // 都 inherit。改 settings 字号 → React 重渲外层 → CodeMirror 立即跟新。
-  const fontSize = useSettingValue(EDITOR_FONT_SIZE.id, EDITOR_FONT_SIZE.default);
+  // 都 inherit。改 settings 字号 / 字体缩放(editor.action.fontZoomIn 等,BDD: src/__tests__/font-zoom/)→ React 重渲外层 →
+  // CodeMirror 立即跟新。
+  const fontSize = useEditorFontSize();
+  const fontStyle = useEditorFontStyle();
+  useEditorMouseWheelZoom(containerRef);
   const fontFamily = useSettingValue(EDITOR_FONT_FAMILY.id, EDITOR_FONT_FAMILY.default);
   const lineHeight = useSettingValue(EDITOR_LINE_HEIGHT.id, EDITOR_LINE_HEIGHT.default);
 
@@ -677,11 +689,18 @@ export function CodeEditor({
     view.dispatch({ effects: lineNumbersCompartment.current.reconfigure(lineNumbersAttrs(lineNumbers)) });
   }, [lineNumbers]);
 
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || appliedCursorRef.current === cursorOptions) return;
+    appliedCursorRef.current = cursorOptions;
+    view.dispatch({ effects: cursorCompartment.current.reconfigure(editorCursor(cursorOptions)) });
+  }, [cursorOptions]);
+
   return (
     <div
       ref={containerRef}
       className="h-full w-full"
-      style={{ fontSize: `${fontSize}px` }}
+      style={fontStyle}
     />
   );
 }

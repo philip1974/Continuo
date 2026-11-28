@@ -323,6 +323,8 @@
    * 9999 +(配合 isolation:isolate)强建独立 stacking context,凌驾任何
    * xterm 层。issue #38 R2d 实测推导;改前请读 topic-26 memory L3。 */
   --z-terminal-overlay: 9999;
+  /* 屏幕录制模式的按键 / 鼠标浮层(src/shell/screencast/):盖过一切(含对话框、终端浮层),给观众看。 */
+  --z-screencast: 10000;
 }
 
 /* Tailwind v4 不自动从 `--z-*` token 生成 utility class(v4 的 z-index

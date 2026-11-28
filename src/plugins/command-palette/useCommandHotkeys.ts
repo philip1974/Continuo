@@ -48,6 +48,8 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   'workbench.action.zoomIn',
   'workbench.action.zoomOut',
   'workbench.action.zoomReset',
+  // 切换全屏(F11 / ⌃⌘F):作用于按键所在子窗(runViewAction 带 popoutName),VSCode 辅助窗口同样只让该窗口全屏
+  'workbench.action.toggleFullScreen',
   // 选择器(⌃G 转到行、⇧⌘O 转到符号、⌃R 打开最近、F1 显示所有命令):画在按键所在子窗(picker 切片按触发窗口取 hostDocument,见
   // picker-window;VSCode 同)。⌘P / ⇧⌘P 由 picker 监听在各窗口处理。
   'workbench.action.gotoLine',

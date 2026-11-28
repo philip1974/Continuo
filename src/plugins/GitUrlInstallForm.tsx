@@ -72,6 +72,8 @@ export function GitUrlInstallForm({
           size="sm"
           aria-label={ariaLabel}
           placeholder={placeholder}
+          // 地址里可能带访问令牌(https://<token>@host/…):屏幕录制模式不显示这里的按键(BDD: src/__tests__/screencast-mode/)
+          data-screencast-sensitive=""
           value={url}
           // 边界(E282):截断超长 git URL(防 paste 撑 React state + IPC structured-clone 放大,main schema 才拒)。
           onChange={(e) => setUrl(clampGitUrl(e.target.value))}

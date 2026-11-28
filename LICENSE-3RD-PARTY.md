@@ -56,6 +56,12 @@ Code and data ported or copied from <https://github.com/microsoft/vscode> (© Mi
 - `src/styles/theme.css` — high-contrast (`.hc-black` / `.hc-light`) values of Continuo's own slots: syntax colors from `extensions/theme-defaults/themes/hc_black.json` / `hc_light.json`, and the `hcDark` / `hcLight` defaults of `contrastBorder` / `contrastActiveBorder`, debug breakpoint / stack-frame colors, `list.highlightForeground`, `textLink.foreground` and `gitDecoration.*` (some lightened / darkened for contrast).
 - `src/styles/design-tokens.css` — the `.hc-black` / `.hc-light` palettes from the `hcDark` / `hcLight` defaults in `src/vs/platform/theme/common/colors/*.ts` (color registry; some lightened / darkened for contrast).
 - `src/panels/Editor/copy-html.ts` — copy-with-syntax-highlighting HTML: `tokenizeLineToHTML` ported from `src/vs/editor/common/languages/textToHtmlTokenizer.ts`, outer wrapper from `getRichTextToCopy` (`src/vs/editor/common/viewModel/viewModelImpl.ts`).
+- `src/panels/Editor/editor-font-zoom.ts` — editor font zoom level (clamp to [-5, 20], ±1 steps, reset to 0) ported from `EditorZoom` (`src/vs/editor/common/config/editorZoom.ts`) and the `fontZoom` actions (`src/vs/editor/contrib/fontZoom/browser/fontZoom.ts`); the `1 + level × 0.1` font-size / line-height multiplier from `src/vs/editor/common/config/fontInfo.ts`.
+- `src/lib/mouse-wheel-zoom.ts` — `hasMouseWheelZoomModifiers` ported from `_hasMouseWheelZoomModifiers` in `src/vs/workbench/contrib/terminalContrib/zoom/browser/terminal.zoom.contribution.ts`.
+- `src/panels/Editor/codemirror-cursor.ts` — cursor widths per `editor.cursorStyle` / `editor.cursorWidth` from `src/vs/editor/browser/viewParts/viewCursors/viewCursor.ts`; `smooth` / `phase` / `expand` keyframes from `viewCursors.css` in the same folder (re-timed to one full cycle).
+- `src/shell/screencast/screencast-store.ts` — screencast-mode keyboard overlay state (when to clear, the 20-key limit) ported from `ToggleScreencastModeAction` in `src/vs/workbench/browser/actions/developerActions.ts`.
+- `src/shell/screencast/screencast-keys.ts` — which keys / command titles the screencast-mode overlay shows, ported from the `onKeyDown` handler of the same action.
+- `src/shell/screencast/screencast.css` — `.screencast-keyboard` / `.screencast-mouse` styles ported from `src/vs/workbench/browser/actions/media/actions.css` (colors replaced by theme tokens).
 
 ## CodeMirror (codemirror/search) · MIT License
 

@@ -72,6 +72,8 @@ describe('popout 子窗按键分发(只限作用于活动面板的命令)', () =
       'workbench.action.zoomIn',
       'workbench.action.zoomOut',
       'workbench.action.zoomReset',
+      // 切换全屏:只让按键所在子窗全屏(workbench-layout-visibility)
+      'workbench.action.toggleFullScreen',
       // 选择器画在按键所在子窗(popout-picker)
       'workbench.action.gotoLine',
       'workbench.action.gotoSymbol',

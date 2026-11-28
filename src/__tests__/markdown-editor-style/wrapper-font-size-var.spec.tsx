@@ -17,8 +17,9 @@ vi.mock('@milkdown/react', () => ({
     init(document.createElement('div'));
   },
 }));
+// 只把 editor.fontSize 设成 19,其余设置(光标样式等)取默认
 vi.mock('../../plugins/settings/values-store', () => ({
-  useSettingValue: () => 19,
+  useSettingValue: (id: string, fallback: unknown) => (id === 'editor.fontSize' ? 19 : fallback),
 }));
 
 import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
