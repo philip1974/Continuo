@@ -437,6 +437,12 @@
 
 - [`debounce.spec.ts`](./debounce/debounce.spec.ts)
 
+## [debug-adapter-crash(调试适配器意外退出 → 结束会话并提示)](./debug-adapter-crash/README.md)
+
+- [`dap-client-connection-lost.spec.ts`](./debug-adapter-crash/dap-client-connection-lost.spec.ts)
+- [`debug-service-adapter-loss.spec.ts`](./debug-adapter-crash/debug-service-adapter-loss.spec.ts)
+- [`debug-store-adapter-crash.spec.ts`](./debug-adapter-crash/debug-store-adapter-crash.spec.ts)
+
 ## [debug-user-controls · 用户接管调试会话 / 调试控制台 / 停下时自动定位](./debug-user-controls/README.md)
 
 - [`background-open.spec.ts`](./debug-user-controls/background-open.spec.ts)
@@ -2321,6 +2327,11 @@
 
 - [`readhistory-failure-clears-loading.spec.ts`](./terminal-readhistory-failure-feedback/readhistory-failure-clears-loading.spec.ts)
 
+## [terminal-replay-dimensions(历史回放按录制时的终端尺寸)](./terminal-replay-dimensions/README.md)
+
+- [`main-dimensions.spec.ts`](./terminal-replay-dimensions/main-dimensions.spec.ts)
+- [`renderer-replay.spec.ts`](./terminal-replay-dimensions/renderer-replay.spec.ts)
+
 ## [terminal-resize-debounce](./terminal-resize-debounce/README.md)
 
 - [`dimensions-change-raf.spec.tsx`](./terminal-resize-debounce/dimensions-change-raf.spec.tsx)
@@ -2500,6 +2511,10 @@
 - [`initial-theme.spec.ts`](./window-background-theme/initial-theme.spec.ts)
 - [`window-background-theme.spec.tsx`](./window-background-theme/window-background-theme.spec.tsx)
 - [`window-theme-persist.spec.ts`](./window-background-theme/window-theme-persist.spec.ts)
+
+## [window-crash-recovery(主窗渲染进程崩溃 / 无响应的提示与恢复)](./window-crash-recovery/README.md)
+
+- [`window-error-dialogs.spec.ts`](./window-crash-recovery/window-error-dialogs.spec.ts)
 
 ## [拖文件夹到窗口(`pickDroppedDirectory`)](./window-drop/README.md)
 

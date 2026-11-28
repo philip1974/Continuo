@@ -57,6 +57,12 @@ interface PendingRequest {
 }
 
 export type DapEventHandler = (event: DapEventMessage) => void;
+
+/** adapter 子进程的退出状态(ChildProcess 'exit' 的 code / signal)。 */
+export interface DapServerExit {
+  readonly code: number | null;
+  readonly signal: string | null;
+}
 export type StartDebuggingHandler = (
   request: DapRequestMessage,
 ) => Promise<DapJson | undefined> | DapJson | undefined;
@@ -376,6 +382,8 @@ export class DapClient {
   private socketDir: string | null = null;
   private socketPathValue: string | null;
   private adapterRun: AdapterRunState | null = null;
+  /** 连接意外断开(不是本端 dispose 关的)时的回调,见 onConnectionLost。 */
+  private readonly connectionLostListeners = new Set<() => void>();
 
   constructor(options: DapClientOptions) {
     this.adapterPath = options.adapterPath;
@@ -567,6 +575,9 @@ export class DapClient {
     socket.on('error', (err) => this.rejectAllPending(err));
     socket.on('close', () => {
       this.rejectAllPending(new Error('DAP socket closed'));
+      // 本端 dispose 先置 disposed 再关 socket:那不是意外断开。
+      if (this.disposed || this.socket !== socket) return;
+      for (const listener of [...this.connectionLostListeners]) listener();
     });
   }
 
@@ -789,12 +800,23 @@ export class DapClient {
     return this.server?.pid;
   }
 
-  /** adapter 子进程退出时回调(已退出则下一微任务回调;未 spawn 不回调)。 */
-  onServerExit(listener: () => void): void {
+  /** adapter 子进程退出时回调(已退出则下一微任务回调;未 spawn 不回调),带退出 code / signal。 */
+  onServerExit(listener: (exit: DapServerExit) => void): void {
     const server = this.server;
     if (!server) return;
-    if (this.serverExited) queueMicrotask(listener);
-    else server.once('exit', () => listener());
+    if (this.serverExited) {
+      const exit = { code: server.exitCode, signal: server.signalCode };
+      queueMicrotask(() => listener(exit));
+    } else server.once('exit', (code, signal) => listener({ code, signal }));
+  }
+
+  /**
+   * 与 adapter 的连接意外断开(adapter 被杀 / 自行关闭连接;本端 dispose 不算)时回调。VSCode RawDebugSession 在
+   * 适配器连接结束时结束会话并提示「Debug adapter process has terminated unexpectedly」,调用方据此做同样处理。
+   */
+  onConnectionLost(listener: () => void): () => void {
+    this.connectionLostListeners.add(listener);
+    return () => this.connectionLostListeners.delete(listener);
   }
 
   /** adapter 子进程已退出(未 spawn → false)。退出后其 pid 可能被复用,调用方不能再对它发信号。 */

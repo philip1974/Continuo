@@ -40,4 +40,17 @@ export interface TerminalHistorySnapshot {
   readonly truncated: boolean;
   readonly endOffset?: number;
   readonly startOffset?: number;
+  /**
+   * 快照里各段输出产生时的 PTY 尺寸(按累计偏移升序;首项 offset ≤ startOffset,代表快照开头那段)。renderer 回放时
+   * 每段先按当时的尺寸写入再恢复当前尺寸,由 xterm 重排(VSCode TerminalRecorder + BasePty.handleReplay);
+   * 否则窗口尺寸变了(如 popout 里的终端在崩溃恢复后回到主窗)按当前宽度回放,换行 / 光标定位全部错位。
+   */
+  readonly dimensions?: readonly TerminalReplayDimensions[];
+}
+
+export interface TerminalReplayDimensions {
+  /** 这一尺寸生效处的累计偏移(同 startOffset / endOffset 的坐标)。 */
+  readonly offset: number;
+  readonly cols: number;
+  readonly rows: number;
 }

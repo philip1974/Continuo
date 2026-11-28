@@ -79,7 +79,13 @@ describe('terminal history replay · 主进程偏移坐标', () => {
     emit('def'); // 仍在合批窗口内,未发出
 
     const snap = terminalService.getBufferSnapshot('a');
-    expect(snap).toEqual({ data: 'abcdef', truncated: false, endOffset: 6, startOffset: 0 });
+    expect(snap).toEqual({
+      data: 'abcdef',
+      truncated: false,
+      endOffset: 6,
+      startOffset: 0,
+      dimensions: [{ offset: 0, cols: 120, rows: 40 }],
+    });
     // 在途批次已在取快照之前同步发出(偏移 3 < endOffset)
     expect(win.webContents.send).toHaveBeenLastCalledWith('terminal:data', 'a', 'def', 3);
 
@@ -101,6 +107,7 @@ describe('terminal history replay · 主进程偏移坐标', () => {
       truncated: true,
       endOffset: 10,
       startOffset: 6,
+      dimensions: [{ offset: 6, cols: 120, rows: 40 }],
     });
   });
 

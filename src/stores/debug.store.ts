@@ -18,6 +18,8 @@ import {
 } from '../../electron/shared/debug-view-channels';
 import { createLatestGuard } from '@/lib/latest-wins';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
+import { notify } from '@/notifications/notify';
+import { t } from '@/i18n';
 
 export type {
   DebugBreakpoint,
@@ -296,14 +298,19 @@ function asDebugViewEvent(value: unknown): DebugViewEvent | DebugUserBreakpoints
     case 'output':
       return Array.isArray(raw.entries) ? { type: 'output', sessionId, entries: asOutputEntries(raw.entries) } : null;
     case 'continued':
-    case 'terminated':
       return { type: raw.type, sessionId };
+    case 'terminated':
+      return typeof raw.adapterCrashed === 'string'
+        ? { type: 'terminated', sessionId, adapterCrashed: raw.adapterCrashed.slice(0, DEBUG_ADAPTER_CRASH_DETAIL_MAX) }
+        : { type: 'terminated', sessionId };
     default:
       return null;
   }
 }
 
 const DEBUG_SESSION_LABEL_MAX = 256;
+/** adapter 意外退出说明(main 给的是 `signal: X` / `exit code: N` / `connection closed`)的长度上限。 */
+const DEBUG_ADAPTER_CRASH_DETAIL_MAX = 256;
 /** IPC 来的会话名:非空字符串才收(封顶长度),否则不带。 */
 function asLabel(value: unknown): { readonly label?: string } {
   return typeof value === 'string' && value !== '' ? { label: value.slice(0, DEBUG_SESSION_LABEL_MAX) } : {};
@@ -574,6 +581,10 @@ export const useDebugStore = create<DebugState>((set, get) => ({
 
     if (event.type === 'terminated') {
       userDrivenSessions.delete(event.sessionId);
+      // VSCode debugService onDidEndAdapter:adapter 意外退出 → 错误通知「Debug adapter process has terminated unexpectedly」。
+      if (event.adapterCrashed !== undefined) {
+        notify.error(t('panels.debug.adapter_crashed', { detail: event.adapterCrashed }));
+      }
       set((state) => {
         const ended = state.sessions.get(event.sessionId);
         if (!ended) return state;

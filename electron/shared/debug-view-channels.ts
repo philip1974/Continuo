@@ -123,6 +123,11 @@ export type DebugViewEvent =
   | {
       readonly type: 'terminated';
       readonly sessionId: string;
+      /**
+       * adapter 意外退出 / 连接意外断开时的说明(如 `signal: SIGKILL`):renderer 据此提示「调试适配器进程意外终止」
+       *(VSCode debugAdapterCrash)。正常结束不带。
+       */
+      readonly adapterCrashed?: string;
     };
 
 /**

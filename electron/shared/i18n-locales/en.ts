@@ -470,6 +470,7 @@ export const en = {
   'panels.debug.empty_stack': 'No stack frames',
   'panels.debug.empty_variables': 'No variables',
   'panels.debug.empty_breakpoints': 'No breakpoints',
+  'panels.debug.adapter_crashed': 'Debug adapter process has terminated unexpectedly ({detail})',
   'panels.debug.paused': 'Paused',
   'panels.debug.paused_at': 'Paused on {reason} at {location}',
   // DAP stopped.reason 的显示名(未列出的原因显示 panels.debug.paused)
@@ -699,6 +700,14 @@ export const en = {
   'dialog.mcp_legacy_config.detail':
     'MCP server(s) {names} in ~/.claude.json point to an old AppImage temporary mount path. After Continuo exits, another user on this machine can place a script with the same name there, which Claude Code would then run as you. Run `claude mcp remove {first}` in the corresponding project directory (add `-s user` for user-scoped config), then run the new command from “Copy MCP config” in the status bar.',
   'dialog.mcp_legacy_config.copy': 'Copy New Command',
+  'dialog.window_error.reopen': 'Reopen',
+  'dialog.window_error.close': 'Close',
+  'dialog.window_error.keep_waiting': 'Keep Waiting',
+  'dialog.window_crashed.message': 'The window terminated unexpectedly (reason: “{reason}”, code: “{code}”)',
+  'dialog.window_crashed.detail': 'We are sorry for the inconvenience. You can reopen the window to continue where you left off.',
+  'dialog.window_crashed.lost_files': 'Unsaved changes to the following files were lost:',
+  'dialog.window_unresponsive.message': 'The window is not responding',
+  'dialog.window_unresponsive.detail': 'You can reopen or close the window or keep waiting.',
   'dock.empty.message': 'All panels are closed.',
   'dock.empty.in_other_windows': 'All panels are open in other windows.',
   'dock.empty.restore': 'Restore default layout',

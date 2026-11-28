@@ -87,6 +87,7 @@ describe('terminal exited history · 退出后 tab 仍可回放', () => {
       truncated: false,
       endOffset: 10,
       startOffset: 0,
+      dimensions: [{ offset: 0, cols: 120, rows: 40 }],
     });
   });
 

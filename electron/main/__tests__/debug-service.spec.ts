@@ -53,14 +53,14 @@ class FakeDapClient implements DebugDapClientLike {
   readonly serverPid: number;
   /** adapter 子进程已退出(模拟真实 DapClient 的 serverExited)。 */
   serverExited = false;
-  private readonly serverExitListeners: Array<() => void> = [];
-  onServerExit(listener: () => void): void {
+  private readonly serverExitListeners: Array<(exit: { code: number | null; signal: string | null }) => void> = [];
+  onServerExit(listener: (exit: { code: number | null; signal: string | null }) => void): void {
     this.serverExitListeners.push(listener);
   }
-  /** 模拟 adapter 子进程退出:置 serverExited 并触发 onServerExit 回调。 */
-  simulateServerExit(): void {
+  /** 模拟 adapter 子进程退出:置 serverExited 并触发 onServerExit 回调(默认被 SIGKILL)。 */
+  simulateServerExit(exit: { code: number | null; signal: string | null } = { code: null, signal: 'SIGKILL' }): void {
     this.serverExited = true;
-    for (const listener of this.serverExitListeners.splice(0)) listener();
+    for (const listener of this.serverExitListeners.splice(0)) listener(exit);
   }
   readonly requestLog: Array<{ command: string; args: DapJson }> = [];
   readonly children: FakeDapClient[] = [];

@@ -12,6 +12,7 @@ import {
   type DapJson,
   type DapRequestMessage,
   type DapResponseMessage,
+  type DapServerExit,
 } from './dap-client';
 import { resolveDebugAdapterPath } from './debug-adapter-provision';
 import * as debugSessions from './debug-sessions.service';
@@ -54,8 +55,10 @@ export interface DebugDapClientLike {
   readonly serverPid?: number;
   /** adapter 子进程已退出(其 pid 可能已被复用,清理不再对它发信号)。 */
   readonly serverExited?: boolean;
-  /** adapter 子进程退出时回调(已退出则尽快回调)。 */
-  onServerExit?(listener: () => void): void;
+  /** adapter 子进程退出时回调(已退出则尽快回调),带退出 code / signal。 */
+  onServerExit?(listener: (exit: DapServerExit) => void): void;
+  /** 连接意外断开(adapter 被杀 / 自行关闭;本端 dispose 不算)时回调。 */
+  onConnectionLost?(listener: () => void): () => void;
   spawnServer(): Promise<this>;
   connectToServer(): Promise<this>;
   createChildSession(): DebugDapClientLike;
@@ -1046,8 +1049,12 @@ export class DebugService {
     }
     this.runtimes.set(id, runtime);
     if (adapterInfo) debugSessions.update(id, { adapterPgid: adapterInfo.pgid });
-    parentClient.onServerExit?.(() => {
+    parentClient.onServerExit?.((exit) => {
       runtime.adapterExitReap = this.reapAdapterGroupOnExit(id);
+      // 会话还在跑时 adapter 退出(被杀 / 崩溃)= 会话结束。VSCode:非 0 退出提示「Debug adapter process has
+      // terminated unexpectedly (exit code: N)」,0 退出视为正常结束(只结束会话不提示)。
+      const unexpected = exit.code !== 0;
+      this.endOnAdapterLoss(id, describeAdapterExit(exit), unexpected);
     });
     this.wireClient(id, parentClient);
     parentClient.setStartDebuggingHandler((request) =>
@@ -2070,6 +2077,30 @@ export class DebugService {
     });
     client.on('terminated', () => this.markEnded(sessionId, client, 'debug session terminated'));
     client.on('exited', () => this.markEnded(sessionId, client, 'debug session exited'));
+    // 连接意外断开(adapter 被杀时各连接随之关闭,常早于进程 exit 事件到达):仍存活的连接断了 = adapter 没了。
+    // 已结束 / 已回收的连接(terminated 之后 adapter 自行关闭连接)不算。
+    client.onConnectionLost?.(() => {
+      if (this.isLiveClient(sessionId, client)) this.endOnAdapterLoss(sessionId, 'connection closed', true);
+    });
+  }
+
+  /**
+   * adapter 退出 / 连接意外断开时结束整个会话(对齐 VSCode DebugSession.onDidExitAdapter):结算在途的 wait_for_stop、
+   * 会话标 terminated(MCP list_sessions 显示 terminated)、通知 renderer 移除会话;unexpected 时附带说明让 renderer 提示。
+   * 已结束 / 正在拆除(disconnect / 关窗 / 退出时本端杀 adapter)的会话不处理。debuggee 未必已随 adapter 结束:
+   * 保留其 pid 记录,由 teardown 回收。
+   */
+  private endOnAdapterLoss(sessionId: string, detail: string, unexpected: boolean): void {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime || runtime.endedMessage !== undefined) return;
+    if (debugSessions.get(sessionId)?.state !== 'active') return;
+    const message = unexpected
+      ? `debug adapter process has terminated unexpectedly (${detail})`
+      : 'debug adapter exited';
+    this.endWholeSession(sessionId, runtime, message, {
+      debuggeesEnded: false,
+      ...(unexpected ? { adapterCrashed: detail } : {}),
+    });
   }
 
   /**
@@ -2161,20 +2192,34 @@ export class DebugService {
     return runtime.childEnded && runtime.childClients.length === 0;
   }
 
-  private endWholeSession(sessionId: string, runtime: RuntimeDebugSession, message: string): void {
+  private endWholeSession(
+    sessionId: string,
+    runtime: RuntimeDebugSession,
+    message: string,
+    opts: { readonly debuggeesEnded?: boolean; readonly adapterCrashed?: string } = {},
+  ): void {
     // terminated 之后通常还有 exited:只结算一次(不重复通知 renderer)。
     if (runtime.endedMessage !== undefined) return;
     this.rejectWaiters(sessionId, new Error(message));
     runtime.endedMessage = message;
-    // 整个会话结束:debuggee 都已结束,清空 pid 记录(terminated 会话可能保留到名额满才回收,其间 pid 会被复用);
-    // 此后清理只需回收 adapter。
-    runtime.processIdsByClient.clear();
-    debugSessions.update(sessionId, { runtimeState: 'terminated', systemProcessIds: [] });
+    if (opts.debuggeesEnded === false) {
+      // adapter 没了但 debuggee 未必结束:pid 记录留给 teardown 回收。
+      debugSessions.update(sessionId, { runtimeState: 'terminated' });
+    } else {
+      // 整个会话结束:debuggee 都已结束,清空 pid 记录(terminated 会话可能保留到名额满才回收,其间 pid 会被复用);
+      // 此后清理只需回收 adapter。
+      runtime.processIdsByClient.clear();
+      debugSessions.update(sessionId, { runtimeState: 'terminated', systemProcessIds: [] });
+    }
     // 结束前的最后输出先推完(renderer 收到 terminated 后把它留作「上次会话的输出」)。
     this.flushOutput(sessionId);
     // 通知 renderer 移除该会话(面板 / 执行行 / 红点)—— 停住时被 kill 的 adapter 可能不先发 continued。
     // 会话本身留到 teardown(MCP 仍可 list);viewSnapshot 同样不含已结束会话;teardown 时再发的 terminated renderer 幂等忽略。
-    this.emitSessionEvent(sessionId, { type: 'terminated', sessionId });
+    this.emitSessionEvent(sessionId, {
+      type: 'terminated',
+      sessionId,
+      ...(opts.adapterCrashed !== undefined ? { adapterCrashed: opts.adapterCrashed } : {}),
+    });
   }
 
   private markStopped(
@@ -2575,4 +2620,9 @@ export class DebugService {
     if (!session) throw sessionNotFoundError();
     return session;
   }
+}
+
+/** adapter 退出状态 → 提示里的说明(同 VSCode RawDebugSession:`exit code: N`;被信号杀掉时给信号名)。 */
+function describeAdapterExit(exit: DapServerExit): string {
+  return exit.signal !== null ? `signal: ${exit.signal}` : `exit code: ${exit.code ?? 'unknown'}`;
 }

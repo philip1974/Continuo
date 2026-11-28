@@ -61,6 +61,7 @@ import {
 import type { TerminalViewport } from './terminal-panel-handles';
 import { TERMINAL_ALT_BUFFER_ATTR, TERMINAL_ATTR, TERMINAL_SELECTION_ATTR } from '@/lib/editor-text-focus';
 import { createOutputCoalescer } from './output-coalescer';
+import { replaySegments, replayWithDimensions } from './history-replay';
 import { createTerminalWebgl, type TerminalWebgl } from './terminal-webgl';
 import { installTerminalPasteSanitizer, sanitizeTerminalPaste } from './terminal-paste-sanitize';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
@@ -313,6 +314,8 @@ export function createResizeDebouncer(
   fitAddon: FitAddon,
   termId: string,
   lastSize: { current: { cols: number; rows: number } | null },
+  /** 为 true 时(按录制尺寸回放历史期间)不 fit:回放结束后由回放方 flush。 */
+  isSuspended: () => boolean = () => false,
 ): { request: () => void; flush: () => void; dispose: () => void } {
   let timer: ReturnType<typeof setTimeout> | null = null;
   const cancel = () => {
@@ -323,10 +326,12 @@ export function createResizeDebouncer(
   };
   const fitNow = () => {
     cancel();
+    if (isSuspended()) return;
     fitAndResize(term, fitAddon, termId, lastSize);
   };
   return {
     request() {
+      if (isSuspended()) return;
       try {
         if (term.buffer.normal.length < START_DEBOUNCING_THRESHOLD) {
           fitNow();
@@ -856,6 +861,8 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     // 写两次(流式 TUI 错乱 / prompt 重复)。回复前先暂存;回复后按主进程累计偏移过滤:偏移 <
     // endOffset 的已在快照里,丢弃(含回复之后才迟到的)。无 endOffset(读失败 / 会话已不在)→ 全写。
     let liveBeforeHistory: Array<[string, number | undefined]> | null = [];
+    /** 正按录制尺寸分段回放历史(期间不 fit,见 replayWithDimensions)。 */
+    let replayingHistory = false;
     let historyEndOffset: number | undefined;
     const writeLive = (data: string, offset: number | undefined) => {
       if (
@@ -938,12 +945,29 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
         );
         if (queueCoversHistory) {
           releaseLiveAfterHistory(undefined);
-        } else {
-          if (r.data.data) writeOutput(r.data.data);
-          releaseLiveAfterHistory(r.data.endOffset);
+          onSessionMaybeExited();
+          return;
         }
-        // 挂载前就已退出(含零输出 / 快照被淘汰)→ 之后不会再有快照变更:清 loading、关输入、补写退出说明。
-        onSessionMaybeExited();
+        const endOffset = r.data.endOffset;
+        // 录制时的 PTY 尺寸与当前不同(见 src/__tests__/terminal-replay-dimensions):按段以录制尺寸写入再恢复,
+        // 期间暂停 fit;暂存的实时输出等回放完再接上(衔接坐标不变)。
+        const segments = r.data.data ? replaySegments(r.data, { cols: term.cols, rows: term.rows }) : null;
+        if (!segments) {
+          if (r.data.data) writeOutput(r.data.data);
+          releaseLiveAfterHistory(endOffset);
+          // 挂载前就已退出(含零输出 / 快照被淘汰)→ 之后不会再有快照变更:清 loading、关输入、补写退出说明。
+          onSessionMaybeExited();
+          return;
+        }
+        clearLoadingOverlay();
+        replayingHistory = true;
+        return replayWithDimensions(term, segments, () => teardownDone).finally(() => {
+          replayingHistory = false;
+          if (teardownDone) return;
+          resizeDebouncerRef.current?.flush();
+          releaseLiveAfterHistory(endOffset);
+          onSessionMaybeExited();
+        });
       })
       .catch((err) => {
         if (teardownDone) return;
@@ -982,7 +1006,7 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     });
 
     // 容器尺寸变化 → fit + resize(长 buffer 列变化防抖,见 createResizeDebouncer)
-    const resizeDebouncer = createResizeDebouncer(term, fitAddon, termId, lastSentSizeRef);
+    const resizeDebouncer = createResizeDebouncer(term, fitAddon, termId, lastSentSizeRef, () => replayingHistory);
     resizeDebouncerRef.current = resizeDebouncer;
     const ro = new ResizeObserver(() => resizeDebouncer.request());
     ro.observe(container);

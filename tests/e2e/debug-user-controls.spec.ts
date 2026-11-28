@@ -1,7 +1,7 @@
 // 用户接管 agent 的调试会话(真实 js-debug):gutter 设断点 → agent 经 MCP debug.launch → 停下时自动打开调试视图并定位
 //(焦点留在资源管理器)→ F10 单步 → F5 继续 → 调试控制台 / debug.read_output 看到 console.log → ⇧F5 停止。
 // BDD: src/__tests__/debug-user-controls/
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -265,4 +265,58 @@ test('agent 停下不盖住用户正在打字的编辑器 / 终端;用户自己�
 
   await win.keyboard.press('Shift+F5');
   await expect(win.locator('.cm-debug-exec-line')).toHaveCount(0, { timeout: 15_000 });
+});
+
+// 调试适配器被杀(BDD: src/__tests__/debug-adapter-crash/):会话结束、在途 wait_for_stop 明确失败、list 标 terminated、
+// 窗口提示「调试适配器进程意外终止」,调试视图不再显示运行中的会话(「暂停」按钮消失)。
+test('调试适配器进程被杀 → 会话结束并提示,在途 wait_for_stop 得到明确错误', async () => {
+  test.skip(!existsSync(ADAPTER), 'js-debug adapter not fetched (node scripts/fetch-debug-adapter.mjs)');
+  test.skip(process.platform === 'win32', 'pgrep');
+  test.setTimeout(120_000);
+  const base = process.env.CONTINUO_E2E_TMPDIR ?? tmpdir();
+  const ud = mkdtempSync(path.join(base, 'dbg-ud-'));
+  const ws = mkdtempSync(path.join(base, 'dbg-ws-'));
+  dirs.push(ud, ws);
+  writeFileSync(path.join(ws, 'app.js'), LOOP_PROGRAM);
+  seedExplorerJson(ud, { root: ws });
+  const app = await launchContinuo(ud);
+  apps.push(app);
+  const win = await app.firstWindow();
+  await win.waitForLoadState('domcontentloaded');
+  await expect.poll(() => win.evaluate(() => globalThis.__continuoTest !== undefined), { timeout: 15_000 }).toBe(true);
+
+  const mcp = new McpClient(path.join(ud, 'mcp.sock'));
+  clients.push(mcp);
+  await mcp.init();
+  const launched = mcp.call<{ session_id: string }>('debug.launch', { program: path.join(ws, 'app.js') });
+  const grant = win.getByRole('button', { name: GRANT_SESSION });
+  await expect(grant).toBeVisible({ timeout: 15_000 });
+  await win.waitForTimeout(600);
+  await grant.click();
+  const { session_id } = await launched;
+
+  // 程序跑进 60s 循环(无断点):wait_for_stop 在途,调试视图显示运行中(「暂停」可用)
+  // MCP 工具错误以 JSON-RPC error 返回(非 result.isError):取原始回复里的错误文本。
+  const waiting = mcp
+    .rpc('tools/call', { name: 'debug.wait_for_stop', arguments: { session_id, timeout_ms: 60_000 } })
+    .then((msg) => JSON.stringify(msg));
+  await win.evaluate(() => globalThis.__continuoTest!.executeCommand('workbench.view.debug'));
+  await expect(win.getByRole('button', { name: PAUSE }).first()).toBeEnabled({ timeout: 15_000 });
+
+  // 只杀本实例主进程派生的 adapter 子进程
+  const mainPid = app.process().pid!;
+  const adapterPids = execFileSync('pgrep', ['-P', String(mainPid), '-f', 'dapDebugServer'], { encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean)
+    .map(Number);
+  expect(adapterPids.length).toBe(1);
+  process.kill(adapterPids[0]!, 'SIGKILL');
+
+  expect(await waiting).toMatch(/debug adapter process has terminated unexpectedly/);
+  const listed = await mcp.call<{ sessions: Array<{ session_id: string; state: string }> }>('debug.list_sessions', {});
+  expect(listed.sessions.find((s) => s.session_id === session_id)?.state).toBe('terminated');
+  await expect(
+    win.getByText(/(Debug adapter process has terminated unexpectedly|调试适配器进程意外终止|디버그 어댑터 프로세스가 예기치 않게 종료)/).first(),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(win.getByRole('button', { name: PAUSE })).toHaveCount(0, { timeout: 15_000 });
 });

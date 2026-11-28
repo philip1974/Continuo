@@ -69,7 +69,7 @@ export const DIRTY_CLOSE_MAX_NAMES = 10;
  * 脏 tab 身份 `${tabId}#${代际}`(tabId = 文件路径)→ 文件名。路径来自本机,按本机分隔符取 basename;无标题文件
  *(`untitled:Untitled-N`,见 shared/untitled)→ 按界面语言的「Untitled-N」(同 renderer tab 名)。
  */
-function dirtyIdFileName(id: string, t: MainT): string {
+export function dirtyIdFileName(id: string, t: MainT): string {
   const sep = id.lastIndexOf('#');
   const tabId = sep < 0 ? id : id.slice(0, sep);
   const n = untitledNumberOf(tabId);

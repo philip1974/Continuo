@@ -419,11 +419,11 @@ describe.skipIf(process.platform === 'win32')('socket 路径(POSIX 私有目录)
     const client = new DapClient({ adapterPath: fixture.adapterPath, connectIntervalMs: 20 });
     try {
       await client.spawnServer();
-      const first = new Promise<void>((resolve) => client.onServerExit(resolve));
+      const first = new Promise<void>((resolve) => client.onServerExit(() => resolve()));
       process.kill(client.serverPid!, 'SIGKILL'); // 本测试自己 spawn 的 adapter 子进程
       await first;
       expect(client.serverExited).toBe(true);
-      await new Promise<void>((resolve) => client.onServerExit(resolve));
+      await new Promise<void>((resolve) => client.onServerExit(() => resolve()));
     } finally {
       await client.dispose();
       await rm(fixture.dir, { recursive: true, force: true });

@@ -17,7 +17,11 @@ import { withPtyLangEnv } from './pty-lang';
 import { defaultShellArgs, skipsShellIntegration } from './shell-args';
 import { runSerialPerKey } from '../../shared/run-serial-per-key';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
-import { TERMINAL_CHANNELS, type TerminalHistorySnapshot } from '../../shared/terminal-channels';
+import {
+  TERMINAL_CHANNELS,
+  type TerminalHistorySnapshot,
+  type TerminalReplayDimensions,
+} from '../../shared/terminal-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
 import { mergeSpawnEnv } from '../lib/child-spawn-hardening';
@@ -209,14 +213,15 @@ export function getBufferSnapshot(id: string): TerminalHistorySnapshot {
     const snapshot = sm.getBufferSnapshot(id);
     const data = snapshot.truncated ? '\x1b[0m' + snapshot.data : snapshot.data;
     // startOffset:快照首字符的累计偏移(ring buffer 挤掉最旧数据后不从 0 开始;reset 前缀不计入)。
-    return inst
-      ? {
-          data,
-          truncated: snapshot.truncated,
-          endOffset: inst.receivedChars,
-          startOffset: inst.receivedChars - snapshot.data.length,
-        }
-      : { data, truncated: snapshot.truncated };
+    if (!inst) return { data, truncated: snapshot.truncated };
+    const startOffset = inst.receivedChars - snapshot.data.length;
+    return {
+      data,
+      truncated: snapshot.truncated,
+      endOffset: inst.receivedChars,
+      startOffset,
+      dimensions: dimensionsWithin(inst.dimensions, startOffset, inst.receivedChars),
+    };
   } catch (err) {
     const e = err as Error & { code?: string };
     if (e?.code === 'SESSION_NOT_FOUND') {
@@ -382,6 +387,43 @@ interface Instance {
   readonly shell: string;
   /** shell 用 OSC 7 上报过当前目录(之后以上报值为准,见 currentCwd)。 */
   cwdReported: boolean;
+  /** PTY 尺寸变化记录(按偏移升序,有上限),历史回放按段还原当时的尺寸。见 recordPtyDimensions。 */
+  readonly dimensions: TerminalReplayDimensions[];
+}
+
+/** 尺寸记录条数上限:超出丢最旧的(那段回放沿用下一条的尺寸;ring buffer 也早把它挤掉了)。 */
+export const TERMINAL_DIMENSIONS_MAX = 64;
+
+/**
+ * PTY 尺寸实际改变时记一笔(VSCode TerminalRecorder.handleResize):生效处 = 此刻累计偏移。同一偏移上的连续 resize
+ * 只留最后一次(中间那次没有输出);尺寸未变不记。
+ */
+function recordPtyDimensions(inst: Instance, cols: number, rows: number): void {
+  const list = inst.dimensions;
+  const last = list[list.length - 1];
+  if (last && last.cols === cols && last.rows === rows) return;
+  if (last && last.offset === inst.receivedChars) list.pop();
+  const prev = list[list.length - 1];
+  if (prev && prev.cols === cols && prev.rows === rows) return;
+  list.push({ offset: inst.receivedChars, cols, rows });
+  if (list.length > TERMINAL_DIMENSIONS_MAX) list.shift();
+}
+
+/** 落在 [startOffset, endOffset) 里的尺寸段:起点之前的最后一条作为开头那段(偏移夹到 startOffset)。 */
+function dimensionsWithin(
+  list: readonly TerminalReplayDimensions[],
+  startOffset: number,
+  endOffset: number,
+): TerminalReplayDimensions[] {
+  const out: TerminalReplayDimensions[] = [];
+  for (const d of list) {
+    if (d.offset >= endOffset) break;
+    if (d.offset <= startOffset) out.length = 0;
+    out.push(d.offset < startOffset ? { ...d, offset: startOffset } : d);
+  }
+  // 最旧的记录已被丢弃(开头那段没有记录)→ 沿用第一条的尺寸。
+  if (out[0] && out[0].offset > startOffset) out[0] = { ...out[0], offset: startOffset };
+  return out;
 }
 
 const instances = new Map<string, Instance>();
@@ -559,6 +601,8 @@ export async function createTerminal(
     shellCleanup,
     shell,
     cwdReported: false,
+    // 与下面 sm.create 的初始尺寸一致。
+    dimensions: [{ offset: 0, cols: 120, rows: 40 }],
   };
 
   // PHASE 1: register all Continuo-side state BEFORE PTY spawn.
@@ -708,7 +752,11 @@ export async function resize(
     getSessionManager()
       .resize({ session_id: id, cols, rows })
       .then(
-        () => true,
+        () => {
+          // 实例已换(同 id 重建)/ 已结束:不记到别的会话上。
+          if (instances.get(id) === inst) recordPtyDimensions(inst, cols, rows);
+          return true;
+        },
         (err) => {
           warnOnce(
             `resize:${id}`,

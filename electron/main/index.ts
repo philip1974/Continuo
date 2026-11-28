@@ -170,6 +170,7 @@ import { saveWindowEntryAsSnapshot } from './services/workspace-snapshot.service
 import { findWindowEntryBySeq } from '../shared/window-entry-lookup';
 import { runWindowOpen, type WindowOpenFailureUi } from './lib/run-window-open';
 import { onRendererDocumentGone } from './lib/renderer-document-gone';
+import { popoutsOpenedBy, wireWindowErrorDialogs } from './window-error-dialogs';
 
 // 窗口级资源清理器(scope 授权 / fs watcher / agent 授权)。挂在覆盖全窗口的
 // browser-window-created(见下),主窗与 dockview popout 子窗一视同仁 —— popout 不走
@@ -823,6 +824,22 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   wireFullScreenNotify(win); // macOS 标题栏:全屏时不给红绿灯留位
   // 须先于 wireWindowCloseFlush 挂:关窗流程的 close 监听会同步隐藏窗口,之后取到的状态不可信。
   win.on('close', () => captureWindowState(seq, win));
+  // 崩溃 / 无响应提示(VSCode onWindowError)。须先于 wireWindowCloseFlush 挂:崩溃时先取脏 tab 快照列进提示框,
+  // 之后 wireWindowCloseFlush 的文档作废监听才清掉脏态记账。
+  const windowId = win.id;
+  const webContentsId = win.webContents.id;
+  wireWindowErrorDialogs(win, {
+    t: getMainT,
+    showMessageBox: (options) => dialog.showMessageBox(win, options),
+    dirtySnapshot: () => dirtyStates.get(windowId),
+    destroyPopouts: () => destroyPopoutsOf(webContentsId),
+    close: () => {
+      // 未保存改动已随 renderer 丢失(提示框已说明):不再弹「是否保存」。
+      dirtyStates.delete(windowId);
+      win.close();
+    },
+    isClosing: () => quitCommitted || closeFlowReleases.has(windowId) || flushedOnQuit.has(windowId),
+  });
   wireWindowCloseFlush(win);
 
   win.on('closed', () => {
@@ -898,12 +915,26 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   return win;
 }
 
+// popout 子窗 → 打开它的 webContents id(主窗崩溃后一并销毁它的子窗,见 window-error-dialogs)。
+const popoutOpenerIds = new WeakMap<BrowserWindow, number>();
+
+/** 销毁某主窗(webContents id)打开的全部 popout 子窗(含子窗再弹出的)。 */
+function destroyPopoutsOf(rootWebContentsId: number): void {
+  const windows = BrowserWindow.getAllWindows()
+    .filter((w) => !w.isDestroyed())
+    .map((w) => ({ win: w, webContentsId: w.webContents.isDestroyed() ? null : w.webContents.id }));
+  for (const { win } of popoutsOpenedBy(rootWebContentsId, windows, (e) => popoutOpenerIds.get(e.win))) {
+    if (!win.isDestroyed()) win.destroy();
+  }
+}
+
 // 给所有新创建的 webContents(包括 dockview popout 的子窗口)装上 windowOpenHandler 与导航守卫。
 // 这样从 popout 再 popout 也走我们的同一套安全策略;导航规则 dev 与打包版一致(见 window-open-policy)。
 app.on('web-contents-created', (_evt, contents) => {
   contents.setWindowOpenHandler((details) => windowOpenHandler(details, contents.id));
   // 重启恢复的 popout 以 show:false 建出(见 windowOpenHandler)→ 不抢焦点地显示,主窗保持键盘焦点。
   contents.on('did-create-window', (child) => {
+    popoutOpenerIds.set(child, contents.id);
     if (!child.isDestroyed() && !child.isVisible()) child.showInactive();
     // popout 子窗聚焦 = 它的主窗口在活动(重启后焦点回到这个主窗口)。
     child.on('focus', () => {
