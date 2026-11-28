@@ -491,9 +491,17 @@
 
 - [`tabs.spec.tsx`](./design-system-tabs/tabs.spec.tsx)
 
+## [窗口缩放比例(devicePixelRatio)变化后重算像素相关布局](./device-pixel-ratio-change/README.md)
+
+- [`device-pixel-ratio.spec.ts`](./device-pixel-ratio-change/device-pixel-ratio.spec.ts)
+
 ## [对话框的可访问说明(aria-describedby / alertdialog)](./dialog-accessible-description/README.md)
 
 - [`dialog-description.spec.tsx`](./dialog-accessible-description/dialog-description.spec.tsx)
+
+## [原生对话框挂在发起窗口上](./dialog-parent-window/README.md)
+
+- [`dialog-parent-window.spec.ts`](./dialog-parent-window/dialog-parent-window.spec.ts)
 
 ## [dirty-close-confirm](./dirty-close-confirm/README.md)
 
@@ -2588,6 +2596,7 @@
 
 ## [窗口位置 / 尺寸 / 焦点的重启恢复](./window-state-restore/README.md)
 
+- [`multi-display-bounds.spec.ts`](./window-state-restore/multi-display-bounds.spec.ts)
 - [`popout-restore-focus.spec.ts`](./window-state-restore/popout-restore-focus.spec.ts)
 - [`popout-restore-position.spec.ts`](./window-state-restore/popout-restore-position.spec.ts)
 - [`popout-restore-settle.spec.ts`](./window-state-restore/popout-restore-settle.spec.ts)

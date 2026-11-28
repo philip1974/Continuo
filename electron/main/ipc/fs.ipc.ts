@@ -383,19 +383,36 @@ async function classifyTrashFailure(target: string, err: unknown): Promise<strin
   return ERROR_CODES.FS_TRASH_FAILED;
 }
 
-export interface SelectDirectoryDeps {
-  showOpenDialog: (opts: {
-    properties: ReadonlyArray<string>;
-  }) => Promise<{ canceled: boolean; filePaths: ReadonlyArray<string> }>;
+export interface SelectDirectoryDeps<P = unknown> {
+  /** 对话框挂在哪个窗口上(发起窗口;取不到 → undefined,独立对话框)。调用时取。 */
+  parentWindow?: () => P | undefined;
+  showOpenDialog: (
+    opts: {
+      properties: ReadonlyArray<string>;
+    },
+    parent: P | undefined,
+  ) => Promise<{ canceled: boolean; filePaths: ReadonlyArray<string> }>;
 }
 export const makeSelectDirectoryHandler =
-  (deps: SelectDirectoryDeps) => async (): Promise<string | null> => {
-    const r = await deps.showOpenDialog({
-      properties: ['openDirectory', 'createDirectory'],
-    });
+  <P>(deps: SelectDirectoryDeps<P>) => async (): Promise<string | null> => {
+    const r = await deps.showOpenDialog(
+      {
+        properties: ['openDirectory', 'createDirectory'],
+      },
+      deps.parentWindow?.(),
+    );
     if (r.canceled || r.filePaths.length === 0) return null;
     return r.filePaths[0] ?? null;
   };
+
+/**
+ * 发起窗口 owner(主窗)的对话框挂在哪个窗口上:获焦的、属于 owner 的 popout 子窗(界面在子窗里,由主窗 renderer 驱动),
+ * 否则 owner。另存为 / 选择文件夹共用。
+ */
+function dialogParentFor(owner: BrowserWindow): BrowserWindow {
+  const focused = BrowserWindow.getFocusedWindow();
+  return focused && focused !== owner && menuCommandTargetWindow(focused) === owner ? focused : owner;
+}
 
 // ────────────────────────────────────────────────────────────
 // registerFsIpc — 拼装全部 fs:* 通道,真接 Electron API
@@ -669,28 +686,31 @@ export function registerFsIpc(): void {
   safeHandle(FS_CHANNELS.MOVE, moveInputSchema, moveHandler);
   safeHandle(FS_CHANNELS.COPY, copyInputSchema, copyHandler);
 
-  safeHandle(
-    FS_CHANNELS.SELECT_DIRECTORY,
-    selectDirectoryInputSchema,
+  safeHandleWithCtx(FS_CHANNELS.SELECT_DIRECTORY, selectDirectoryInputSchema, (_input, { event }) =>
     makeSelectDirectoryHandler({
-      showOpenDialog: (opts) =>
+      // 挂在发起窗口上(同另存为;popout 子窗里发起时挂子窗)。发送方不是主窗 → 获焦窗口(VSCode dialogMainService 同)。
+      parentWindow: () => {
+        const owner = trustedSenderWindow(event);
+        return (owner ? dialogParentFor(owner) : BrowserWindow.getFocusedWindow()) ?? undefined;
+      },
+      showOpenDialog: (opts, parent) =>
         // adapter 抽象用 ReadonlyArray<string>,Electron 真 API 要窄字面量 enum,
         // 真接处补 type assertion。spec 已断言 properties 含 'openDirectory'。
         // 经 showOpenDialogRemembering:Electron 43+ 未给 defaultPath 时固定从「下载」打开,这里记住上次位置。
-        showOpenDialogRemembering({
-          properties: opts.properties as Electron.OpenDialogOptions['properties'],
-        }),
-    }),
+        showOpenDialogRemembering(
+          {
+            properties: opts.properties as Electron.OpenDialogOptions['properties'],
+          },
+          parent,
+        ),
+    })(),
   );
 
   // 另存为的保存对话框(只返回路径,写入仍走 fs:write-file;见 fs/save-dialog.ts)。
   safeHandleWithCtx(FS_CHANNELS.SHOW_SAVE_DIALOG, showSaveDialogInputSchema, (input, { event }) =>
     makeShowSaveDialogHandler({
       senderWindow: () => trustedSenderWindow(event),
-      parentFor: (owner) => {
-        const focused = BrowserWindow.getFocusedWindow();
-        return focused && focused !== owner && menuCommandTargetWindow(focused) === owner ? focused : owner;
-      },
+      parentFor: dialogParentFor,
       // 调用时取 dialog.showSaveDialog(E2E 以桩替换它)
       showSaveDialog: (parent, opts) => dialog.showSaveDialog(parent, opts),
       homeDir: () => app.getPath('home'),

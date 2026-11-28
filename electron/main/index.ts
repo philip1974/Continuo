@@ -38,7 +38,7 @@ import {
   writeExplorerFile,
 } from './persistence';
 import { EXPLORER_FILE_NAME, type PersistedWindowState } from '../shared/explorer-persistence-schema';
-import { fitRectToDisplays, newWindowBounds, popoutWindowBounds, type Rect } from './lib/window-state';
+import { fitRectToDisplays, newWindowBounds, popoutWindowBounds, reapplyWindowBounds, type Rect } from './lib/window-state';
 import { takePopoutRestoreSlot } from './services/popout-restore-focus.service';
 import {
   isStartupRestoreInFlight,
@@ -629,6 +629,11 @@ function displayWorkAreas(): Rect[] {
   return screen.getAllDisplays().map((d) => d.workArea);
 }
 
+/** reapplyWindowBounds 的环境(平台 + 当前显示器数)。 */
+function displayEnv(): { platform: string; displayCount: number } {
+  return { platform: process.platform, displayCount: screen.getAllDisplays().length };
+}
+
 /**
  * @param openerId 发起 window.open 的 webContents id:重启恢复中的 popout(layout:read 登记的名额)以不抢焦点方式显示。
  */
@@ -651,8 +656,9 @@ function windowOpenHandler({ url, features, frameName }: HandlerDetails, openerI
 
   if (allow) {
     // 位置 / 尺寸取 dockview 经 features 传来的屏幕坐标与内容尺寸(此前固定 800×600 覆盖掉,重启后子窗尺寸不恢复),
-    // 按显示器校验(同主窗);位置通不过 → 显式清掉 features 里的 x/y 并居中。同 VSCode auxiliaryWindowsMainService。
-    const bounds = popoutWindowBounds(features, displayWorkAreas());
+    // 按显示器校验(同主窗);位置通不过 → 默认尺寸在主显示器居中,显式给出 x/y(覆盖 features 里不可用的位置)。
+    // 同 VSCode auxiliaryWindowsMainService(validateWindowState ?? defaultAuxWindowState)。
+    const bounds = popoutWindowBounds(features, displayWorkAreas(), screen.getPrimaryDisplay().workArea);
     // 重启恢复出来的子窗先不显示,did-create-window 里 showInactive(主窗保持焦点);用户主动弹出的照常获焦。
     const restoring = openerId !== undefined && takePopoutRestoreSlot(openerId);
     // 恢复中的子窗按 features 位置认领上次的最大化 / 全屏(建窗后套用,见 did-create-window)。
@@ -664,7 +670,6 @@ function windowOpenHandler({ url, features, frameName }: HandlerDetails, openerI
         y: bounds.y,
         width: bounds.width,
         height: bounds.height,
-        center: bounds.x === undefined,
         // dockview 存 / 传的是 innerWidth / innerHeight(内容尺寸);按外框尺寸建窗每次重启会缩掉一个标题栏高。
         useContentSize: true,
         show: !restoring,
@@ -824,7 +829,9 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     backgroundColor: currentWindowBackgroundColor(),
     webPreferences: buildCommonWebPreferences({ preload: PRELOAD }),
   });
-  // 同 VSCode CodeWindow:建窗后立即恢复最大化 / 全屏(普通矩形已按保存值设好,还原后回到它)。
+  // 同 VSCode CodeWindow.applyState:多显示器(macOS / Windows)时先再设一次 bounds(目标屏分辨率大于主屏时构造参数
+  // 不一定按目标屏生效,VSCode #74872 / #146499),再恢复最大化 / 全屏(普通矩形已按保存值设好,还原后回到它)。
+  reapplyWindowBounds(win, placement.bounds, displayEnv());
   if (placement.isMaximized) win.maximize();
   if (placement.isFullScreen) win.setFullScreen(true);
 
@@ -942,13 +949,22 @@ function destroyPopoutsOf(rootWebContentsId: number): void {
   }
 }
 
+/** popout 建窗参数里的位置尺寸(windowOpenHandler 总给出 x / y;宽高是内容尺寸)多显示器时再设一次。 */
+function reapplyPopoutBounds(child: BrowserWindow, options: Electron.BrowserWindowConstructorOptions): void {
+  const { x, y, width, height } = options;
+  if (child.isDestroyed() || x === undefined || y === undefined || width === undefined || height === undefined) return;
+  reapplyWindowBounds(child, { x, y, width, height }, displayEnv(), options.useContentSize === true);
+}
+
 // 给所有新创建的 webContents(包括 dockview popout 的子窗口)装上 windowOpenHandler 与导航守卫。
 // 这样从 popout 再 popout 也走我们的同一套安全策略;导航规则 dev 与打包版一致(见 window-open-policy)。
 app.on('web-contents-created', (_evt, contents) => {
   contents.setWindowOpenHandler((details) => windowOpenHandler(details, contents.id));
   // 重启恢复的 popout 以 show:false 建出(见 windowOpenHandler)→ 不抢焦点地显示,主窗保持键盘焦点。
-  contents.on('did-create-window', (child, { frameName }) => {
+  contents.on('did-create-window', (child, { frameName, options }) => {
     popoutOpenerIds.set(child, contents.id);
+    // 同主窗(VSCode auxiliaryWindow.applyState):多显示器时按建窗参数再设一次 bounds;须在量窗框 / 推状态与套用最大化 / 全屏之前。
+    reapplyPopoutBounds(child, options);
     forwardPopoutMoves(child, contents);
     // 先订阅(建窗时是普通状态,量窗框、推一次普通矩形),再套用恢复的最大化 / 全屏。
     forwardPopoutWindowState(child, contents);
@@ -1026,7 +1042,8 @@ const windowOpenFailureUi: WindowOpenFailureUi = {
 };
 
 async function openFolderInNewWindow(): Promise<void> {
-  const r = await showOpenDialogRemembering({ properties: ['openDirectory'] });
+  // 挂在获焦窗口上(菜单 / 快捷键作用于它;同 VSCode dialogMainService 的 getFocusedWindow 兜底);没有窗口 → 独立对话框。
+  const r = await showOpenDialogRemembering({ properties: ['openDirectory'] }, BrowserWindow.getFocusedWindow());
   if (r.canceled || r.filePaths.length === 0) return;
   await openWorkspaceWindow(r.filePaths[0]!);
 }
@@ -1469,7 +1486,11 @@ async function startMcpStdioServer(): Promise<void> {
       homeDir: os.homedir(),
       claudeAddCommand: cliPath ? buildClaudeAddCommand(cliPath) : undefined,
       t: getMainT(),
-      show: (opts) => dialog.showMessageBox(opts),
+      // 有获焦窗口则挂其上(同 VSCode dialogMainService.showMessageBox 的 getFocusedWindow 兜底);启动早期没有 → 独立对话框
+      show: (opts) => {
+        const parent = BrowserWindow.getFocusedWindow();
+        return parent ? dialog.showMessageBox(parent, opts) : dialog.showMessageBox(opts);
+      },
       writeClipboard: (text) => clipboard.writeText(text),
     });
     if (!cliPath) {

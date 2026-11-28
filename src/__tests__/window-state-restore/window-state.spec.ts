@@ -77,7 +77,7 @@ describe('新窗口(VSCode getNewWindowState + ensureNoOverlap)', () => {
 
 describe('popout 子窗 features(dockview PopoutWindow 的 window.open 参数,屏幕坐标)', () => {
   it('解析 left/top/width/height(取整)并按显示器校验', () => {
-    expect(popoutWindowBounds('top=200.4,left=300.6,width=640,height=480', [PRIMARY])).toEqual({
+    expect(popoutWindowBounds('top=200.4,left=300.6,width=640,height=480', [PRIMARY], PRIMARY)).toEqual({
       x: 301,
       y: 200,
       width: 640,
@@ -86,7 +86,7 @@ describe('popout 子窗 features(dockview PopoutWindow 的 window.open 参数,�
   });
 
   it('不足最小尺寸 400×270 → 抬到最小尺寸', () => {
-    expect(popoutWindowBounds('top=100,left=100,width=120,height=80', [PRIMARY])).toEqual({
+    expect(popoutWindowBounds('top=100,left=100,width=120,height=80', [PRIMARY], PRIMARY)).toEqual({
       x: 100,
       y: 100,
       width: 400,
@@ -94,12 +94,43 @@ describe('popout 子窗 features(dockview PopoutWindow 的 window.open 参数,�
     });
   });
 
-  it('位置不在任何显示器上 → 只给尺寸(居中)', () => {
-    expect(popoutWindowBounds('top=100,left=9000,width=640,height=480', [PRIMARY])).toEqual({ width: 640, height: 480 });
+  it('部分越界但看得见 → 收进所在工作区(同主窗 containIn)', () => {
+    expect(popoutWindowBounds('top=-100,left=3000,width=640,height=480', [PRIMARY, RIGHT], PRIMARY)).toEqual({
+      x: 2720,
+      y: 0,
+      width: 640,
+      height: 480,
+    });
   });
 
-  it('无 features / 畸形值 → 默认 800×600 且不给位置', () => {
-    expect(popoutWindowBounds('', [PRIMARY])).toEqual({ width: 800, height: 600 });
-    expect(popoutWindowBounds('top=abc,left=,width=Infinity,height=-5', [PRIMARY])).toEqual({ width: 800, height: 600 });
+  it('位置不在任何显示器上(屏已拔掉 / Windows 负坐标)→ 默认 800×600 在主显示器工作区居中,明确给出 x / y', () => {
+    expect(popoutWindowBounds('top=100,left=9000,width=1600,height=1000', [PRIMARY], PRIMARY)).toEqual({
+      x: 320,
+      y: 163,
+      width: 800,
+      height: 600,
+    });
+    expect(popoutWindowBounds('top=-2000,left=-3000,width=640,height=480', [PRIMARY, RIGHT], PRIMARY)).toEqual({
+      x: 320,
+      y: 163,
+      width: 800,
+      height: 600,
+    });
+  });
+
+  it('主显示器比默认尺寸小 → 收进主显示器工作区', () => {
+    const small = { x: 0, y: 0, width: 700, height: 500 };
+    expect(popoutWindowBounds('top=0,left=9000,width=640,height=480', [small], small)).toEqual({
+      x: 0,
+      y: 0,
+      width: 700,
+      height: 500,
+    });
+  });
+
+  it('无 features / 畸形值 → 默认 800×600 在主显示器居中', () => {
+    const centered = { x: 320, y: 163, width: 800, height: 600 };
+    expect(popoutWindowBounds('', [PRIMARY], PRIMARY)).toEqual(centered);
+    expect(popoutWindowBounds('top=abc,left=,width=Infinity,height=-5', [PRIMARY], PRIMARY)).toEqual(centered);
   });
 });

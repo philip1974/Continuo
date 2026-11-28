@@ -83,6 +83,7 @@ import { errorCodeOf } from '../../../electron/shared/error-message';
 import { debounce, type DebouncedFn } from '@/lib/debounce';
 import { t } from '@/i18n';
 import { useScreenReaderOptimized } from '@/lib/accessibility-support';
+import { watchDevicePixelRatio } from '@/lib/device-pixel-ratio';
 import { shouldAutoCloseExitedSession } from '@/shell/dock/terminal-panel-id';
 import { detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 import { hasOpenModalIn } from '@/design/Modal';
@@ -1011,7 +1012,33 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     // 容器尺寸变化 → fit + resize(长 buffer 列变化防抖,见 createResizeDebouncer)
     const resizeDebouncer = createResizeDebouncer(term, fitAddon, termId, lastSentSizeRef, () => replayingHistory);
     resizeDebouncerRef.current = resizeDebouncer;
-    const ro = new ResizeObserver(() => resizeDebouncer.request());
+    // 窗口换到缩放比例不同的屏(DPR 变):容器 CSS 尺寸不变、RO 不触发,但 cell 的设备像素尺寸变了 → 行列要重算
+    //(VSCode PixelRatio.onDidChange)。等 xterm 自己的 DPR 监听先更新 cell 尺寸(媒体查询 change 都在渲染步骤的
+    // rAF 之前派发),下一帧再 fit。终端拖进 / 拖出 popout 时容器重新布局、RO 触发 → 顺带改听新窗口。
+    let dprFitFrame: { readonly win: Window; readonly id: number } | null = null;
+    const cancelDprFit = () => {
+      if (dprFitFrame) dprFitFrame.win.cancelAnimationFrame(dprFitFrame.id);
+      dprFitFrame = null;
+    };
+    const dprWatch = watchDevicePixelRatio(
+      () => container.ownerDocument.defaultView,
+      () => {
+        const win = container.ownerDocument.defaultView;
+        if (!win) return;
+        cancelDprFit();
+        dprFitFrame = {
+          win,
+          id: win.requestAnimationFrame(() => {
+            dprFitFrame = null;
+            resizeDebouncer.request();
+          }),
+        };
+      },
+    );
+    const ro = new ResizeObserver(() => {
+      dprWatch.sync();
+      resizeDebouncer.request();
+    });
     ro.observe(container);
 
     // 性能(Phase-5):首屏接线已完成,下一帧再装 WebGL renderer(同步 GPU init 不阻塞
@@ -1040,6 +1067,8 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
         fileLinksDisposable.dispose();
         searchResultsDisposable.dispose();
         ro.disconnect();
+        dprWatch.dispose();
+        cancelDprFit();
         resizeDebouncer.dispose();
         webgl.dispose(); // 含取消未触发的 WebGL 延后安装
         webglRef.current = null;

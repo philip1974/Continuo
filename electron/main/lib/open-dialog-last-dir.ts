@@ -11,14 +11,17 @@ interface OpenDialogResultLike {
   filePaths: string[];
 }
 
+/** 其余参数(如对话框的父窗口)原样传给 show。 */
 export function createRememberingOpenDialog<
   O extends OpenDialogOptionsLike,
   R extends OpenDialogResultLike,
->(show: (opts: O) => Promise<R>): (opts: O) => Promise<R> {
+  A extends unknown[] = [],
+>(show: (opts: O, ...rest: A) => Promise<R>): (opts: O, ...rest: A) => Promise<R> {
   let lastDir: string | undefined;
-  return async (opts) => {
+  return async (opts, ...rest) => {
     const r = await show(
       lastDir === undefined || opts.defaultPath !== undefined ? opts : { ...opts, defaultPath: lastDir },
+      ...rest,
     );
     const first = r.filePaths[0];
     if (!r.canceled && first !== undefined) lastDir = path.dirname(first);

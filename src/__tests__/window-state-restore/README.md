@@ -24,7 +24,9 @@
   但恢复时 `addPopoutGroup` 又加了一次主窗原点(`window.screenX + box.left`)→ 每次重启往右下漂主窗原点的距离。
   renderer 在 `fromJSON` 前把 popout 位置换算成相对主窗原点(`popoutPositionsRelativeToWindow`),dockview 加回原点后即原值。
 - 主进程不再用固定 800×600 覆盖 `window.open` features:解析 `left/top/width/height`(屏幕坐标;width/height 是内容尺寸 →
-  `useContentSize`),尺寸不小于子窗最小尺寸 400×270,位置按与主窗同一显示器校验;校验不过 → 不给位置(居中)。
+  `useContentSize`),尺寸不小于子窗最小尺寸 400×270,位置按与主窗同一显示器校验(看得见的收进所在工作区,同主窗);校验不过
+  (屏已拔掉 / Windows 上的负坐标)或缺失 → 默认 800×600(不超过工作区)在**主显示器**工作区居中,**明确给出 x / y**(VSCode
+  `validateWindowState(...) ?? defaultAuxWindowState()`;只给尺寸时 features 里不可用的位置仍可能被采用,窗口拖不回来)。
 - 恢复出来的 popout 以不抢焦点的方式显示(`showInactive`),主窗保持键盘焦点(VSCode 恢复辅助窗口后焦点仍在主窗)。
   主进程在 `layout:read` 返回布局时登记该窗口将恢复的 popout 数(限时),随后由该窗口打开的那么多个子窗走不抢焦点显示;
   用户主动弹出的子窗照常获焦。
@@ -56,3 +58,12 @@
 - 「活动面板」是**主窗正显示的**活动面板(`mainWindowActivePanel`):恢复期间 dockview 挂上 popout 子窗时把子窗的组设为
   活动组,不因此放弃(此前主窗焦点留在 body);popout 恢复落定时活动组改回主窗的组(`workbench-editor-commands` 第 8 条)。
   VSCode 没有编辑器时焦点落在空编辑组;Continuo 的空编辑组没有可键入目标,不做额外聚焦。
+
+## 4. 多显示器建窗后再设一次 bounds(`multi-display-bounds.spec.ts`)
+
+- VSCode `CodeWindow.applyState`(issue #74872 / #146499)/ 辅助窗口 `auxiliaryWindow.applyState`:macOS / Windows 上多于一块
+  显示器时,目标屏分辨率比主屏大,构造参数给的 bounds 不一定按目标屏生效 → 建窗后再 `setBounds` 一次。单屏 / Linux 不做。
+- 主窗:`new BrowserWindow` 后先再设 bounds,再恢复最大化 / 全屏(还原后回到这个普通矩形)。新窗口(默认尺寸居中)同样再设
+  (bounds 总是明确的,同 VSCode 只要求四个值都是数)。
+- popout:`did-create-window` 里按建窗参数(`options` 的 x / y / 内容宽高)再设,宽高按当前窗框换算成外框(`useContentSize`);
+  先于量窗框 / 推状态与套用恢复的最大化 / 全屏。

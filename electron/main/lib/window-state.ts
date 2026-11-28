@@ -103,13 +103,29 @@ function featureNumber(features: Map<string, string>, key: string): number | und
 }
 
 /**
- * popout 子窗的位置 / 尺寸:dockview 经 window.open features 传 `left/top`(屏幕坐标)与 `width/height`(内容尺寸)。
- * 尺寸不小于最小尺寸;位置按显示器校验,通不过(或缺失)→ 只给尺寸,由 Electron 居中。
+ * popout 位置不可用时的状态(VSCode defaultAuxWindowState):默认尺寸(不超过工作区)在**主显示器**工作区居中,显式给出 x / y ——
+ * 只给尺寸时 window.open 的 features 位置(可能是已拔掉的屏、Windows 上的负坐标)仍可能被采用,窗口拖不回来。
  */
-export function popoutWindowBounds(
-  featuresString: string,
-  workAreas: readonly Rect[],
-): { x?: number; y?: number; width: number; height: number } {
+export function defaultPopoutBounds(primaryWorkArea: Rect): Rect {
+  const width = Math.min(DEFAULT_POPOUT_SIZE.width, primaryWorkArea.width);
+  const height = Math.min(DEFAULT_POPOUT_SIZE.height, primaryWorkArea.height);
+  return containIn(
+    {
+      x: Math.round(primaryWorkArea.x + (primaryWorkArea.width - width) / 2),
+      y: Math.round(primaryWorkArea.y + (primaryWorkArea.height - height) / 2),
+      width,
+      height,
+    },
+    primaryWorkArea,
+  );
+}
+
+/**
+ * popout 子窗的位置 / 尺寸:dockview 经 window.open features 传 `left/top`(屏幕坐标)与 `width/height`(内容尺寸)。
+ * 尺寸不小于最小尺寸;位置按显示器校验(收进所在工作区),通不过(或缺失)→ 默认尺寸在主显示器居中(同 VSCode
+ * auxiliaryWindowsMainService:`validateWindowState(...) ?? defaultAuxWindowState()`)。总是给出明确的 x / y。
+ */
+export function popoutWindowBounds(featuresString: string, workAreas: readonly Rect[], primaryWorkArea: Rect): Rect {
   const features = new Map<string, string>();
   for (const part of featuresString.split(',')) {
     const eq = part.indexOf('=');
@@ -122,6 +138,43 @@ export function popoutWindowBounds(
   const height = Math.max(MIN_WINDOW_SIZE.height, h !== undefined && h > 0 ? h : DEFAULT_POPOUT_SIZE.height);
   const x = featureNumber(features, 'left');
   const y = featureNumber(features, 'top');
-  if (x === undefined || y === undefined) return { width, height };
-  return fitRectToDisplays({ x, y, width, height }, workAreas) ?? { width, height };
+  const fitted = x === undefined || y === undefined ? null : fitRectToDisplays({ x, y, width, height }, workAreas);
+  return fitted ?? defaultPopoutBounds(primaryWorkArea);
+}
+
+// ─── 多显示器:建窗后再设一次 bounds(VSCode CodeWindow.applyState) ───
+
+interface WindowBoundsTarget {
+  setBounds(bounds: Rect): void;
+  getBounds(): Rect;
+  getContentBounds(): Rect;
+}
+
+/**
+ * VSCode `applyState`(issue #74872 / #146499):macOS / Windows 多显示器时,目标屏分辨率比主屏大,BrowserWindow 构造参数给的
+ * bounds 不一定按目标屏生效(尺寸 / 位置偏),建窗后再 `setBounds` 一次。单屏 / Linux 不做(VSCode 同)。
+ */
+export function shouldReapplyBounds(platform: string, displayCount: number): boolean {
+  return (platform === 'darwin' || platform === 'win32') && displayCount > 1;
+}
+
+/**
+ * 按 shouldReapplyBounds 再设一次 bounds。`useContentSize`:bounds 的宽高是内容尺寸(popout 按 dockview 的 innerWidth /
+ * innerHeight 建窗),按当前窗框(外框 − 内容)换算成外框再设;x / y 始终是窗口左上角。
+ */
+export function reapplyWindowBounds(
+  win: WindowBoundsTarget,
+  bounds: Rect,
+  env: { readonly platform: string; readonly displayCount: number },
+  useContentSize = false,
+): void {
+  if (!shouldReapplyBounds(env.platform, env.displayCount) || !isValidRect(bounds)) return;
+  let { width, height } = bounds;
+  if (useContentSize) {
+    const outer = win.getBounds();
+    const content = win.getContentBounds();
+    width += Math.max(0, outer.width - content.width);
+    height += Math.max(0, outer.height - content.height);
+  }
+  win.setBounds({ x: bounds.x, y: bounds.y, width, height });
 }
