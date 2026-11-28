@@ -56,6 +56,12 @@ Code and data ported or copied from <https://github.com/microsoft/vscode> (© Mi
 - `src/styles/theme.css` — high-contrast light syntax colors from `extensions/theme-defaults/themes/hc_light.json` (some darkened for contrast).
 - `src/panels/Editor/copy-html.ts` — copy-with-syntax-highlighting HTML: `tokenizeLineToHTML` ported from `src/vs/editor/common/languages/textToHtmlTokenizer.ts`, outer wrapper from `getRichTextToCopy` (`src/vs/editor/common/viewModel/viewModelImpl.ts`).
 
+## CodeMirror (codemirror/search) · MIT License
+
+Code copied from <https://github.com/codemirror/search> (`@codemirror/search`, © Marijn Haverbeke and others) where the package does not export it. Full license text: [MIT License text (CodeMirror)](#mit-license-text-codemirror).
+
+- `src/panels/Editor/codemirror-find.ts` — `announceMatch` and the replacement-string handling (`unquote` + regexp `getReplacement`) copied from `src/search.ts`.
+
 ## vscode-js-debug · MIT License
 
 - Downloaded at build time by `scripts/fetch-debug-adapter.mjs` (pinned version, SHA-256 verified) and bundled into packaged apps as `js-debug/`, which ships with its own `LICENSE`.
@@ -111,4 +117,30 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+## MIT License text (CodeMirror)
+
+```
+MIT License
+
+Copyright (C) 2018-2021 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 ```

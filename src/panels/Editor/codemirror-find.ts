@@ -8,6 +8,9 @@
 // 复选框按共享顺序(Aa / ab / .*)移进查找框后的选项组,外观改为与终端 / 在文件中查找同款的 toggle(arrangeOptionToggles)。
 // CodeEditor(代码文件 + Markdown 源码)与 Markdown 代码块(经 markdownCodeBlockTheme)共用。
 // BDD: src/__tests__/editor-find-widget/
+//
+// Ported from codemirror/search (MIT, © Marijn Haverbeke and others; see LICENSE-3RD-PARTY.md):announceMatch 与
+// replacementFor(unquote + getReplacement)两段照抄自 @codemirror/search src/search.ts(其未导出)。
 
 import { EditorSelection, Prec, type ChangeDesc, type EditorState, type Extension } from '@codemirror/state';
 import { EditorView, ViewPlugin, keymap, type Command, type ViewUpdate } from '@codemirror/view';
@@ -106,7 +109,7 @@ function lowerBound(ranges: readonly number[], pos: number): number {
 const ANNOUNCE_MARGIN = 30;
 const ANNOUNCE_BREAK = /[\s.,:;?!]/;
 
-/** 读屏播报当前匹配(照抄 @codemirror/search 的 announceMatch,其未导出):「当前匹配. <上下文> 在第 N 行.」 */
+/** 读屏播报当前匹配(照抄 @codemirror/search src/search.ts 的 announceMatch,MIT,其未导出):「当前匹配. <上下文> 在第 N 行.」 */
 function announceMatch(state: EditorState, { from, to }: { from: number; to: number }) {
   const line = state.doc.lineAt(from);
   const lineEnd = state.doc.lineAt(to).to;
@@ -197,7 +200,7 @@ function prevMatchBefore(state: EditorState, q: SearchQuery, ranges: readonly nu
   return { from: ranges[i * 2]!, to: ranges[i * 2 + 1]! };
 }
 
-/** 替换文本(照抄 @codemirror/search 的 unquote + 正则 getReplacement,其未导出):\n \r \t \\ 转义;正则 $& / $$ / $n 捕获组。 */
+/** 替换文本(照抄 @codemirror/search src/search.ts 的 unquote + 正则 getReplacement,MIT,其未导出):\n \r \t \\ 转义;正则 $& / $$ / $n 捕获组。 */
 function replacementFor(state: EditorState, q: SearchQuery, m: Match): string {
   const text = q.literal
     ? q.replace
