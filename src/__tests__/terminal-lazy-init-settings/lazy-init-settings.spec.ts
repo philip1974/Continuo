@@ -66,7 +66,7 @@ vi.mock('@/lib/co-api', () => ({
 }));
 vi.mock('@/plugins/settings/values-store', () => ({
   useSettingValue: <T,>(key: string, fallback: T) =>
-    key === 'terminal.fontSize' ? (h.fontSize as unknown as T) : fallback,
+    key === 'terminal.integrated.fontSize' ? (h.fontSize as unknown as T) : fallback,
 }));
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: h.resolved }) }));
 

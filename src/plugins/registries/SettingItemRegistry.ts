@@ -42,11 +42,19 @@ export interface SettingItemSpec {
   readonly titleKey?: string;
   readonly description?: string;
   readonly descriptionKey?: string;
+  /**
+   * 搜索关键词的 i18n key(VSCode 设置 schema 的 keywords):同义说法,只参与设置搜索、不显示。如中文标题「字号」
+   * 的关键词「字体大小」。
+   */
+  readonly keywordsKey?: string;
   readonly type: SettingItemType;
   readonly default: SettingItemValue;
   /** type='select' 时必填. */
   readonly enum?: readonly SettingItemEnumOption[];
-  /** type='number' 时可选(min/max/step 同 HTML number input). */
+  /**
+   * type='number' 时可选(min/max/step 同 HTML number input)。不给 step = 不限小数(HTML step="any",VSCode 非整数设置同款:
+   * ↑ / ↓ 一次 ±1,可键入任意小数)。
+   */
   readonly min?: number;
   readonly max?: number;
   readonly step?: number;
@@ -88,7 +96,7 @@ export function hasSettingEnumValue(
 
 // 边界(E139,E6/E122 同族读路径净化):按 spec 把已持久化/篡改的值规整到合法域 —— number clamp
 // 到 min/max(E6),select 校验属于 spec.enum(否则回退 default,防非法字符串喂给消费者,如
-// terminal.cursorStyle → xterm)。读端 useSettingValue 与设置行显示共用单一来源,
+// terminal.integrated.cursorStyle → xterm)。读端 useSettingValue 与设置行显示共用单一来源,
 // 避免净化逻辑漂移(E122 教训)。无 enum 的 select 无可校验集合 → 原样返回。
 export function coerceSettingValue(
   spec: SettingItemSpec,
@@ -151,6 +159,7 @@ function validateSettingItemSpec(spec: SettingItemSpec): void {
   assertOptionalSpecString(TAG, 'titleKey', spec.titleKey, SPEC_ID_MAX);
   assertOptionalSpecString(TAG, 'description', spec.description, SI_DESC_MAX);
   assertOptionalSpecString(TAG, 'descriptionKey', spec.descriptionKey, SPEC_ID_MAX);
+  assertOptionalSpecString(TAG, 'keywordsKey', spec.keywordsKey, SPEC_ID_MAX);
   assertOptionalSpecString(TAG, 'unit', spec.unit, SI_UNIT_MAX);
   if (!SETTING_ITEM_TYPES.includes(spec.type)) {
     throw new Error(`[setting-item-registry] invalid type: "${spec.type}"`);

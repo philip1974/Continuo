@@ -25,7 +25,8 @@ import {
   resolveEffectiveHotkeys,
   useKeybindingsStore,
 } from '@/plugins/keybindings/keybindings-store';
-import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureModal';
+import { KeybindingCaptureModal, eventToCombo } from '@/plugins/keybindings/KeybindingCaptureModal';
+import { ownValue } from '@shared/own-value';
 import { useT, useTWithFallback, useLocale, englishWithFallback } from '@/i18n';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
@@ -65,6 +66,28 @@ const EDIT_HOTKEY_ICON = (
   </svg>
 );
 const RESET_HOTKEY_ICON = <ResetIcon size={11} />;
+// 「录制按键」切换按钮的键盘图标(VSCode keybindingsRecordKeysIcon = codicon record-keys)。
+const RECORD_KEYS_ICON = (
+  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.2">
+    <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
+    <path d="M4 6.5h1M7.5 6.5h1M11 6.5h1M4.5 9.5h7" strokeLinecap="round" />
+  </svg>
+);
+/**
+ * 搜索框聚焦时开始录制按键搜索(VSCode keybindings.editor.recordSearchKeys:mac ⌥⌘K、其它 Alt+K)。录制中按下的组合写成
+ * 引号精确查询(VSCode quoteRecordedKeys),Esc 退出录制。
+ */
+export const RECORD_SEARCH_KEYS_HOTKEY = PLATFORM === 'mac' ? 'mod+alt+k' : 'alt+k';
+const RECORD_SEARCH_KEYS_CANONICAL = canonicalHotkey(RECORD_SEARCH_KEYS_HOTKEY, PLATFORM);
+
+/**
+ * 录制模式下一次按键 → 新的搜索串(VSCode KeybindingsSearchWidget printKeybinding + quoteRecordedKeys:`"cmd+shift+p"`);
+ * 单独的修饰键 / 无法表示的组合 → null(搜索串不变)。
+ */
+export function recordedKeysQuery(e: KeyboardEvent, platform: Platform = PLATFORM): string | null {
+  const combo = eventToCombo(e, platform);
+  return combo === null ? null : `"${hotkeyFilterQuery(combo, platform)}"`;
+}
 
 export interface DisplayCommand {
   readonly cmd: CommandSpec;
@@ -139,13 +162,24 @@ function copyCommands(commands: readonly DisplayCommand[]): DisplayCommand[] {
   return copy;
 }
 
-/** 搜索框里可写的修饰键名 → 快捷键串词汇(mac 键帽符号与常见别名都认)。 */
+/** 搜索框里可写的修饰键名 → 快捷键串词汇(mac 键帽符号、非 mac 键帽名 Win 与常见别名都认)。 */
 const QUERY_MODIFIERS: Readonly<Record<string, string>> = {
-  cmd: 'cmd', meta: 'cmd', command: 'cmd', '⌘': 'cmd',
+  cmd: 'cmd', meta: 'cmd', command: 'cmd', win: 'cmd', '⌘': 'cmd',
   mod: 'mod',
   ctrl: 'ctrl', control: 'ctrl', '⌃': 'ctrl',
   shift: 'shift', '⇧': 'shift',
   alt: 'alt', opt: 'alt', option: 'alt', '⌥': 'alt',
+};
+
+/** mac 键帽的修饰键符号:可紧贴书写(⌘⇧P / ⌃Tab,与列表键帽一样不写 +),解析时逐个拆成修饰键段。 */
+const MODIFIER_SYMBOL_RE = /[⌘⌃⇧⌥]/g;
+const MODIFIER_SYMBOL_TEST_RE = /[⌘⌃⇧⌥]/;
+const HOTKEY_QUERY_SPLIT_RE = /\s*\+\s*/;
+
+/** 列表键帽显示的主键符号 → 快捷键主键名(⌃⇥ 与 ctrl+tab 搜同一个键;VSCode 按键名 Tab 搜,这里键帽画的是 ⇥)。 */
+const QUERY_KEY_SYMBOLS: Readonly<Record<string, string>> = {
+  '⇥': 'tab', '↵': 'enter', '⎋': 'escape', '␣': 'space', '⌫': 'backspace', '⌦': 'delete',
+  '↑': 'arrowup', '↓': 'arrowdown', '←': 'arrowleft', '→': 'arrowright', '⇞': 'pageup', '⇟': 'pagedown',
 };
 
 /** 按快捷键搜索的查询:修饰键 + 主键;exact = 引号包住(修饰键集合须相同)。 */
@@ -155,20 +189,27 @@ interface HotkeyQuery {
 }
 
 /**
- * 查询是否「修饰键名 + … + 主键」形态(对齐 VSCode 键盘快捷方式编辑器按 `+` 拆词):前几段全是修饰键名、末段是非空的非修饰键。
- * 是 → 返回运行时语义;否则 null(按文本搜索)。`"cmd+s"`(引号)= 精确搜索。
+ * 查询是否「修饰键 … 主键」形态(对齐 VSCode 键盘快捷方式编辑器按 `+` 拆词、修饰键词与键位逐个比对):`+` 分隔的修饰键名
+ *(cmd+shift+p)或紧贴的 mac 修饰键符号(⌘⇧P / ⇧⌘P / ⌃Tab)都认,修饰键按无序集合比较;末段是非空的非修饰键,
+ * 主键可写键帽符号(⇥ / ↵ …)。是 → 返回运行时语义;否则 null(按文本搜索)。`"cmd+s"`(引号)= 精确搜索。
  */
 export function parseHotkeyQuery(qLower: string, platform: Platform): HotkeyQuery | null {
   let text = qLower;
   const exact = text.length > 2 && text.startsWith('"') && text.endsWith('"');
   if (exact) text = text.slice(1, -1);
-  const segments = text.split('+');
+  if (!text.includes('+') && !MODIFIER_SYMBOL_TEST_RE.test(text)) return null;
+  const segments = text
+    .replace(MODIFIER_SYMBOL_RE, '$&+')
+    .trim()
+    .split(HOTKEY_QUERY_SPLIT_RE)
+    .filter((seg) => seg !== '');
   if (segments.length < 2) return null;
-  const key = segments[segments.length - 1]!.trim();
-  if (key === '' || Object.hasOwn(QUERY_MODIFIERS, key)) return null;
+  const typedKey = segments[segments.length - 1]!;
+  if (Object.hasOwn(QUERY_MODIFIERS, typedKey)) return null;
+  const key = ownValue(QUERY_KEY_SYMBOLS, typedKey) ?? typedKey;
   let combo = '';
   for (let i = 0; i < segments.length - 1; i++) {
-    const seg = segments[i]!.trim();
+    const seg = segments[i]!;
     if (!Object.hasOwn(QUERY_MODIFIERS, seg)) return null;
     combo += `${QUERY_MODIFIERS[seg]}+`;
   }
@@ -203,7 +244,7 @@ export function selectVisibleKeybindingCommands(
   const q = normalizeSearchQuery(query);
   const hasQuery = q.length > 0;
   const qLower = hasQuery ? lowerIfNeeded(q) : '';
-  const hq = hasQuery && qLower.includes('+') ? parseHotkeyQuery(qLower, platform) : null;
+  const hq = hasQuery ? parseHotkeyQuery(qLower, platform) : null;
   let selected: DisplayCommand[] | null = null;
   let count = 0;
 
@@ -336,6 +377,8 @@ export function hasCommandId(commands: readonly CommandSpec[], id: string): bool
 export function KeybindingsTabContent() {
   const allCommands = useRegistry(coApp.commands);
   const [query, setQuery] = useState('');
+  // 录制按键搜索(VSCode 键盘快捷方式编辑器「录制按键」开关):开着时搜索框里的按键不输入文字,而是把按下的组合写成精确查询。
+  const [recording, setRecording] = useState(false);
   const [editing, setEditing] = useState<CommandSpec | null>(null);
   const setHotkey = useKeybindingsStore((s) => s.setHotkey);
   const reset = useKeybindingsStore((s) => s.reset);
@@ -367,7 +410,8 @@ export function KeybindingsTabContent() {
     () => selectShadowedBindings(allCommands, PLATFORM, overrides),
     [allCommands, overrides],
   );
-  const searchPlaceholderLabel = t('keybindings.search_placeholder');
+  const searchPlaceholderLabel = t(recording ? 'keybindings.search_placeholder_recording' : 'keybindings.search_placeholder');
+  const recordKeysLabel = t('keybindings.record_keys');
   const unboundLabel = t('keybindings.unbound');
   const editHotkeyLabel = t('keybindings.edit_hotkey');
   const reservedFixedLabel = t('keybindings.reserved_fixed');
@@ -445,22 +489,69 @@ export function KeybindingsTabContent() {
   return (
     <div ref={rootRef} className="space-y-6">
       <div className="space-y-2">
-        <Input
-          ref={searchRef}
-          size="sm"
-          // a11y(A5 同族):placeholder 无参数 → 复用作 aria-label。
-          aria-label={searchPlaceholderLabel}
-          placeholder={searchPlaceholderLabel}
-          value={query}
-          onChange={(e) => setQuery(clampSearchQuery(e.target.value))}
-          // VSCode 键盘快捷方式编辑器同款:有内容时 Esc 清空并不再冒泡;空时不拦截,交给外层照常处理。
-          onKeyDown={(e) => {
-            if (e.key !== 'Escape' || e.nativeEvent.isComposing || query === '') return;
-            e.preventDefault();
-            e.stopPropagation();
-            setQuery('');
-          }}
-        />
+        <div className="flex items-center gap-2">
+          <Input
+            ref={searchRef}
+            size="sm"
+            // a11y(A5 同族):placeholder 无参数 → 复用作 aria-label。
+            aria-label={searchPlaceholderLabel}
+            placeholder={searchPlaceholderLabel}
+            value={query}
+            // 录制中不接受键入 / 粘贴的文字(VSCode 录制时 input 事件把值改回录到的组合)。
+            onChange={(e) => {
+              if (!recording) setQuery(clampSearchQuery(e.target.value));
+            }}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (recording) {
+                // VSCode KeybindingsSearchWidget 录制:Esc 退出录制(保留查询);其余按键都不进输入框、不触发命令,
+                // 按下的组合写成精确查询。刻意差异:无修饰的 Tab / ⇧Tab 放行做焦点移动(VSCode 也录它们,键盘用户只能 Esc 出来)。
+                if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.key === 'Escape') {
+                  setRecording(false);
+                  return;
+                }
+                const recorded = recordedKeysQuery(e.nativeEvent);
+                if (recorded !== null) setQuery(recorded);
+                return;
+              }
+              const combo = eventToCombo(e.nativeEvent);
+              if (combo !== null && canonicalHotkey(combo, PLATFORM) === RECORD_SEARCH_KEYS_CANONICAL) {
+                e.preventDefault();
+                e.stopPropagation();
+                setRecording(true);
+                return;
+              }
+              // VSCode 键盘快捷方式编辑器同款:有内容时 Esc 清空并不再冒泡;空时不拦截,交给外层照常处理。
+              if (e.key !== 'Escape' || query === '') return;
+              e.preventDefault();
+              e.stopPropagation();
+              setQuery('');
+            }}
+            className="min-w-0 flex-1"
+          />
+          {recording && (
+            // VSCode recording-badge「正在录制按键」。
+            <Badge variant="accent-soft" className="shrink-0">
+              {t('keybindings.recording')}
+            </Badge>
+          )}
+          {/* VSCode 搜索框右侧的「录制按键」切换(ToggleActionViewItem):按下态 aria-pressed;切换后焦点回搜索框。 */}
+          <IconButton
+            aria-label={recordKeysLabel}
+            title={`${recordKeysLabel} (${formatHotkey(RECORD_SEARCH_KEYS_HOTKEY, PLATFORM)})`}
+            aria-pressed={recording}
+            onClick={() => {
+              setRecording((r) => !r);
+              searchRef.current?.focus();
+            }}
+            className="shrink-0"
+          >
+            {RECORD_KEYS_ICON}
+          </IconButton>
+        </div>
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
           <span>
             {t('keybindings.summary', { total: displayCommands.length, bound: boundCount })}

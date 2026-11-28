@@ -18,6 +18,7 @@ import type { SettingTabRegistry, SettingTabSpec } from '../registries/SettingTa
 import { PluginRenderBoundary } from '../PluginRenderBoundary';
 import { SettingItemRow } from './SettingItemRow';
 import { useSettingsStore } from './store';
+import { useSettingsValuesStore } from './values-store';
 import { useT, useLocale, tWithFallback } from '@/i18n';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
@@ -75,8 +76,10 @@ const EMPTY_MATCHED_SETTING_ITEMS: readonly SettingItemSpec[] = [];
 export function buildSettingSearchHaystack(item: SettingItemSpec): string {
   const displayTitle = tWithFallback(item.titleKey, item.title);
   const displayDescription = tWithFallback(item.descriptionKey, item.description ?? '');
+  // 搜索关键词(VSCode 设置 schema 的 keywords,随描述一起参与匹配):同义说法,如中文「字体大小」之于标题「字号」。
+  const keywords = item.keywordsKey ? ` ${tWithFallback(item.keywordsKey, '')}` : '';
   return lowerIfNeeded(
-    `${displayTitle} ${displayDescription} ${item.id} ${item.title} ${item.description ?? ''}`,
+    `${displayTitle} ${displayDescription}${keywords} ${item.id} ${item.title} ${item.description ?? ''}`,
   );
 }
 
@@ -125,21 +128,50 @@ export function groupSearchResults(
 }
 
 const NO_ID_FILTERS: readonly string[] = [];
+const NO_WORDS: readonly string[] = [];
 // VSCode settingsTreeModels idRegex:`@id:` 后接逗号分隔的 id 列表(可加引号)。
 const ID_FILTER_RE = /(^|\s)@id:("([^"]*)"|[^"]\S*)?/g;
+// VSCode parseQuery 的 `@modified` 标签(MODIFIED_SETTING_TAG):只列已修改(有 override)的设置项。
+const MODIFIED_FILTER_RE = /(^|\s)@modified(?=\s|$)/g;
+const WHITESPACE_RE = /\s+/;
+
+export interface ParsedSettingsQuery {
+  readonly ids: readonly string[];
+  /** `@modified`:只列已修改的设置项。 */
+  readonly modified: boolean;
+  /** 去掉过滤标签后的文字。 */
+  readonly text: string;
+  /** text 按空白拆出的词(VSCode SettingMatches 按空格拆词,每个词都须命中)。 */
+  readonly words: readonly string[];
+}
 
 /**
- * 拆出 `@id:a,b` 过滤(VSCode 设置编辑器 parseQuery 的 idFilters),其余文字照常子串匹配。无 `@id:` 时原样返回。
+ * 拆出 `@id:a,b`(VSCode 设置编辑器 parseQuery 的 idFilters)与 `@modified`(tags),其余文字按空白拆词。
  */
-export function parseSettingsQuery(trimmed: string): { readonly ids: readonly string[]; readonly text: string } {
-  if (!trimmed.includes('@id:')) return { ids: NO_ID_FILTERS, text: trimmed };
+export function parseSettingsQuery(trimmed: string): ParsedSettingsQuery {
   const ids: string[] = [];
-  const text = trimmed.replace(ID_FILTER_RE, (_m, _lead, whole: string | undefined, quoted: string | undefined) => {
-    const list = quoted ?? whole;
-    if (list) for (const id of list.split(',')) if (id.trim() !== '') ids.push(id.trim());
-    return '';
-  });
-  return { ids, text: text.trim() };
+  let text = trimmed;
+  if (text.includes('@id:')) {
+    text = text.replace(ID_FILTER_RE, (_m, _lead, whole: string | undefined, quoted: string | undefined) => {
+      const list = quoted ?? whole;
+      if (list) for (const id of list.split(',')) if (id.trim() !== '') ids.push(id.trim());
+      return ' ';
+    });
+  }
+  let modified = false;
+  if (text.includes('@modified')) {
+    text = text.replace(MODIFIED_FILTER_RE, () => {
+      modified = true;
+      return ' ';
+    });
+  }
+  text = text.trim();
+  return {
+    ids: ids.length > 0 ? ids : NO_ID_FILTERS,
+    modified,
+    text,
+    words: text === '' ? NO_WORDS : text.split(WHITESPACE_RE),
+  };
 }
 
 /** VSCode SettingsTreeSettingElement.matchesAnyId:完全相同,或过滤项以 `*` 结尾时按前缀。 */
@@ -150,18 +182,31 @@ function matchesAnyId(id: string, filters: readonly string[]): boolean {
   return false;
 }
 
+/** haystack 是否含每一个词(AND;词序无关:`font editor` 与 `editor font` 同样命中「编辑器字号」)。 */
+function includesAllWords(haystack: string, words: readonly string[]): boolean {
+  for (const w of words) if (!haystack.includes(w)) return false;
+  return true;
+}
+
+const NEVER_MODIFIED = (): boolean => false;
+
+/**
+ * @param isModified `@modified` 过滤用:该 id 是否已修改(有 override)。
+ */
 export function selectMatchedSettingItems(
   searchable: readonly SearchableSettingItem[],
   trimmed: string,
+  isModified: (id: string) => boolean = NEVER_MODIFIED,
 ): readonly SettingItemSpec[] {
   if (searchable.length === 0) return EMPTY_MATCHED_SETTING_ITEMS;
-  const { ids, text } = parseSettingsQuery(trimmed);
-  const ql = lowerIfNeeded(text);
+  const { ids, modified, words } = parseSettingsQuery(trimmed);
+  const lowerWords = words.map((w) => lowerIfNeeded(w));
   let matched: SettingItemSpec[] | null = null;
   let count = 0;
   for (const s of searchable) {
     if (ids.length > 0 && !matchesAnyId(s.item.id, ids)) continue;
-    if (!s.haystack.includes(ql)) continue;
+    if (modified && !isModified(s.item.id)) continue;
+    if (!includesAllWords(s.haystack, lowerWords)) continue;
     if (matched === null) matched = new Array<SettingItemSpec>(searchable.length);
     matched[count++] = s.item;
   }
@@ -362,8 +407,11 @@ function SettingsSearchResults({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [allItems, locale],
   );
+  // `@modified` 按查询变化那一刻的已修改集合过滤(VSCode 同:改值 / 重置后只刷新该行,不重新过滤 —— 刚重置的行不会在
+  // 手下消失、焦点不丢);改查询或注册表变化时重新取。
   const matched = useMemo(() => {
-    return selectMatchedSettingItems(searchable, trimmed);
+    const values = useSettingsValuesStore.getState().values;
+    return selectMatchedSettingItems(searchable, trimmed, (id) => Object.hasOwn(values, id));
   }, [trimmed, searchable]);
   const nameOf = usePluginNameOf();
   const matchedBuckets = useMemo(() => groupSearchResults(matched, nameOf), [matched, nameOf]);

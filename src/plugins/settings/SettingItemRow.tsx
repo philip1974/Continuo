@@ -168,6 +168,8 @@ export function SettingItemRow({
   // 控件 aria-labelledby 指向它,否则 AT 聚焦只读「spinbutton/edit text/radiogroup」不知编辑哪项。
   const titleId = `setting-title-${spec.id}`;
   const numberErrorId = `setting-error-${spec.id}`;
+  const modifiedId = `setting-modified-${spec.id}`;
+  const modifiedDescribedBy = isOverridden ? modifiedId : undefined;
   // number 草稿 / 越界提示(其它类型不用,hook 须无条件调用)
   const numberDraft = useNumberSettingDraft(spec, value, (n) => setValue(spec.id, n));
   const selectOptions = useMemo<
@@ -214,14 +216,32 @@ export function SettingItemRow({
       <div
         tabIndex={-1}
         data-setting-row={spec.id}
-        className="group/setting @container border-b border-line/50 py-5 outline-none focus-visible:outline-solid focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus-ring last:border-b-0"
+        data-modified={isOverridden ? 'true' : undefined}
+        className="group/setting @container relative border-b border-line/50 py-5 outline-none focus-visible:outline-solid focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus-ring last:border-b-0"
       >
+        {/* 已修改指示条(VSCode .setting-item-modified-indicator:有 override 的行左侧一道主色竖线,悬停提示「已修改」),
+            画在内容区左内边距里;读屏用标题后的 sr-only「已修改」。 */}
+        {isOverridden && (
+          <span
+            aria-hidden="true"
+            data-testid="setting-modified-indicator"
+            title={t('settings.item.modified_hint')}
+            className="absolute inset-y-5 -left-3 w-1.5 border-l-2 border-accent"
+          />
+        )}
         <div className={SETTING_ROW_LAYOUT_CLASS_NAME}>
           <div className="min-w-0 max-w-full flex-1">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span id={titleId} className="min-w-0 break-words text-sm text-fg">
                 {title}
               </span>
+              {/* VSCode 设置行 aria-label 的「Modified.」:控件经 aria-describedby 指向它,读屏聚焦即读到「已修改」;
+                  不放进标题(可访问名),否则改值后控件的名字跟着变。 */}
+              {isOverridden && (
+                <span id={modifiedId} className="sr-only">
+                  {t('settings.item.modified')}
+                </span>
+              )}
               {/* id chip:design Badge xs(浅底)+ <code> 等宽紧贴 title 显示,取代独占一行;不 uppercase —— id 区分大小写 */}
               <Badge size="xs" className="min-w-0 max-w-full">
                 <code className="min-w-0 truncate" title={spec.id}>
@@ -267,12 +287,14 @@ export function SettingItemRow({
               checked={Boolean(value)}
               onCheckedChange={(v) => setValue(spec.id, v)}
               aria-label={title}
+              aria-describedby={modifiedDescribedBy}
             />
           )}
           {spec.type === 'select' && spec.enum && (
             <SegmentedControl
               size="sm"
               ariaLabelledby={titleId}
+              ariaDescribedby={modifiedDescribedBy}
               options={selectOptions}
               value={String(value)}
               onChange={(id) => setValue(spec.id, id)}
@@ -285,10 +307,14 @@ export function SettingItemRow({
                 size="sm"
                 aria-labelledby={titleId}
                 aria-invalid={numberDraft.error !== null ? true : undefined}
-                aria-describedby={numberDraft.error !== null ? numberErrorId : undefined}
+                aria-describedby={
+                  [numberDraft.error !== null ? numberErrorId : '', modifiedDescribedBy ?? ''].join(' ').trim() ||
+                  undefined
+                }
                 min={spec.min}
                 max={spec.max}
-                step={spec.step}
+                // 未给 step → "any"(VSCode settingsTree:非整数设置 inputBox.step='any'):↑ / ↓ 一次 ±1、任意小数合法。
+                step={spec.step ?? 'any'}
                 {...numberDraft.inputProps}
                 className="w-24 min-w-0 max-w-full text-right"
               />
@@ -304,6 +330,7 @@ export function SettingItemRow({
               type="text"
               size="sm"
               aria-labelledby={titleId}
+              aria-describedby={modifiedDescribedBy}
               value={String(value)}
               // 边界(E293,E290 同族 / before-store 输入截断):text 设置值 onChange 截断到 SI_TEXT_VALUE_MAX。
               // values-store.setValue 虽已截断(E142/E241,持久层安全),但 UI 此前无 maxLength/slice → 超长

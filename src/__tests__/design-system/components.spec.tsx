@@ -227,6 +227,16 @@ describe('NavRailButton', () => {
 });
 
 describe('SegmentedControl', () => {
+  it('a11y · ariaDescribedby 透传到 radiogroup 的 aria-describedby(不传则无)', () => {
+    const opts = [{ id: 'a', label: 'A' }];
+    const { container, rerender } = render(
+      <SegmentedControl options={opts} value="a" onChange={vi.fn()} ariaDescribedby="note" />,
+    );
+    expect(container.querySelector('[role="radiogroup"]')!.getAttribute('aria-describedby')).toBe('note');
+    rerender(<SegmentedControl options={opts} value="a" onChange={vi.fn()} />);
+    expect(container.querySelector('[role="radiogroup"]')!.hasAttribute('aria-describedby')).toBe(false);
+  });
+
   it('泛型 onChange 收到正确 id, active 段写 data-active=true', () => {
     const onChange = vi.fn();
     const { container } = render(

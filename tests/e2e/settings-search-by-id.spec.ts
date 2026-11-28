@@ -13,9 +13,9 @@ test('搜索 editor.font → editor.fontSize 匹配', async ({ window }) => {
     .filter({ hasText: 'editor.fontSize' });
   await expect(chip).toBeVisible({ timeout: 5_000 });
 
-  // 不含 terminal.fontSize(id 片段精确)
+  // 不含 terminal.integrated.fontSize(id 片段精确)
   const tChip = window
     .locator('main code')
-    .filter({ hasText: 'terminal.fontSize' });
+    .filter({ hasText: 'terminal.integrated.fontSize' });
   expect(await tChip.count()).toBe(0);
 });

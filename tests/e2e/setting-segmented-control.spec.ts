@@ -1,4 +1,4 @@
-// terminal.cursorStyle select 用 SegmentedControl,3 选项:块 / 下划线 / 竖线.
+// terminal.integrated.cursorStyle select 用 SegmentedControl,3 选项:块 / 下划线 / 竖线.
 import { test, expect } from './fixtures/electron-app';
 import {
   CURSOR_STYLE_BAR,
@@ -10,7 +10,7 @@ import {
   TERMINAL_TAB,
 } from './helpers/settings';
 
-test('terminal.cursorStyle 三选项 + 切换 + 持久化', async ({ window }) => {
+test('terminal.integrated.cursorStyle 三选项 + 切换 + 持久化', async ({ window }) => {
   await window.getByRole('button', { name: SETTINGS }).click();
   await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,

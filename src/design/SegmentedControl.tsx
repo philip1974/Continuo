@@ -37,6 +37,8 @@ export interface SegmentedControlProps<T extends string> {
   readonly ariaLabelledby?: string;
   /** Accessible name when no visible label element exists (a11y). Optional. */
   readonly ariaLabel?: string;
+  /** Id(s) of elements describing this radiogroup (a11y), e.g. a "modified" note. Optional. */
+  readonly ariaDescribedby?: string;
 }
 
 export function SegmentedControl<T extends string>({
@@ -47,6 +49,7 @@ export function SegmentedControl<T extends string>({
   disabled = false,
   ariaLabelledby,
   ariaLabel,
+  ariaDescribedby,
 }: SegmentedControlProps<T>) {
   // Continuo-local 微调(a11y A24,A23 同族):role="radiogroup" 须配 WAI-ARIA radio 键盘模型。
   // radio group 是「自动激活」—— 方向键同时移焦并切换选中(配合 roving tabindex:仅选中项在
@@ -94,6 +97,7 @@ export function SegmentedControl<T extends string>({
       role="radiogroup"
       aria-labelledby={ariaLabelledby}
       aria-label={ariaLabel}
+      aria-describedby={ariaDescribedby}
       data-size={size}
       data-disabled={disabled}
       onKeyDown={onKeyDown}

@@ -15,6 +15,7 @@ import { createRecordStoreOps, type RecordStoreOps } from '../storage/local-stor
 import { coApp } from '../co-app';
 import { ownValue } from '../../../electron/shared/own-value';
 import { SETTINGS_VALUES_STORAGE_KEY } from './storage-key';
+import { LEGACY_SETTING_IDS } from './core-setting-specs';
 
 
 // 边界(E142/E241):单个 text/string 设置值长度上限。setValue 写入前截断 —— 否则用户在 text setting
@@ -42,6 +43,26 @@ export function onLocalSettingReset(cb: (id: string) => void): () => void {
   };
 }
 
+/**
+ * 设置 id 改名迁移(LEGACY_SETTING_IDS,如 terminal.fontSize → terminal.integrated.fontSize):旧 id 的值改记到新 id
+ *(新 id 已有值则以新 id 为准),旧 id 删除。无旧 id 时返回原对象。
+ */
+const LEGACY_SETTING_ID_PAIRS: readonly (readonly [string, string])[] = Object.entries(LEGACY_SETTING_IDS);
+
+export function migrateLegacySettingIds<V>(
+  record: Record<string, V>,
+  legacy: readonly (readonly [string, string])[] = LEGACY_SETTING_ID_PAIRS,
+): Record<string, V> {
+  let next: Record<string, V> | null = null;
+  for (const [oldId, newId] of legacy) {
+    if (!Object.hasOwn(record, oldId)) continue;
+    next ??= { ...record };
+    if (!Object.hasOwn(next, newId)) next[newId] = record[oldId]!;
+    delete next[oldId];
+  }
+  return next ?? record;
+}
+
 // localStorage 读-改-写 / 重置 / 跨窗同步(R6/R113 race 缓解、E260 写读 cap 对称、P2-BA 跨窗收敛)
 // 与 keybindings-store 共用 createRecordStoreOps;本文件只保留 key、读端守卫、写端净化与 reset 通知。
 // 跨窗同步对 settings 尤其必要:否则窗口 B 的陈旧 values 会让 LanguageFromSettings 的 values→store
@@ -66,6 +87,7 @@ const ops: RecordStoreOps<SettingItemValue> = createRecordStoreOps<SettingItemVa
   setRecord: (values) => useSettingsValuesStore.setState({ values }),
   tooLargeWarning:
     '[settings] setValue 拒写:overrides 序列化超 localStorage raw cap,保留上次有效状态',
+  migrate: (record) => migrateLegacySettingIds(record),
 });
 
 export const useSettingsValuesStore = create<SettingsValueState>(() => ({
@@ -105,7 +127,7 @@ export function useSettingValue<T extends SettingItemValue>(
     const stored = ownValue(s.values, id);
     // 边界(E122 number clamp + E139 select enum,E6 读路径对齐):按注册 spec 规整值(coerceSettingValue)
     // —— 篡改/旧 localStorage 的越界 number 或非法 select 字符串(如
-    // terminal.cursorStyle)绕过净化直接喂给 xterm/CSS/timer 等消费者。spec 未注册(测试/早期)原样返回。
+    // terminal.integrated.cursorStyle)绕过净化直接喂给 xterm/CSS/timer 等消费者。spec 未注册(测试/早期)原样返回。
     const spec = coApp.settingItems.get(id);
     if (spec) return coerceSettingValue(spec, stored ?? spec.default) as T;
     return (stored ?? fallback) as T;

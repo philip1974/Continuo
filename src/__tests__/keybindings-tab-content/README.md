@@ -5,6 +5,17 @@
 点击编辑 → 弹 KeybindingCaptureModal,onSave → store.setHotkey,onReset → store.reset。
 搜索框过滤 title/category/id/hotkey。无匹配 → 空状态文案;一条都没注册 → 「暂无命令」。**
 
+## 符号写法搜索与录制按键(第 56 轮)
+
+- 按快捷键搜索(VSCode KeybindingItemMatches:按 `+` / 空格拆词,修饰键词逐个比对、无序):`+` 分隔的修饰键名或紧贴的 mac
+  修饰键符号都认 —— `⌘⇧P` ≡ `⇧⌘P` ≡ `cmd+shift+p`;主键可写键帽符号(`⇥ ↵ ⎋ ␣ ⌫ ⌦ ↑ ↓ ← → ⇞ ⇟`),`⌃Tab` ≡ `⌃⇥` ≡ `ctrl+tab`;
+  非 mac 键帽名 `Win` 认作 cmd。只有修饰键 / 前缀不是修饰键 → 仍按文本搜索
+- 录制按键(VSCode 「Record Keys」切换 + `keybindings.editor.recordSearchKeys`,mac ⌥⌘K / 其它 Alt+K,搜索框聚焦时):
+  搜索框右侧 `aria-pressed` 切换按钮(点击后焦点回搜索框),录制中显示「正在录制按键」徽标、占位改「正在录制按键。按 Esc 退出」;
+  按下的组合写成引号精确查询(VSCode quoteRecordedKeys,如 `"cmd+shift+p"`)并 preventDefault + stopPropagation(不触发命令 /
+  命令面板);单独修饰键不改查询;键入 / 粘贴文字不进框;Esc 退出录制、保留查询。刻意差异:无修饰 Tab / ⇧Tab 放行做焦点移动
+
+
 ## 模块
 
 | 文件 | 职责 |

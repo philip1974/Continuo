@@ -34,6 +34,11 @@
   空时不拦截;输入法组字中的 Esc 不清空
 - 搜索支持 `@id:a,b`(VSCode 设置编辑器 `parseQuery` idFilters + `matchesAnyId`):只列这些 id 的设置项,
   `*` 结尾按前缀匹配,不存在的 id 忽略;与其余文字同时生效(其余文字照常子串匹配)
+- 其余文字按空白拆词,每个词都须命中(AND,词序无关;VSCode `preferencesSearch` SettingMatches 按空格拆词、要求全部词命中):
+  `editor font` / `font editor` 都找到编辑器字号。设置项可带 `keywordsKey`(VSCode 设置 schema 的 `keywords`)提供同义说法,
+  只参与搜索:中文「字体大小」找到标题为「字号」的编辑器 / 终端字号
+- `@modified`(VSCode parseQuery 的 MODIFIED_SETTING_TAG):只列已修改(有 override)的设置项,可单独用,也可与词、`@id:` 组合;
+  按查询变化那一刻的已修改集合过滤 —— 在结果里重置某项后该行不立即消失(VSCode 同:只刷新该行,不重新过滤),改查询后才按新集合
 - 带查询打开(`requestSearchQuery` / `openSettingsWithQuery`,VSCode `openSettings({ query })` + `focusSearch`):面板挂载时或
   已打开时收到请求 → 取走查询(只用一次)、填进搜索框并聚焦
 

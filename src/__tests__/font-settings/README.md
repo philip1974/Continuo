@@ -47,6 +47,12 @@
   (旧字形不会混进新字体)
 - 终端字体优先于编辑器字体;留空跟随编辑器字体(VSCode 同)
 
+## 终端字号 / 光标样式 id(第 56 轮)
+
+- `terminal.integrated.fontSize` / `terminal.integrated.cursorStyle`(VSCode 同名;此前 `terminal.fontSize` / `terminal.cursorStyle`
+  与同页 `terminal.integrated.*` 不一致);光标样式补三语说明(VSCode「终端获得焦点时光标的样式」)
+- 旧 id 已存值迁移见 settings-values:`LEGACY_SETTING_IDS` 经 values-store 读路径(启动 / 跨窗同步 / 读-改-写)改记到新 id
+
 ## 与 VSCode 的差异
 
 - `editor.lineHeight` 为 0(自动)时沿用 CodeMirror 默认的 1.4 倍,VSCode 是 mac 1.5 / 其它 1.35 倍(保持现有外观)

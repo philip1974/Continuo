@@ -4,6 +4,7 @@ import {
   useSettingsValuesStore,
   getStoredSettingValue,
   useSettingValue,
+  migrateLegacySettingIds,
 } from '../../plugins/settings/values-store';
 import {
   SI_TEXT_VALUE_MAX,
@@ -348,7 +349,7 @@ describe('useSettingValue · 默认值来源', () => {
 });
 
 // 边界(E139,E6/E122 同族读路径净化):select setting 的 stored 值须属于 spec.enum,否则回退
-// default —— 篡改/旧 localStorage 的任意字符串不应喂给消费者(如 terminal.cursorStyle → xterm)。
+// default —— 篡改/旧 localStorage 的任意字符串不应喂给消费者(如 terminal.integrated.cursorStyle → xterm)。
 describe('select enum 净化 (E139)', () => {
   const cursorSpec: SettingItemSpec = {
     id: 'test.e139.cursor',
@@ -476,5 +477,48 @@ describe('values-store · readStored 防御', () => {
     vi.resetModules();
     const mod = await import('../../plugins/settings/values-store');
     expect(mod.useSettingsValuesStore.getState().values).toEqual({});
+  });
+});
+
+// 终端字号 / 光标样式改用 VSCode 的 id(terminal.integrated.fontSize / terminal.integrated.cursorStyle):旧 id 的已存值不丢。
+describe('settings values-store — 旧设置 id 迁移', () => {
+  const KEY = 'continuo.settings.values';
+  const stored = () => JSON.parse(globalThis.localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>;
+
+  it('迁移规则:旧 id 改记到新 id 并删除;新 id 已有值时以新 id 为准;无旧 id 返回原对象', () => {
+    const plain = { 'editor.fontSize': 14 };
+    expect(migrateLegacySettingIds(plain)).toBe(plain);
+    expect(
+      migrateLegacySettingIds({ 'terminal.fontSize': 18, 'terminal.cursorStyle': 'bar', 'editor.fontSize': 14 }),
+    ).toEqual({
+      'terminal.integrated.fontSize': 18,
+      'terminal.integrated.cursorStyle': 'bar',
+      'editor.fontSize': 14,
+    });
+    expect(
+      migrateLegacySettingIds({ 'terminal.fontSize': 18, 'terminal.integrated.fontSize': 20 }),
+    ).toEqual({ 'terminal.integrated.fontSize': 20 });
+  });
+
+  it('启动:已存的旧 id 读成新 id,并立即写回存储(旧 id 消失)', async () => {
+    globalThis.localStorage.setItem(KEY, JSON.stringify({ 'terminal.fontSize': 18, 'terminal.cursorStyle': 'bar' }));
+    vi.resetModules();
+    const fresh = await import('../../plugins/settings/values-store');
+    expect(fresh.useSettingsValuesStore.getState().values).toEqual({
+      'terminal.integrated.fontSize': 18,
+      'terminal.integrated.cursorStyle': 'bar',
+    });
+    expect(stored()).toEqual({ 'terminal.integrated.fontSize': 18, 'terminal.integrated.cursorStyle': 'bar' });
+  });
+
+  it('跨窗口同步 / 读-改-写读到旧 id 时同样迁移,不把旧 id 写回', () => {
+    globalThis.localStorage.setItem(KEY, JSON.stringify({ 'terminal.cursorStyle': 'underline' }));
+    window.dispatchEvent(new StorageEvent('storage', { key: KEY }));
+    expect(useSettingsValuesStore.getState().values).toEqual({ 'terminal.integrated.cursorStyle': 'underline' });
+
+    globalThis.localStorage.setItem(KEY, JSON.stringify({ 'terminal.fontSize': 16 }));
+    useSettingsValuesStore.getState().setValue('editor.fontSize', 15);
+    expect(stored()).toEqual({ 'terminal.integrated.fontSize': 16, 'editor.fontSize': 15 });
+    expect(useSettingsValuesStore.getState().values).toEqual({ 'terminal.integrated.fontSize': 16, 'editor.fontSize': 15 });
   });
 });

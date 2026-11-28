@@ -9,7 +9,12 @@ import {
   type SettingItemSpec,
 } from '../../plugins/registries/SettingItemRegistry';
 import { useSettingsValuesStore } from '../../plugins/settings/values-store';
-import { languageSettingSpec } from '../../plugins/settings/core-setting-specs';
+import {
+  EDITOR_LINE_HEIGHT,
+  TERMINAL_LINE_HEIGHT,
+  WINDOW_ZOOM_LEVEL,
+  languageSettingSpec,
+} from '../../plugins/settings/core-setting-specs';
 
 beforeEach(() => {
   useSettingsValuesStore.setState({ values: {} });
@@ -271,8 +276,8 @@ describe('SettingItemRow — select', () => {
 // 不显示篡改/旧版 localStorage 里的原始脏值。
 describe('SettingItemRow — 显示规整后的有效值', () => {
   it('number 越界存储值 → 显示 clamp 后的值', () => {
-    useSettingsValuesStore.setState({ values: { 'terminal.fontSize': 999 } });
-    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    useSettingsValuesStore.setState({ values: { 'terminal.integrated.fontSize': 999 } });
+    const s = spec({ id: 'terminal.integrated.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);
     const input = container.querySelector('input[type=number]') as HTMLInputElement;
     expect(input.value).toBe('24');
@@ -317,23 +322,23 @@ describe('SettingItemRow — number', () => {
   // 把 13 改成 16:先键入 "1"(< min)。若每次按键都钳制回写,框内变 "10",再键 "6" 得 "106" → 24,
   // 永远输不进 16。越界的中间值只留在输入框,失焦 / Enter 时才钳制提交。
   it('键入过程中越界的中间值不被钳制回写;范围内的值即时生效', () => {
-    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const s = spec({ id: 'terminal.integrated.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);
     const input = container.querySelector('input[type=number]') as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: '1' } });
     expect(input.value).toBe('1');
-    expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBeUndefined();
+    expect(useSettingsValuesStore.getState().values['terminal.integrated.fontSize']).toBeUndefined();
 
     fireEvent.change(input, { target: { value: '16' } });
     expect(input.value).toBe('16');
-    expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBe(16);
+    expect(useSettingsValuesStore.getState().values['terminal.integrated.fontSize']).toBe(16);
   });
 
   // 对齐 VSCode:越界 / 非法的草稿不保存、不静默改值,行内用 text-error 提示允许范围,输入框 aria-invalid +
   // aria-describedby 指向提示;改成合法值后提示消失并保存。
   it('越界草稿:行内提示允许范围,aria-invalid;失焦 / Enter 不钳制、不保存,保留草稿', () => {
-    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const s = spec({ id: 'terminal.integrated.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);
     const input = container.querySelector('input[type=number]') as HTMLInputElement;
 
@@ -347,14 +352,15 @@ describe('SettingItemRow — number', () => {
 
     fireEvent.blur(input);
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+    expect('terminal.integrated.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
     expect(input.value).toBe('99');
     expect(input.getAttribute('aria-invalid')).toBe('true');
 
     fireEvent.change(input, { target: { value: '20' } });
-    expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBe(20);
+    expect(useSettingsValuesStore.getState().values['terminal.integrated.fontSize']).toBe(20);
     expect(input.getAttribute('aria-invalid')).toBeNull();
-    expect(input.getAttribute('aria-describedby')).toBeNull();
+    // 不再指向错误提示(值已保存 → 只剩「已修改」说明)
+    expect(input.getAttribute('aria-describedby')).toBe('setting-modified-terminal.integrated.fontSize');
     expect(container.ownerDocument.getElementById(errId!)).toBeNull();
   });
 
@@ -379,68 +385,68 @@ describe('SettingItemRow — number', () => {
   // 没键入过就失焦 / Enter(Tab 经过、点一下再点别处)不能写出 override:否则重置图标亮起,
   // 且存下一条等于默认值的 override,以后默认值变了该用户也不跟随。
   it('未键入就失焦或按 Enter → 不写 override', () => {
-    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const s = spec({ id: 'terminal.integrated.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);
     const input = container.querySelector('input[type=number]') as HTMLInputElement;
 
     fireEvent.focus(input);
     fireEvent.blur(input);
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+    expect('terminal.integrated.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
   });
 
   // 草稿只在「值没被别处改过」时遮住显示:键入后点重置(或别的窗口改了该设置),输入框必须显示新值,
   // 不能继续显示键入的旧文本(真实应用 e2e 暴露:改成 22 → 点重置 → 输入框仍是 22)。
   it('键入后值被外部改掉(重置)→ 输入框显示新值,不被草稿遮住', () => {
-    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const s = spec({ id: 'terminal.integrated.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);
     const input = container.querySelector('input[type=number]') as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: '22' } });
     expect(input.value).toBe('22');
     act(() => {
-      useSettingsValuesStore.getState().reset('terminal.fontSize');
+      useSettingsValuesStore.getState().reset('terminal.integrated.fontSize');
     });
     expect(input.value).toBe('13');
     // 之后失焦也不会把旧草稿重新提交
     fireEvent.blur(input);
-    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+    expect('terminal.integrated.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
   });
 
   it('越界草稿期间值被外部改掉 → 同样显示新值', () => {
-    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const s = spec({ id: 'terminal.integrated.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);
     const input = container.querySelector('input[type=number]') as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: '99' } });
     act(() => {
-      useSettingsValuesStore.getState().setValue('terminal.fontSize', 18);
+      useSettingsValuesStore.getState().setValue('terminal.integrated.fontSize', 18);
     });
     expect(input.value).toBe('18');
   });
 
   it('作废的草稿不会在值变回原值时复活', () => {
-    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const s = spec({ id: 'terminal.integrated.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);
     const input = container.querySelector('input[type=number]') as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: '99' } }); // 越界草稿,对应的已知值是 13
-    act(() => useSettingsValuesStore.getState().setValue('terminal.fontSize', 18)); // 别处改成 18
+    act(() => useSettingsValuesStore.getState().setValue('terminal.integrated.fontSize', 18)); // 别处改成 18
     expect(input.value).toBe('18');
-    act(() => useSettingsValuesStore.getState().reset('terminal.fontSize')); // 又回到 13
+    act(() => useSettingsValuesStore.getState().reset('terminal.integrated.fontSize')); // 又回到 13
     expect(input.value).toBe('13');
     fireEvent.blur(input);
-    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+    expect('terminal.integrated.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
   });
 
   it('清空后失焦 → 不提交,保留空草稿并提示范围', () => {
-    const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
+    const s = spec({ id: 'terminal.integrated.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);
     const input = container.querySelector('input[type=number]') as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: '' } });
     fireEvent.blur(input);
-    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+    expect('terminal.integrated.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
     expect(input.value).toBe('');
     expect(input.getAttribute('aria-invalid')).toBe('true');
   });
@@ -546,5 +552,82 @@ describe('SettingItemRow — 语言项默认 = 系统语言', () => {
     expect(resetBtn.disabled).toBe(false);
     expect(resetBtn.title).toContain('中文');
     expect(resetBtn.title).not.toContain('English');
+  });
+});
+
+// VSCode settingsTree:`.setting-item-modified-indicator`(is-configured 的行左侧主色竖线 + 悬停提示)+ 行 aria-label 的「Modified.」。
+describe('SettingItemRow — 已修改指示', () => {
+  it('有 override → 左侧主色竖条(语义 token)+ 读屏可读到「已修改」;无 override → 都没有', () => {
+    const s = spec({ id: 'editor.fontSize', title: '字号', type: 'number', default: 13, min: 10, max: 24 });
+    const { container } = render(<SettingItemRow spec={s} />);
+    const row = container.querySelector('[data-setting-row="editor.fontSize"]')!;
+    expect(row.querySelector('[data-testid="setting-modified-indicator"]')).toBeNull();
+    expect(row.textContent).not.toContain('已修改');
+    expect(row.hasAttribute('data-modified')).toBe(false);
+
+    act(() => useSettingsValuesStore.getState().setValue('editor.fontSize', 16));
+    const bar = row.querySelector('[data-testid="setting-modified-indicator"]')!;
+    expect(bar).not.toBeNull();
+    expect(bar.getAttribute('aria-hidden')).toBe('true');
+    expect(bar.className).toContain('border-accent');
+    expect(bar.getAttribute('title')).toBe('此设置已修改。');
+    expect(row.getAttribute('data-modified')).toBe('true');
+    // 控件经 aria-describedby 读到 sr-only「已修改」;可访问名(标题)不变,改值不改控件名字
+    const input = row.querySelector('input')!;
+    expect(document.getElementById(input.getAttribute('aria-labelledby')!)!.textContent).toBe('字号');
+    const note = document.getElementById(input.getAttribute('aria-describedby')!)!;
+    expect(note.textContent).toBe('已修改');
+    expect(note.className).toContain('sr-only');
+
+    act(() => useSettingsValuesStore.getState().reset('editor.fontSize'));
+    expect(row.querySelector('[data-testid="setting-modified-indicator"]')).toBeNull();
+    expect(input.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('开关 / 分段控件 / 文本框同样经 aria-describedby 读到「已修改」', () => {
+    useSettingsValuesStore.setState({ values: { 'a.bool': true, 'a.sel': 'y', 'a.txt': 'hi' } });
+    const { container } = render(
+      <>
+        <SettingItemRow spec={spec({ id: 'a.bool', title: 'B' })} />
+        <SettingItemRow
+          spec={spec({
+            id: 'a.sel',
+            title: 'S',
+            type: 'select',
+            default: 'x',
+            enum: [
+              { value: 'x', label: 'X' },
+              { value: 'y', label: 'Y' },
+            ],
+          })}
+        />
+        <SettingItemRow spec={spec({ id: 'a.txt', title: 'T', type: 'text', default: '' })} />
+      </>,
+    );
+    for (const sel of ['[role="switch"]', '[role="radiogroup"]', 'input[type="text"]']) {
+      const el = container.querySelector(sel)!;
+      expect(document.getElementById(el.getAttribute('aria-describedby')!)!.textContent).toBe('已修改');
+    }
+  });
+});
+
+// VSCode settingsTree renderValue:`inputBox.step = valueType.includes('integer') ? '1' : 'any'` —— 非整数设置从 0 按 ↑ 得 1。
+describe('SettingItemRow — number 步长', () => {
+  it('未给 step → step="any"(↑ / ↓ 一次 ±1、小数合法);给了 step 照用', () => {
+    const { container, rerender } = render(
+      <SettingItemRow spec={spec({ id: 'x.n', type: 'number', default: 0, min: 0, max: 150 })} />,
+    );
+    expect(container.querySelector('input')!.getAttribute('step')).toBe('any');
+    rerender(<SettingItemRow spec={spec({ id: 'x.n', type: 'number', default: 4, min: 1, max: 100, step: 1 })} />);
+    expect(container.querySelector('input')!.getAttribute('step')).toBe('1');
+  });
+
+  it('行高 / 缩放这类非整数设置不带小数步长:editor.lineHeight 0 → ↑ 是 1(字号倍数)而不是 0.1(8px 行高文字重叠)', () => {
+    for (const s of [EDITOR_LINE_HEIGHT, TERMINAL_LINE_HEIGHT, WINDOW_ZOOM_LEVEL]) {
+      expect(s.step).toBeUndefined();
+      const { container, unmount } = render(<SettingItemRow spec={s} />);
+      expect(container.querySelector('input')!.getAttribute('step')).toBe('any');
+      unmount();
+    }
   });
 });

@@ -271,6 +271,40 @@ describe('KeybindingCaptureModal — 按键', () => {
     expect(getButton('保存').disabled).toBe(true);
   });
 
+  // A62 只放行焦点导航用的无修饰 Tab / ⇧Tab;带 Ctrl / Cmd / Alt 的 Tab(⌃Tab 切换编辑器等)照常录成组合。
+  // VSCode DefineKeybindingWidget 连 Tab / ⇧Tab 都录(键盘只能 Esc 退出);这里为键盘可达性让出无修饰的两个。
+  it('带 Ctrl / Cmd / Alt 的 Tab 录成组合(阻止默认),⇧ 可叠加', () => {
+    const onSave = vi.fn();
+    render(<KeybindingCaptureModal {...defaultProps({ onSave })} />);
+    const press = (opts: Partial<KeyboardEventInit>) => {
+      const ev = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true, ...opts });
+      act(() => {
+        document.dispatchEvent(ev);
+      });
+      return ev;
+    };
+    // jsdom 非 mac:Ctrl = mod
+    expect(press({ ctrlKey: true }).defaultPrevented).toBe(true);
+    fireEvent.click(getButton('保存'));
+    expect(onSave).toHaveBeenLastCalledWith('mod+tab');
+  });
+
+  it.each([
+    [{ ctrlKey: true, shiftKey: true }, 'mod+shift+tab'],
+    [{ altKey: true }, 'alt+tab'],
+    [{ metaKey: true }, 'cmd+tab'],
+  ])('修饰 Tab %o → %s', (mods, expected) => {
+    const onSave = vi.fn();
+    render(<KeybindingCaptureModal {...defaultProps({ onSave })} />);
+    const ev = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true, ...mods });
+    act(() => {
+      document.dispatchEvent(ev);
+    });
+    expect(ev.defaultPrevented).toBe(true);
+    fireEvent.click(getButton('保存'));
+    expect(onSave).toHaveBeenCalledWith(expected);
+  });
+
   // a11y(A63,A62 同族):焦点在按钮上时 Enter/Space 须放行激活,不能被当组合捕获。
   it('a11y · 焦点在按钮上按 Enter 不捕获组合、不阻止默认(放行激活)', () => {
     const props = defaultProps();

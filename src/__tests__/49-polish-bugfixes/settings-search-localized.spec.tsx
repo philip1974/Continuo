@@ -20,7 +20,7 @@ function itemReg(): SettingItemRegistry {
   const r = new SettingItemRegistry();
   // raw title 故意与 zh 翻译('字号')不同;titleKey 指向真实 catalog key。
   r.register({
-    id: 'terminal.fontSize',
+    id: 'terminal.integrated.fontSize',
     category: 'terminal',
     title: 'ZZZ_RAW_TITLE',
     titleKey: 'settings.terminal.font_size',
@@ -56,7 +56,7 @@ describe('打磨 R30 — 设置搜索匹配本地化文案', () => {
       <SettingsPanel registry={tabReg()} itemRegistry={itemReg()} />,
     );
     const input = container.querySelector('input') as HTMLInputElement;
-    fireEvent.change(input, { target: { value: 'terminal.fontSize' } });
+    fireEvent.change(input, { target: { value: 'terminal.integrated.fontSize' } });
     expect(container.textContent).toMatch(/匹配\s*1\s*项/);
   });
 });

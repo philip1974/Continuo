@@ -24,6 +24,12 @@ import { useSettingsStore } from '../../plugins/settings/store';
 import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
 import { SettingItemRegistry } from '../../plugins/registries/SettingItemRegistry';
 import { useSettingsValuesStore } from '../../plugins/settings/values-store';
+import {
+  EDITOR_FONT_SIZE,
+  EDITOR_LINE_HEIGHT,
+  TERMINAL_CURSOR_STYLE,
+  TERMINAL_FONT_SIZE,
+} from '../../plugins/settings/core-setting-specs';
 
 beforeEach(() => {
   useSettingsStore.setState({ activeTabId: null, pendingSearchQuery: null });
@@ -709,5 +715,74 @@ describe('useSettingsStore · API 形态', () => {
     unmount();
     // store 不变 — 重新打开还在 plugins
     expect(useSettingsStore.getState().activeTabId).toBe('plugins');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 搜索:多词(AND)、关键词别名、@modified(对齐 VSCode preferencesSearch SettingMatches / settingsTreeModels parseQuery)
+// ────────────────────────────────────────────────────────────
+
+describe('SettingsPanel · 搜索按词匹配与 @modified', () => {
+  const ids = (list: readonly { id: string }[]): string[] => list.map((s) => s.id);
+  const core = () =>
+    buildSearchableSettingItems([EDITOR_FONT_SIZE, EDITOR_LINE_HEIGHT, TERMINAL_FONT_SIZE, TERMINAL_CURSOR_STYLE]);
+
+  beforeEach(() => {
+    useSettingsValuesStore.setState({ values: {} });
+  });
+
+  // VSCode SettingMatches:查询按空格拆词,每个词都须命中(词序无关)。整串 includes 时 `editor font` 无结果。
+  it('多个词按空白拆开、每个词都须命中(AND),词序无关', () => {
+    const searchable = core();
+    expect(ids(selectMatchedSettingItems(searchable, 'editor font'))).toEqual(['editor.fontSize']);
+    expect(ids(selectMatchedSettingItems(searchable, 'font editor'))).toEqual(['editor.fontSize']);
+    expect(ids(selectMatchedSettingItems(searchable, 'terminal   font'))).toEqual(['terminal.integrated.fontSize']);
+    expect(ids(selectMatchedSettingItems(searchable, 'editor cursor'))).toEqual([]);
+  });
+
+  // VSCode 设置 schema 的 keywords:同义说法参与搜索。中文标题是「字号」,搜「字体大小」也要找到。
+  it('关键词别名:中文「字体大小」找到编辑器与终端的字号', () => {
+    expect(ids(selectMatchedSettingItems(core(), '字体大小'))).toEqual([
+      'editor.fontSize',
+      'terminal.integrated.fontSize',
+    ]);
+    expect(ids(selectMatchedSettingItems(core(), '终端 字体大小'))).toEqual(['terminal.integrated.fontSize']);
+  });
+
+  it('@modified 只列已修改的设置项,可与其余词、@id: 组合', () => {
+    const searchable = core();
+    const modified = new Set(['editor.fontSize', 'terminal.integrated.cursorStyle']);
+    const isModified = (id: string) => modified.has(id);
+    expect(ids(selectMatchedSettingItems(searchable, '@modified', isModified))).toEqual([
+      'editor.fontSize',
+      'terminal.integrated.cursorStyle',
+    ]);
+    expect(ids(selectMatchedSettingItems(searchable, '@modified font', isModified))).toEqual(['editor.fontSize']);
+    expect(ids(selectMatchedSettingItems(searchable, 'font @modified', isModified))).toEqual(['editor.fontSize']);
+    expect(
+      ids(selectMatchedSettingItems(searchable, '@modified @id:terminal.*', isModified)),
+    ).toEqual(['terminal.integrated.cursorStyle']);
+    // 不是独立的 @modified 词(如 @modifiedx)不当过滤
+    expect(ids(selectMatchedSettingItems(searchable, '@modifiedx', isModified))).toEqual([]);
+  });
+
+  it('界面:输入 @modified 列出有 override 的设置项;在结果里重置不会让该行立刻消失(VSCode 只刷新该行)', () => {
+    const reg = new SettingItemRegistry();
+    reg.register(EDITOR_FONT_SIZE);
+    reg.register(TERMINAL_FONT_SIZE);
+    useSettingsValuesStore.setState({ values: { 'editor.fontSize': 16 } });
+    const { container } = render(<SettingsPanel registry={makeReg()} itemRegistry={reg} />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '@modified' } });
+    expect(container.textContent).toMatch(/匹配\s*1\s*项/);
+    const row = container.querySelector('[data-setting-row="editor.fontSize"]');
+    expect(row).not.toBeNull();
+    expect(container.querySelector('[data-setting-row="terminal.integrated.fontSize"]')).toBeNull();
+    act(() => useSettingsValuesStore.getState().reset('editor.fontSize'));
+    expect(container.querySelector('[data-setting-row="editor.fontSize"]')).not.toBeNull();
+    // 重新搜索才按新的已修改集合过滤
+    fireEvent.change(input, { target: { value: '@modified font' } });
+    fireEvent.change(input, { target: { value: '@modified' } });
+    expect(container.querySelector('[data-setting-row="editor.fontSize"]')).toBeNull();
   });
 });

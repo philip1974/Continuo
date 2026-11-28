@@ -26,6 +26,8 @@ Backspace=unbind('');无修饰 Enter=保存已录组合;其它键 → 完整组�
 ### 按键
 
 - Esc → 不拦截(交给 Modal)
+- 无修饰的 Tab / ⇧Tab → 不拦截(A62 焦点导航);带 Ctrl / Cmd / Alt 的 Tab(⌃Tab、⌃⇧Tab、⌥Tab…)→ 照常录成组合。
+  VSCode DefineKeybindingWidget 连无修饰 Tab 都录(只能 Esc 出);这里为键盘可达性刻意让出无修饰的两个
 - 单独修饰键(Meta/Control/Shift/Alt)→ 不更新 captured
 - Backspace → captured=''
 - 'a' → captured='a'

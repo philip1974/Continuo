@@ -708,3 +708,117 @@ describe('KeybindingsTabContent — 搜索框 Esc(对齐 VSCode)', () => {
     expect(input.value).toBe('ㅎ');
   });
 });
+
+// VSCode KeybindingItemMatches:查询按空格 / `+` 拆词,修饰键词与键位的修饰键逐个比对(无序);键帽上紧贴的 mac 修饰键符号
+// 同样拆开,主键可写键帽符号(列表画 ⇥,VSCode 键名 Tab)。
+describe('KeybindingsTabContent — 符号写法的快捷键搜索', () => {
+  const tk = (_k: string | undefined, fallback: string): string => fallback;
+  const cmds = [
+    { id: 'palette', title: 'Show All Commands', hotkey: 'mod+shift+p', fn: vi.fn() },
+    { id: 'quickOpen', title: 'Go to File', hotkey: 'mod+p', fn: vi.fn() },
+    { id: 'nextEditor', title: 'Next Editor', hotkey: 'ctrl+tab', fn: vi.fn() },
+    { id: 'prevEditor', title: 'Previous Editor', hotkey: 'ctrl+shift+tab', fn: vi.fn() },
+  ];
+  const ids = (list: readonly DisplayCommand[]): string[] => list.map((d) => d.cmd.id);
+
+  it('mac:⌘⇧P 与 ⇧⌘P 同样命中(修饰键无序),⌘P 命中两条', () => {
+    const mac = buildKeybindingDisplayCommands(cmds, tk, {}, 'mac');
+    expect(ids(selectVisibleKeybindingCommands(mac, '⌘⇧P', 'mac'))).toEqual(['palette']);
+    expect(ids(selectVisibleKeybindingCommands(mac, '⇧⌘P', 'mac'))).toEqual(['palette']);
+    expect(ids(selectVisibleKeybindingCommands(mac, '⌘ ⇧ p', 'mac'))).toEqual(['palette']);
+    expect(ids(selectVisibleKeybindingCommands(mac, '⌘P', 'mac'))).toEqual(['palette', 'quickOpen']);
+    expect(ids(selectVisibleKeybindingCommands(mac, '"⌘P"', 'mac'))).toEqual(['quickOpen']);
+  });
+
+  it('mac:⌃Tab / ⌃⇥ / ctrl+⇥ / ctrl+tab 都命中显示为 ⌃⇥ 的绑定', () => {
+    const mac = buildKeybindingDisplayCommands(cmds, tk, {}, 'mac');
+    for (const q of ['⌃Tab', '⌃⇥', 'ctrl+⇥', 'ctrl+tab', 'control+Tab']) {
+      expect(ids(selectVisibleKeybindingCommands(mac, q, 'mac'))).toEqual(['nextEditor', 'prevEditor']);
+    }
+    expect(ids(selectVisibleKeybindingCommands(mac, '"⌃⇥"', 'mac'))).toEqual(['nextEditor']);
+    expect(ids(selectVisibleKeybindingCommands(mac, '⇧⌃⇥', 'mac'))).toEqual(['prevEditor']);
+  });
+
+  it('只有修饰键符号 / 非修饰键前缀 → 仍按文本搜索', () => {
+    const mac = buildKeybindingDisplayCommands(cmds, tk, {}, 'mac');
+    expect(ids(selectVisibleKeybindingCommands(mac, '⇧⌘', 'mac'))).toEqual(['palette']);
+    expect(ids(selectVisibleKeybindingCommands(mac, 'next editor', 'mac'))).toEqual(['nextEditor']);
+  });
+});
+
+// VSCode 键盘快捷方式编辑器「录制按键」(keybindings.editor.recordSearchKeys,mac ⌥⌘K / 其它 Alt+K;KeybindingsSearchWidget
+// recordEnter + quoteRecordedKeys):开着时搜索框按下的组合写成引号精确查询,Esc 退出录制。
+describe('KeybindingsTabContent — 录制按键搜索', () => {
+  function setup() {
+    coApp.commands.register({ id: 'palette', title: 'Show All Commands', hotkey: 'mod+shift+p', fn: vi.fn() });
+    coApp.commands.register({ id: 'quickOpen', title: 'Go to File', hotkey: 'mod+p', fn: vi.fn() });
+    coApp.commands.register({ id: 'next', title: 'Next Editor', hotkey: 'ctrl+tab', fn: vi.fn() });
+    const outer = vi.fn();
+    const utils = render(
+      <div onKeyDown={outer}>
+        <KeybindingsTabContent />
+      </div>,
+    );
+    const input = utils.container.querySelector('input') as HTMLInputElement;
+    const toggle = utils.container.querySelector('button[aria-label="录制按键"]') as HTMLButtonElement;
+    return { ...utils, input, toggle, outer };
+  }
+  const rows = (c: HTMLElement) => Array.from(c.querySelectorAll('[data-keybinding-row]')).map((li) => li.getAttribute('data-keybinding-row'));
+
+  it('切换按钮(aria-pressed)开启录制;按下的组合写成精确查询并过滤,不进文字、不冒泡触发命令', () => {
+    const { container, input, toggle, outer } = setup();
+    expect(toggle).not.toBeNull();
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle.getAttribute('title')).toBe('录制按键 (Alt+K)');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(document.activeElement).toBe(input);
+    expect(container.textContent).toContain('正在录制按键');
+    expect(input.getAttribute('placeholder')).toBe('正在录制按键。按 Esc 退出');
+
+    // jsdom 非 mac:Ctrl = mod
+    const ev = fireEvent.keyDown(input, { key: 'p', code: 'KeyP', ctrlKey: true });
+    expect(ev).toBe(false); // preventDefault
+    expect(outer).not.toHaveBeenCalled();
+    expect(input.value).toBe('"ctrl+p"');
+    expect(rows(container)).toEqual(['quickOpen']);
+
+    fireEvent.keyDown(input, { key: 'P', code: 'KeyP', ctrlKey: true, shiftKey: true });
+    expect(input.value).toBe('"ctrl+shift+p"');
+    expect(rows(container)).toEqual(['palette']);
+
+    // 单独的修饰键不改查询;录制中键入的文字不进输入框
+    fireEvent.keyDown(input, { key: 'Shift', code: 'ShiftLeft', shiftKey: true });
+    fireEvent.change(input, { target: { value: 'typed' } });
+    expect(input.value).toBe('"ctrl+shift+p"');
+
+    // 带修饰的 Tab 照录;无修饰的 Tab 放行(焦点移动)
+    fireEvent.keyDown(input, { key: 'Tab', code: 'Tab', ctrlKey: true });
+    expect(input.value).toBe('"ctrl+tab"');
+    expect(rows(container)).toEqual(['next']);
+    expect(fireEvent.keyDown(input, { key: 'Tab', code: 'Tab' })).toBe(true);
+    expect(input.value).toBe('"ctrl+tab"');
+  });
+
+  it('Esc 退出录制并保留查询;之后恢复文字输入与 Esc 清空', () => {
+    const { input, toggle, outer } = setup();
+    fireEvent.click(toggle);
+    fireEvent.keyDown(input, { key: 'p', code: 'KeyP', ctrlKey: true });
+    fireEvent.keyDown(input, { key: 'Escape', code: 'Escape' });
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(input.value).toBe('"ctrl+p"');
+    expect(outer).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: 'next' } });
+    expect(input.value).toBe('next');
+    fireEvent.keyDown(input, { key: 'Escape', code: 'Escape' });
+    expect(input.value).toBe('');
+  });
+
+  it('搜索框聚焦时 Alt+K(mac ⌥⌘K)开启录制', () => {
+    const { input, toggle, outer } = setup();
+    expect(fireEvent.keyDown(input, { key: 'k', code: 'KeyK', altKey: true })).toBe(false);
+    expect(outer).not.toHaveBeenCalled();
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(input.value).toBe('');
+  });
+});

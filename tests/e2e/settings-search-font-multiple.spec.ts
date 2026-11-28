@@ -1,4 +1,4 @@
-// Settings 搜索「字号」 → editor.fontSize + terminal.fontSize 都匹配,N>=2.
+// Settings 搜索「字号」 → editor.fontSize + terminal.integrated.fontSize 都匹配,N>=2.
 import { test, expect } from './fixtures/electron-app';
 import {
   MATCHED_SETTINGS,

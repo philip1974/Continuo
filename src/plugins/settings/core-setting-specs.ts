@@ -43,6 +43,7 @@ export const EDITOR_FONT_SIZE: CoreSettingSpec<number> = {
   title: 'Font size',
   titleKey: 'settings.editor.font_size',
   descriptionKey: 'settings.editor.font_size.desc',
+  keywordsKey: 'settings.editor.font_size.keywords',
   type: 'number',
   default: 13,
   min: 10,
@@ -68,7 +69,7 @@ export const EDITOR_LINE_HEIGHT: CoreSettingSpec<number> = {
   default: 0,
   min: 0,
   max: 150,
-  step: 0.1,
+  // 不给 step(= HTML step="any",VSCode 非整数设置同款):↑ 一次 0 → 1(字号倍数 1),而不是 0 → 0.1(8px 行高、文字叠在一起)。
   priority: 1.5,
 };
 
@@ -336,12 +337,14 @@ export const AUTO_SAVE_DELAY_MS: CoreSettingSpec<number> = {
   priority: 11,
 };
 
+/** 终端字号(VSCode terminal.integrated.fontSize;旧 id terminal.fontSize 的已存值启动时迁移,见 LEGACY_SETTING_IDS)。 */
 export const TERMINAL_FONT_SIZE: CoreSettingSpec<number> = {
-  id: 'terminal.fontSize',
+  id: 'terminal.integrated.fontSize',
   category: 'terminal',
   title: 'Font size',
   titleKey: 'settings.terminal.font_size',
   descriptionKey: 'settings.terminal.font_size.desc',
+  keywordsKey: 'settings.terminal.font_size.keywords',
   type: 'number',
   default: 13,
   min: 10,
@@ -378,15 +381,17 @@ export const TERMINAL_LINE_HEIGHT: CoreSettingSpec<number> = {
   default: 1,
   min: 1,
   max: 10,
-  step: 0.1,
+  // 不给 step(step="any",同 editor.lineHeight):↑ / ↓ 一次 ±1,可键入 1.2 这类小数。
   priority: 1.5,
 };
 
+/** 终端光标样式(VSCode terminal.integrated.cursorStyle;旧 id terminal.cursorStyle 迁移同上)。 */
 export const TERMINAL_CURSOR_STYLE: CoreSettingSpec<TerminalCursorStyle> = {
-  id: 'terminal.cursorStyle',
+  id: 'terminal.integrated.cursorStyle',
   category: 'terminal',
   title: 'Cursor style',
   titleKey: 'settings.terminal.cursor_style',
+  descriptionKey: 'settings.terminal.cursor_style.desc',
   type: 'select',
   default: 'block',
   enum: [
@@ -395,6 +400,15 @@ export const TERMINAL_CURSOR_STYLE: CoreSettingSpec<TerminalCursorStyle> = {
     { value: 'bar', label: 'Bar', labelKey: 'settings.terminal.cursor_style.bar' },
   ],
   priority: 2,
+};
+
+/**
+ * 改名前的设置 id → 现 id(对齐 VSCode 的 terminal.integrated.*)。已存的旧 id 值在读设置存储时改记到新 id(新 id 已有值则
+ * 以新 id 为准)并删掉旧 id:启动、跨窗口同步、每次读-改-写都经同一迁移(values-store)。
+ */
+export const LEGACY_SETTING_IDS: Readonly<Record<string, string>> = {
+  'terminal.fontSize': TERMINAL_FONT_SIZE.id,
+  'terminal.cursorStyle': TERMINAL_CURSOR_STYLE.id,
 };
 
 // VSCode 默认显示点文件(.gitignore / .env / .github …),只按 files.exclude 排除版本库元数据等;这里固定排除集即
@@ -609,7 +623,7 @@ export const WINDOW_ZOOM_LEVEL: CoreSettingSpec<number> = {
   default: DEFAULT_ZOOM_LEVEL,
   min: MIN_ZOOM_LEVEL,
   max: MAX_ZOOM_LEVEL,
-  step: 1,
+  // 不给 step(step="any",VSCode window.zoomLevel 是非整数 number):1.5 之类的值不算「不合步长」,↑ / ↓ 仍 ±1。
   priority: 4,
 };
 

@@ -14,7 +14,10 @@ import {
   EDITOR_FONT_FAMILY,
   EDITOR_FONT_SIZE,
   EDITOR_LINE_HEIGHT,
+  LEGACY_SETTING_IDS,
+  TERMINAL_CURSOR_STYLE,
   TERMINAL_FONT_FAMILY,
+  TERMINAL_FONT_SIZE,
   TERMINAL_LINE_HEIGHT,
 } from '@/plugins/settings/core-setting-specs';
 import {
@@ -76,7 +79,7 @@ describe('设置项', () => {
     expect(registeredSettingIds(EditorTabPlugin).slice(0, 3)).toEqual(['editor.fontFamily', 'editor.fontSize', 'editor.lineHeight']);
     expect(registeredSettingIds(TerminalTabPlugin).slice(0, 3)).toEqual([
       'terminal.integrated.fontFamily',
-      'terminal.fontSize',
+      'terminal.integrated.fontSize',
       'terminal.integrated.lineHeight',
     ]);
     for (const s of SPECS) {
@@ -85,6 +88,25 @@ describe('设置项', () => {
         expect(locale[s.descriptionKey as keyof typeof en]).toBeTruthy();
       }
     }
+  });
+
+  // VSCode terminalConfiguration:终端设置全在 terminal.integrated.* 下(此前字号 / 光标样式是 terminal.fontSize /
+  // terminal.cursorStyle,与同页字体 / 行高不一致,照 VSCode 写的 settings 片段搜不到)。光标样式补说明。
+  it('终端字号 / 光标样式 id 同 VSCode(terminal.integrated.*),三语标题与说明;旧 id 列入迁移表', () => {
+    expect(TERMINAL_FONT_SIZE.id).toBe('terminal.integrated.fontSize');
+    expect(TERMINAL_CURSOR_STYLE.id).toBe('terminal.integrated.cursorStyle');
+    expect(registeredSettingIds(TerminalTabPlugin)).toContain('terminal.integrated.cursorStyle');
+    for (const s of [TERMINAL_FONT_SIZE, TERMINAL_CURSOR_STYLE]) {
+      expect(s.descriptionKey).toBeTruthy();
+      for (const locale of [en, zh, ko]) {
+        expect(locale[s.titleKey as keyof typeof en]).toBeTruthy();
+        expect(locale[s.descriptionKey as keyof typeof en]).toBeTruthy();
+      }
+    }
+    expect(LEGACY_SETTING_IDS).toEqual({
+      'terminal.fontSize': 'terminal.integrated.fontSize',
+      'terminal.cursorStyle': 'terminal.integrated.cursorStyle',
+    });
   });
 
   it('默认值:编辑器字体 = 设计 token --wm-font-mono;编辑器行高 0(自动);终端字体空(跟随编辑器);终端行高 1', () => {

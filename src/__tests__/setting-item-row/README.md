@@ -9,6 +9,14 @@
 **改动写入 useSettingsValuesStore;`stored !== undefined` 时显示 reset 按钮(↺ icon),
 点 reset → store.reset(spec.id) 删 override 回到 default。**
 
+## 已修改指示与 number 步长(第 56 轮)
+
+- 有 override 的行:左侧主色竖条(`border-accent`,VSCode `.setting-item-modified-indicator`;悬停提示「此设置已修改。」)+ sr-only
+  「已修改」,开关 / 分段控件 / 输入框经 aria-describedby 读到(对应 VSCode 行 aria-label 的 "Modified.";不进可访问名,改值不改控件名);无 override 都不显示
+- number 输入框未给 `step` → `step="any"`(VSCode settingsTree 非整数设置 `inputBox.step='any'`):↑ / ↓ 一次 ±1、小数合法。
+  `editor.lineHeight` / `terminal.integrated.lineHeight` / `window.zoomLevel` 不再带 0.1 / 1 步长(此前行高 0 ↑ 得 0.1 → 8px 行高文字重叠)
+
+
 ## 模块
 
 | 文件 | 职责 |

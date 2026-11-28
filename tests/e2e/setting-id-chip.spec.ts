@@ -20,13 +20,13 @@ test('编辑器 tab 内显示 setting id chip:editor.fontSize', async ({
   expect(await chip.evaluate((el) => (el as HTMLElement).innerText)).toBe('editor.fontSize');
 });
 
-test('终端 tab 内显示 setting id chip:terminal.cursorStyle', async ({
+test('终端 tab 内显示 setting id chip:terminal.integrated.cursorStyle', async ({
   window,
 }) => {
   await openSettingsTab(window, TERMINAL_TAB);
 
   const chip = window
     .locator('main code')
-    .filter({ hasText: 'terminal.cursorStyle' });
+    .filter({ hasText: 'terminal.integrated.cursorStyle' });
   await expect(chip).toBeVisible();
 });

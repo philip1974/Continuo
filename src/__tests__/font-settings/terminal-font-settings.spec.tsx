@@ -131,7 +131,7 @@ describe('终端字体族 / 行高', () => {
     expect(h.fits).toBeGreaterThan(fitsAfterFont);
 
     const fitsAfterLineHeight = h.fits;
-    h.settings.set('terminal.cursorStyle', 'bar');
+    h.settings.set('terminal.integrated.cursorStyle', 'bar');
     view.rerender(createElement(Host, { tick: 3 }));
     expect(options().cursorStyle).toBe('bar');
     expect(h.fits).toBe(fitsAfterLineHeight);

@@ -194,10 +194,13 @@ function KeybindingCaptureModalBody({
         // 让 Modal 自己的 Esc 关闭逻辑接(我们传 onClose 给 Modal)
         return;
       }
-      if (e.key === 'Tab') {
-        // a11y(A62):不拦截 Tab。否则 eventToCombo 会把 Tab(含 Shift+Tab)当成组合捕获并
+      const hasComboModifier = e.metaKey || e.ctrlKey || e.altKey;
+      if (e.key === 'Tab' && !hasComboModifier) {
+        // a11y(A62):不拦截 Tab / Shift+Tab。否则 eventToCombo 会把它们当成组合捕获并
         // preventDefault → 弹窗内键盘用户无法在 取消/重置/保存 间移动焦点(捕获组合后 Save
         // 启用却到达不了),形成键盘陷阱。放行让 Modal focus trap / 浏览器默认 Tab 处理焦点移动。
+        // 带 Ctrl / Cmd / Alt 的 Tab(⌃Tab 切换编辑器等)不是焦点导航键,照常录成组合(VSCode 录键框连 Tab 都录,
+        // 这里只为键盘可达性让出无修饰的 Tab / ⇧Tab)。
         return;
       }
       // a11y(A63,A62 同族):焦点已能 Tab 到 取消/重置/保存(A62)后,若仍把 Enter/Space 当组合
@@ -205,7 +208,6 @@ function KeybindingCaptureModalBody({
       // 交互控件(按钮/链接/输入等)内且是「无修饰」激活键(Enter/Space)时放行,让控件激活;
       // 带 ctrl/meta/alt 的 Enter(如 mod+enter)按钮不会激活,仍按组合捕获,不影响绑定能力。
       const isActivationKey = e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar';
-      const hasComboModifier = e.metaKey || e.ctrlKey || e.altKey;
       if (isActivationKey && !hasComboModifier) {
         const target = e.target as Partial<Pick<Element, 'closest'>> | null;
         if (

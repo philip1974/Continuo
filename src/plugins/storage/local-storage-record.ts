@@ -233,12 +233,23 @@ export function createRecordStoreOps<V>(opts: {
   readonly setRecord: (next: Record<string, V>) => void;
   /** E260 拒写时 console.warn 的文案。 */
   readonly tooLargeWarning: string;
+  /**
+   * 读出的记录在交给 store 前的迁移(如设置 id 改名);无需迁移时须返回原对象。所有读路径(启动、跨窗同步、读-改-写)
+   * 都经它;创建时若迁移改动了已存记录,立即写回一次(旧 key 从存储里消失)。
+   */
+  readonly migrate?: (record: Record<string, V>) => Record<string, V>;
 }): RecordStoreOps<V> {
-  const { key, readOpts, getRecord, setRecord, tooLargeWarning } = opts;
-  const read = (): Record<string, V> => readRecord<V>(key, readOpts);
+  const { key, readOpts, getRecord, setRecord, tooLargeWarning, migrate } = opts;
+  const readRaw = (): Record<string, V> => readRecord<V>(key, readOpts);
+  const read = migrate ? (): Record<string, V> => migrate(readRaw()) : readRaw;
   // 写端 cap 与读端同一来源(E260 写读对称;未传 maxRawLength 时两端都用默认 1MiB)。
   const write = (next: Record<string, V>): WriteRecordResult =>
     writeRecord(key, next, { maxRawLength: readOpts.maxRawLength ?? DEFAULT_MAX_RAW_LENGTH });
+  if (migrate) {
+    const raw = readRaw();
+    const migrated = migrate(raw);
+    if (migrated !== raw) write(migrated);
+  }
   const convergeTo = (latest: Record<string, V>): void => {
     if (!recordsShallowEqual(getRecord(), latest)) setRecord(latest);
   };
