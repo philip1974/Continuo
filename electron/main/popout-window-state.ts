@@ -9,8 +9,8 @@
 // - renderer 写布局时:非普通状态的子窗 position 改用普通矩形,并在该 popout 组上标 `windowMode`。
 // - layout:write 把 `windowMode` 从布局里摘出来,存窗口段的 main 独占字段 `popoutWindowModes`(新增字段 → 旁挂
 //   explorer-ext.json,explorer.json 的布局保持 0.2.15 认识的样子;0.2.15 照普通矩形开子窗)。
-// - layout:read 按 `popoutWindowModes` 登记待恢复的状态;dockview 恢复开窗(window.open features = 存下的 position)时按
-//   位置尺寸认领,建窗(普通矩形)后 maximize() / setFullScreen(true)。
+// - layout:read 按 `popoutWindowModes` 登记待恢复的状态(按 popoutGroups 顺序);dockview 恢复开窗(按该顺序逐个 window.open,
+//   features = 存下的 position)时按开窗次序认领(位置尺寸核对),建窗(普通矩形)后 maximize() / setFullScreen(true)。
 // BDD: src/__tests__/window-state-restore/popout-window-mode.spec.ts
 
 import { WINDOW_CHANNELS, type PopoutWindowMode, type PopoutWindowState } from '../shared/window-channels';
@@ -53,45 +53,51 @@ export function splitPopoutWindowModes<T extends Obj>(layout: T): { layout: T; m
   return { layout: { ...layout, popoutGroups: next }, modes };
 }
 
+/** 恢复时第 N 个 popout 组(popoutGroups[N])的开窗 position(没有 / 畸形 → null)与要恢复的状态(没有 → null)。 */
+export interface RestoringPopoutGroup {
+  readonly position: PersistedPopoutWindowMode['position'] | null;
+  readonly mode: PopoutWindowMode | null;
+}
+
 /**
- * layout:read:与布局对得上的待恢复状态(该组仍在 popoutGroups 里、position 与写出时相同 —— 降级到 0.2.15 期间挪过 / 改过
- * 的子窗不套用旧状态)。返回各子窗恢复开窗时的 position 与状态。
+ * layout:read:布局里各 popout 组按 popoutGroups 顺序的开窗 position 与待恢复状态。状态只在该组仍在、position 与写出时相同才
+ * 恢复(降级到 0.2.15 期间挪过 / 改过的子窗不套用旧状态)。没有任何要恢复的状态 → 空数组。
  */
 export function restorablePopoutWindowModes(
   layout: unknown,
   modes: readonly PersistedPopoutWindowMode[] | undefined,
-): Array<PersistedPopoutWindowMode['position'] & { mode: PopoutWindowMode }> {
+): RestoringPopoutGroup[] {
   if (!modes || modes.length === 0 || !isObj(layout) || !Array.isArray(layout['popoutGroups'])) return [];
-  const out: Array<PersistedPopoutWindowMode['position'] & { mode: PopoutWindowMode }> = [];
+  const out: RestoringPopoutGroup[] = [];
   for (const g of layout['popoutGroups'] as unknown[]) {
-    if (!isObj(g) || !isObj(g['data'])) continue;
-    const id = g['data']['id'];
-    const position = positionOf(g['position']);
+    const id = isObj(g) && isObj(g['data']) ? g['data']['id'] : undefined;
+    const position = isObj(g) ? positionOf(g['position']) : null;
     const saved = modes.find((m) => m.id === id);
-    if (!saved || !position) continue;
-    const p = saved.position;
-    if (p.left === position.left && p.top === position.top && p.width === position.width && p.height === position.height) {
-      out.push({ ...position, mode: saved.mode });
-    }
+    const p = saved?.position;
+    const same =
+      p !== undefined &&
+      position !== null &&
+      p.left === position.left &&
+      p.top === position.top &&
+      p.width === position.width &&
+      p.height === position.height;
+    out.push({ position, mode: same ? saved!.mode : null });
   }
-  return out;
+  return out.some((g) => g.mode !== null) ? out : [];
 }
 
 // ─── 恢复登记(layout:read → window.open → did-create-window) ───
 
-const pending = new Map<number, { entries: Array<PersistedPopoutWindowMode['position'] & { mode: PopoutWindowMode }>; expiresAt: number }>();
+const pending = new Map<number, { groups: RestoringPopoutGroup[]; next: number; expiresAt: number }>();
 /** windowOpenHandler 认领到状态、等 did-create-window 套用的子窗(键 = 打开者 webContents id + 子窗名)。 */
 const claimed = new Map<string, PopoutWindowMode>();
 const claimKey = (openerId: number, frameName: string) => `${openerId}\0${frameName}`;
 
-/** layout:read 返回布局时调用:该 webContents 接下来恢复的子窗里,这些 position 的要恢复成最大化 / 全屏(以最新一次为准)。 */
-export function notePopoutWindowModes(
-  openerId: number,
-  entries: Array<PersistedPopoutWindowMode['position'] & { mode: PopoutWindowMode }>,
-  now: number = Date.now(),
-): void {
-  if (entries.length > 0) pending.set(openerId, { entries: [...entries], expiresAt: now + POPOUT_RESTORE_WINDOW_MS });
-  else pending.delete(openerId);
+/** layout:read 返回布局时调用:该 webContents 接下来按 popoutGroups 顺序恢复这些子窗(以最新一次为准)。 */
+export function notePopoutWindowModes(openerId: number, groups: RestoringPopoutGroup[], now: number = Date.now()): void {
+  if (groups.some((g) => g.mode !== null)) {
+    pending.set(openerId, { groups: [...groups], next: 0, expiresAt: now + POPOUT_RESTORE_WINDOW_MS });
+  } else pending.delete(openerId);
 }
 
 function featureNumber(features: string, key: string): number | undefined {
@@ -106,8 +112,10 @@ function featureNumber(features: string, key: string): number | undefined {
 }
 
 /**
- * windowOpenHandler(恢复中的子窗):按 window.open features 的 left/top/width/height 认领登记的状态(容差 1px:dockview
- * 换算主窗原点时可能有亚像素),认领到 → 记给 did-create-window。
+ * windowOpenHandler(恢复中的子窗):按组身份认领登记的状态,认领到 → 记给 did-create-window。dockview fromJSON 按 popoutGroups
+ * 顺序逐个(间隔 100ms)window.open,子窗名是新分配的组 id(与布局里的组 id 无关),故身份 = 恢复开窗的次序:第 N 次开窗 =
+ * popoutGroups[N] —— 两个位置尺寸相同的子窗不会互相认领。features 的 left/top/width/height 须与该组 position 相符(容差 1px:
+ * dockview 换算主窗原点时可能有亚像素;没有 position 的组只按次序);不符(前面的组没开出来)→ 往后找第一个相符的组并从那里续上。
  */
 export function claimPopoutWindowMode(openerId: number, frameName: string, features: string, now: number = Date.now()): void {
   const entry = pending.get(openerId);
@@ -117,16 +125,18 @@ export function claimPopoutWindowMode(openerId: number, frameName: string, featu
     return;
   }
   const f = ['left', 'top', 'width', 'height'].map((k) => featureNumber(features, k));
-  if (f.some((n) => n === undefined)) return;
-  const [left, top, width, height] = f as number[];
-  const near = (a: number, b: number) => Math.abs(a - b) <= 1;
-  const i = entry.entries.findIndex(
-    (e) => near(e.left, left!) && near(e.top, top!) && near(e.width, width!) && near(e.height, height!),
-  );
-  if (i < 0) return;
-  const [hit] = entry.entries.splice(i, 1);
-  if (entry.entries.length === 0) pending.delete(openerId);
-  claimed.set(claimKey(openerId, frameName), hit!.mode);
+  const [left, top, width, height] = f;
+  const near = (a: number, b: number | undefined) => b !== undefined && Math.abs(a - b) <= 1;
+  let i = entry.next;
+  for (; i < entry.groups.length; i++) {
+    const p = entry.groups[i]!.position;
+    if (p === null ? i === entry.next : near(p.left, left) && near(p.top, top) && near(p.width, width) && near(p.height, height)) break;
+  }
+  if (i >= entry.groups.length) return;
+  entry.next = i + 1;
+  const { mode } = entry.groups[i]!;
+  if (!entry.groups.slice(entry.next).some((g) => g.mode !== null)) pending.delete(openerId);
+  if (mode !== null) claimed.set(claimKey(openerId, frameName), mode);
 }
 
 /** did-create-window:取走认领到的状态(没有 → undefined)。 */

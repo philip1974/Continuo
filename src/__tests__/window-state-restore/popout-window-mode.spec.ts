@@ -195,29 +195,66 @@ describe('main:布局里的 windowMode 摘出来存窗口段;恢复时按位置�
     expect(splitPopoutWindowModes(layout('huge'))).toEqual({ layout: layout(), modes: [] });
   });
 
-  it('layout:read:组还在、position 与写出时相同才恢复(降级期间旧版本挪过子窗 → 不套用)', () => {
+  it('layout:read:按 popoutGroups 顺序给出各组开窗 position 与状态;组还在、position 与写出时相同才恢复(降级期间旧版本挪过子窗 → 不套用)', () => {
     const modes = [{ id: '2', mode: 'fullscreen' as const, position: NORMAL }];
-    expect(restorablePopoutWindowModes(layout(), modes)).toEqual([{ ...NORMAL, mode: 'fullscreen' }]);
+    const other = { position: { left: 10, top: 10, width: 500, height: 400 }, mode: null };
+    expect(restorablePopoutWindowModes(layout(), modes)).toEqual([{ position: NORMAL, mode: 'fullscreen' }, other]);
     expect(restorablePopoutWindowModes(layout(undefined, FULL), modes)).toEqual([]);
     expect(restorablePopoutWindowModes({ grid: {} }, modes)).toEqual([]);
     expect(restorablePopoutWindowModes(layout(), undefined)).toEqual([]);
   });
 
-  it('恢复开窗:features 位置尺寸对上(容差 1px)→ 该子窗名认领到状态,只取一次;对不上 / 过期 → 没有', () => {
-    notePopoutWindowModes(7, [{ ...NORMAL, mode: 'maximized' }], 1000);
-    claimPopoutWindowMode(7, 'dv-1-9', 'top=0,left=0,width=500,height=400', 1001);
+  const at = (r: typeof NORMAL, dy = 0) => `top=${r.top + dy},left=${r.left},width=${r.width},height=${r.height}`;
+  const OTHER = { left: 10, top: 10, width: 500, height: 400 };
+
+  it('恢复开窗:按开窗次序认领(第 N 次 = popoutGroups[N]),features 与该组 position 相符(容差 1px)才算;只取一次;过期 → 没有', () => {
+    notePopoutWindowModes(7, [{ position: OTHER, mode: null }, { position: NORMAL, mode: 'maximized' }], 1000);
+    claimPopoutWindowMode(7, 'dv-1-9', at(OTHER), 1001);
     expect(takeClaimedPopoutWindowMode(7, 'dv-1-9')).toBeUndefined();
-    claimPopoutWindowMode(7, 'dv-1-3', 'top=120.5,left=300,width=640,height=480', 1002);
+    claimPopoutWindowMode(7, 'dv-1-3', at(NORMAL, 0.5), 1002);
     expect(takeClaimedPopoutWindowMode(8, 'dv-1-3')).toBeUndefined();
     expect(takeClaimedPopoutWindowMode(7, 'dv-1-3')).toBe('maximized');
     expect(takeClaimedPopoutWindowMode(7, 'dv-1-3')).toBeUndefined();
     // 已认领完 → 再开同位置的子窗(用户主动弹出)不套用
-    claimPopoutWindowMode(7, 'dv-1-4', 'top=120,left=300,width=640,height=480', 1003);
+    claimPopoutWindowMode(7, 'dv-1-4', at(NORMAL), 1003);
     expect(takeClaimedPopoutWindowMode(7, 'dv-1-4')).toBeUndefined();
 
-    notePopoutWindowModes(7, [{ ...NORMAL, mode: 'fullscreen' }], 1000);
-    claimPopoutWindowMode(7, 'dv-1-5', 'top=120,left=300,width=640,height=480', 1000 + 60_000);
+    notePopoutWindowModes(7, [{ position: NORMAL, mode: 'fullscreen' }], 1000);
+    claimPopoutWindowMode(7, 'dv-1-5', at(NORMAL), 1000 + 60_000);
     expect(takeClaimedPopoutWindowMode(7, 'dv-1-5')).toBeUndefined();
+  });
+
+  it('两个位置尺寸相同的子窗只最大化其一:按次序认领,另一个不会被套上(不论最大化的是第一个还是第二个)', () => {
+    for (const maxIndex of [0, 1]) {
+      _resetPopoutWindowModes();
+      const groups = [0, 1].map((k) => ({ position: NORMAL, mode: k === maxIndex ? ('maximized' as const) : null }));
+      notePopoutWindowModes(7, groups, 1000);
+      claimPopoutWindowMode(7, 'dv-1-7', at(NORMAL), 1001);
+      claimPopoutWindowMode(7, 'dv-1-8', at(NORMAL), 1002);
+      expect([takeClaimedPopoutWindowMode(7, 'dv-1-7'), takeClaimedPopoutWindowMode(7, 'dv-1-8')], `max=${maxIndex}`).toEqual(
+        maxIndex === 0 ? ['maximized', undefined] : [undefined, 'maximized'],
+      );
+    }
+  });
+
+  it('前面的组没开出来(位置对不上)→ 往后找第一个相符的组续上;没有 position 的组只按次序', () => {
+    notePopoutWindowModes(
+      7,
+      [
+        { position: OTHER, mode: null },
+        { position: null, mode: 'fullscreen' },
+        { position: NORMAL, mode: 'maximized' },
+      ],
+      1000,
+    );
+    // 第 0 组没开出来:第一次开窗就是第 2 组(跳过无 position 的第 1 组,它只按次序认领)
+    claimPopoutWindowMode(7, 'dv-1-2', at(NORMAL), 1001);
+    expect(takeClaimedPopoutWindowMode(7, 'dv-1-2')).toBe('maximized');
+
+    notePopoutWindowModes(7, [{ position: OTHER, mode: null }, { position: null, mode: 'fullscreen' }], 1000);
+    claimPopoutWindowMode(7, 'dv-1-5', at(OTHER), 1001);
+    claimPopoutWindowMode(7, 'dv-1-6', 'top=1,left=2,width=300,height=200', 1002);
+    expect(takeClaimedPopoutWindowMode(7, 'dv-1-6')).toBe('fullscreen');
   });
 });
 

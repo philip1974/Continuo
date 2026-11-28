@@ -272,6 +272,77 @@ for (const mode of ['maximized', 'fullscreen'] as const) {
   });
 }
 
+// 第七十轮 A 组审计:两个位置尺寸相同的 popout 只最大化其一,重启后最大化套到了另一个上(恢复时只按矩形认领)。修后按恢复开窗
+// 次序认领(第 N 次开窗 = popoutGroups[N])。BDD: src/__tests__/window-state-restore/popout-window-mode.spec.ts
+test('两个位置尺寸相同的 popout 只最大化其一:重启后仍是那一个最大化,另一个保持普通', async () => {
+  test.setTimeout(150_000);
+  let { app: a, main } = await launch();
+  await openWorkspaceFile(main, ['a.ts']);
+  await expect(main.locator('.cm-content')).toContainText('export const a', { timeout: 10_000 });
+  // 先弹出设置(popoutGroups[0]),再弹出编辑器组(popoutGroups[1])
+  await main.getByRole('button', { name: SETTINGS }).click();
+  await main.getByRole('button', { name: DOCK_POPOUT }).click();
+  await expect.poll(() => a.windows().length, { timeout: 10_000 }).toBe(2);
+  await main.locator('.cm-content').click();
+  await main.getByRole('button', { name: DOCK_POPOUT }).click();
+  await expect.poll(() => a.windows().length, { timeout: 10_000 }).toBe(3);
+
+  /** 各 popout 子窗:是否编辑器那个(DOM 里有 .cm-content)、最大化、内容矩形。 */
+  const popouts = () =>
+    a.evaluate(async ({ BrowserWindow }) => {
+      const out: Array<{ editor: boolean; maximized: boolean; content: Electron.Rectangle }> = [];
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.webContents.getURL().includes('popout=1')) continue;
+        const editor = (await w.webContents.executeJavaScript("!!document.querySelector('.cm-content')")) as boolean;
+        out.push({ editor, maximized: w.isMaximized(), content: w.getContentBounds() });
+      }
+      return out.sort((x, y) => Number(x.editor) - Number(y.editor));
+    });
+  const same = await a.evaluate(({ BrowserWindow, screen }) => {
+    const wa = screen.getPrimaryDisplay().workArea;
+    const rect = { x: wa.x + 260, y: wa.y + 110, width: 620, height: 460 };
+    for (const w of BrowserWindow.getAllWindows()) if (w.webContents.getURL().includes('popout=1')) w.setContentBounds(rect);
+    return rect;
+  });
+  await expect.poll(async () => (await popouts()).map((p) => p.editor), { timeout: 10_000 }).toEqual([false, true]);
+  type Persisted = {
+    windows?: Array<{
+      windowSeq: number;
+      popoutWindowModes?: Array<{ id: string; mode: string }>;
+      layout?: { popoutGroups?: Array<{ position?: { left?: number; top?: number; width?: number; height?: number } }> };
+    }>;
+  };
+  const entry = () => (readPersistedExplorer(userData) as Persisted).windows?.find((w) => w.windowSeq === 0);
+  // 两个组落盘的位置尺寸相同
+  await expect
+    .poll(
+      () => {
+        const groups = entry()?.layout?.popoutGroups ?? [];
+        return groups.length === 2 && JSON.stringify(groups[0]!.position) === JSON.stringify(groups[1]!.position);
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+
+  // 只最大化编辑器那个(popoutGroups[1])
+  await a.evaluate(async ({ BrowserWindow }) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.webContents.getURL().includes('popout=1')) continue;
+      if ((await w.webContents.executeJavaScript("!!document.querySelector('.cm-content')")) as boolean) w.maximize();
+    }
+  });
+  await expect.poll(async () => (await popouts()).map((p) => p.maximized), { timeout: 10_000 }).toEqual([false, true]);
+  await expect.poll(() => entry()?.popoutWindowModes?.length ?? 0, { timeout: 10_000 }).toBe(1);
+
+  await quit(a);
+  ({ app: a, main } = await launch());
+  await expect.poll(() => a.windows().length, { timeout: 20_000 }).toBe(3);
+  await expect.poll(async () => (await popouts()).map((p) => p.editor), { timeout: 15_000 }).toEqual([false, true]);
+  await expect.poll(async () => (await popouts()).map((p) => p.maximized), { timeout: 15_000 }).toEqual([false, true]);
+  // 普通的那个仍是原来的矩形
+  expect((await popouts())[0]!.content).toEqual(same);
+});
+
 test('设置面板弹出到 popout 后重启:主窗标题栏 / 窗口标题 / 状态栏取主窗的活动编辑器(不是 popout 里的面板)', async () => {
   test.setTimeout(120_000);
   let { app: a, main } = await launch();

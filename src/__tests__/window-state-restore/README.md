@@ -41,8 +41,10 @@
     不一定触发 dockview 布局变更)。
   - `layout:write` 把 `windowMode` 从布局摘出,存窗口段 main 独占字段 `popoutWindowModes`(`{ id, mode, position }`;新增字段 →
     旁挂 `explorer-ext.json`;explorer.json 的布局里是普通矩形,0.2.15 照普通尺寸开子窗)。不随文件夹快照走(同 `windowState`)。
-  - `layout:read` 按组 id + position 与布局对得上的项登记(降级期间旧版本挪过的子窗不套用);恢复开窗时 window.open
-    features 的位置尺寸对上(容差 1px)→ 以普通矩形建窗,`did-create-window` 里先订阅状态推送(量窗框)、`showInactive`,
+  - `layout:read` 按组 id + position 与布局对得上的项登记(降级期间旧版本挪过的子窗不套用),按 `popoutGroups` 顺序记下各组;
+    dockview 按该顺序逐个恢复开窗(子窗名是新分配的组 id,与布局里的组 id 无关),故按**开窗次序**认领:第 N 次恢复开窗 =
+    第 N 个组,且 window.open features 的位置尺寸与该组相符(容差 1px;前面的组没开出来 → 往后找第一个相符的续上)—— 两个
+    位置尺寸相同的子窗只最大化其一,重启后不会套到另一个上。认领到 → 以普通矩形建窗,`did-create-window` 里先订阅状态推送(量窗框)、`showInactive`,
     再 `maximize()` / `setFullScreen(true)`(macOS 在别的窗口进出全屏空间的过渡期间会忽略全屏请求 —— 没进入就隔 1s 重试,
     最多 3 次)。还原后回到普通尺寸。用户主动弹出的子窗不套用。
 - popout 恢复在途时不写残缺布局(`popout-restore-settle.spec.ts`):dockview `fromJSON` 把 popout 组逐个延时开窗、等子窗
