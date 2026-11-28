@@ -30,6 +30,39 @@ export interface RevokeResult {
   readonly rotated: boolean;
 }
 
+/**
+ * 授权弹窗里「谁、要做什么」的说明(只作显示,不参与授权判定):
+ * - callerSessionId:调用方所在的 Continuo 终端(main 按调用方绑定的 MCP token 反查;外部客户端没有);renderer 按本窗口
+ *   终端 store 显示其标题;
+ * - 其余为本次请求的关键参数,由 agent 决定(create_session 的 autorun / cwd / agentLabel,debug.launch 的 program / cwd)。
+ * 各字段 main 侧截到 AGENT_AUTH_DETAIL_MAX;renderer 再可见化(控制 / 双向字符、换行)并截断显示(lib/untrusted-text)。
+ */
+export interface AgentAuthRequestDetails {
+  readonly callerSessionId?: string;
+  readonly command?: string;
+  readonly cwd?: string;
+  readonly program?: string;
+  readonly agentLabel?: string;
+}
+
+export const AGENT_AUTH_DETAIL_KEYS = ['callerSessionId', 'command', 'cwd', 'program', 'agentLabel'] as const;
+
+/** details 每个字段的长度上限(main 发送前截断,ingress 守卫按它校验)。 */
+export const AGENT_AUTH_DETAIL_MAX = 4096;
+
+/** main 发送前整理 details:只留非空字符串字段,超长截断;全空 → undefined。 */
+export function clipAgentAuthDetails(
+  details: Partial<Record<(typeof AGENT_AUTH_DETAIL_KEYS)[number], unknown>> | undefined,
+): AgentAuthRequestDetails | undefined {
+  if (!details) return undefined;
+  const out: Record<string, string> = {};
+  for (const key of AGENT_AUTH_DETAIL_KEYS) {
+    const v = details[key];
+    if (typeof v === 'string' && v.length > 0) out[key] = v.slice(0, AGENT_AUTH_DETAIL_MAX);
+  }
+  return Object.keys(out).length > 0 ? (out as AgentAuthRequestDetails) : undefined;
+}
+
 export interface AgentAuthRequestPayload {
   readonly requestId: string;
   readonly method: string;
@@ -38,6 +71,8 @@ export interface AgentAuthRequestPayload {
    * 按独立的调用方类别判定,不与窗口级「本次启动期间允许」互相放行(renderer 只在界面副本的 external 一侧记授权位)。
    */
   readonly external?: boolean;
+  /** 弹窗说明(见 AgentAuthRequestDetails;只作显示)。 */
+  readonly details?: AgentAuthRequestDetails;
 }
 
 /**
@@ -99,6 +134,16 @@ export function isAgentAuthRequestPayload(
     return false;
   }
   if (o.external !== undefined && typeof o.external !== 'boolean') return false;
+  if (o.details !== undefined && !isAgentAuthDetails(o.details)) return false;
+  return true;
+}
+
+function isAgentAuthDetails(v: unknown): v is AgentAuthRequestDetails {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  for (const [key, value] of Object.entries(v)) {
+    if (!(AGENT_AUTH_DETAIL_KEYS as readonly string[]).includes(key)) return false;
+    if (typeof value !== 'string' || value.length > AGENT_AUTH_DETAIL_MAX) return false;
+  }
   return true;
 }
 

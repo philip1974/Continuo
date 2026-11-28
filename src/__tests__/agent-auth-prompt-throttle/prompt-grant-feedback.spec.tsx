@@ -95,13 +95,13 @@ describe('AgentAuthPrompt:被守卫拒掉的授予激活有可感知反馈', () 
   it('辅助技术合成的点击(detail=0、无 keydown、焦点不在按钮上)→ 仍不授予,但有提示', async () => {
     const outcome = prompt();
     advance(DELAY * 4);
-    expect(document.activeElement).toBe(button('拒绝'));
+    expect(document.activeElement).toBe(document.querySelector('[role="dialog"]'));
     fireEvent.click(button('仅本次'), { detail: 0 });
     expect(await outcome()).toBeNull();
     expect(status().textContent).not.toBe('');
   });
 
-  it('有效的授予不出提示;「拒绝」不出提示', async () => {
+  it('有效的授予不出提示', async () => {
     const outcome = prompt();
     advance(DELAY);
     fireEvent.click(button('仅本次'), { detail: 1 });
@@ -117,7 +117,7 @@ describe('AgentAuthPrompt:被守卫拒掉的授予激活有可感知反馈', () 
     prompt('terminal.create_session');
     fireEvent.click(button('仅本次'), { detail: 1 });
     expect(status().textContent).not.toBe('');
-    fireEvent.click(button('拒绝'), { detail: 1 });
+    act(() => store().deny()); // 结算显示中的请求(不经按钮:按钮的有效点击会自己清掉提示)
     expect(await first()).toBe('denied');
     expect(store().pending).not.toBeNull();
     expect(status().textContent).toBe('');

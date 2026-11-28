@@ -10,6 +10,10 @@
    用户重命名 > 前台进程名(含 shell 本身:空闲时 `zsh` / `bash`,运行程序时 `vim` / `node`)> 默认名「终端 N」(按当前语言)/
    显式 session 标题(进程名未知时的兜底)。agent 会话仍加 ` (agent)` 后缀,已退出仍加「(已退出)」;已退出时不再显示进程名
    (回到默认名 +「(已退出)」)。MCP `list_sessions` 的 `title` 不变(仍是「Terminal N」)。
+   **agent 显式命名**(`create_session` 的 `name`;VSCode `createTerminal({ name })` = TitleEventSource.Api):名字固定显示,
+   优先级在用户重命名之后、进程名之前 —— 运行中即显示「build (claude)」,不是「zsh (agent)」。agent 会话的后缀是创建时的
+   `agentLabel`(如 ` (claude)` / ` (codex)`;未给时 ` (agent)`)。名字与标签由 agent 决定,可见化后显示(换行折成空格,
+   控制 / 双向 / 零宽字符显示为「�」,标签超 32、名字超 80 码位中间截断,`lib/untrusted-text`);xterm 输入框读屏名同步。
 2. **不显示 OSC 标题**:程序经 OSC 0 / 2 设的标题(`printf '\033]0;T\007'`、oh-my-zsh 每个提示符设的 `user@host: dir`)不影响
    tab 标题 —— renderer 不订阅 xterm `onTitleChange`,没有上报通道(`terminal:update_title` 已移除),会话无 `sequenceTitle` 字段。
    因此开发者 dotfiles 不再左右 tab 标题,e2e 启动环境也不再需要 `DISABLE_AUTO_TITLE`。

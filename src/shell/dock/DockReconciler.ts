@@ -222,6 +222,7 @@ export function reconcileTerminalPanels(
       const isFirstAppearance = !everAddedSessionIds.has(session.id);
       const position =
         splitPosition(api, takeSplitPlacement(session, isFirstAppearance)) ??
+        agentGroupPosition(api, session) ??
         (lastRefId
           ? { referencePanel: lastRefId, direction: splitDirectionFor(api, lastRefId) }
           : gridFallbackPosition(api));
@@ -496,6 +497,22 @@ function widthAfterSplitRight(group: DockviewApi['groups'][number]): number {
     return total / (members.length + 1);
   }
   return group.api.width / 2;
+}
+
+/**
+ * agent 终端聚在一个组里:已有 agent 终端在主窗 grid → 作为 tab 加进最后那个 agent 终端的组。否则每个 agent 终端都向右再拆一列,
+ * 几个 agent 终端就把编辑器挤到不足 200px(VSCode 扩展 createTerminal 默认只在终端面板里多一个 tab,不拆分)。第一个 agent 终端
+ * 照常按右侧分屏规则落位;用户的新建 / 拆分终端不受影响。
+ */
+function agentGroupPosition(api: DockviewApi, session: TerminalSession): AddPanelOptions['position'] | undefined {
+  if (session.originHint !== 'agent') return undefined;
+  for (let i = api.panels.length - 1; i >= 0; i--) {
+    const panel = api.panels[i];
+    if (!panel || !sessionIdFromPanel(panel) || !isGridPanel(panel)) continue;
+    if ((panel.params as { originHint?: unknown } | undefined)?.originHint !== 'agent') continue;
+    return { referencePanel: panel.api.id, direction: 'within' };
+  }
+  return undefined;
 }
 
 function findLastGridTerminalPanelId(api: DockviewApi): string | null {

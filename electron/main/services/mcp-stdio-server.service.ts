@@ -488,6 +488,7 @@ async function handleLine(
       ? {
           ownerWindowId: liveOwner,
           callerSubject,
+          callerToken: binding.token,
           signal: AbortSignal.any([signal, binding.aborter.signal]),
         }
       : null;

@@ -3,6 +3,7 @@
 
 import type { IDockviewPanel } from 'dockview-react';
 import { t } from '@/i18n';
+import { UNTRUSTED_LABEL_MAX_CHARS, visibleUntrustedText } from '@/lib/untrusted-text';
 import type { TerminalSessionSnapshot } from '../../../electron/shared/terminal-session';
 
 const TERMINAL_PANEL_ID_PREFIX = 'terminal-';
@@ -24,16 +25,25 @@ export function sessionIdFromPanel(panel: PanelLike): string | null {
     : null;
 }
 
+/** tab 标题里 agent 标签后缀的显示上限(码位;超出中间截断)。 */
+const AGENT_LABEL_TITLE_MAX_CHARS = 32;
+
 /**
  * 终端 panel 标题的单一规则(DockReconciler 建 / 改 panel 与 TerminalPanelView 自校正共用;此前各写
- * 一份)。基础名优先级(对齐 VSCode:重命名 TitleEventSource.Api 固定、默认模板 `${process}`;程序经 OSC 0 / 2 设的标题
- * `${sequence}` 不在默认模板里,不显示):用户重命名 > 前台进程名(shell 空闲时即 shell 名,如 zsh;运行程序时如 vim)>
- * 进程名未知时:未命名会话按当前语言「终端 N」> session 标题 > `Terminal <id 前 6 位>`;agent 发起的会话加 ` (agent)` 后缀;进程已退出再加本地化「(已退出)」后缀。
+ * 一份)。基础名优先级(对齐 VSCode:重命名 / 扩展 createTerminal({ name }) 都是 TitleEventSource.Api 固定、默认模板 `${process}`;
+ * 程序经 OSC 0 / 2 设的标题 `${sequence}` 不在默认模板里,不显示):用户重命名 > agent 创建时给的名字(create_session name)>
+ * 前台进程名(shell 空闲时即 shell 名,如 zsh;运行程序时如 vim)> 进程名未知时:未命名会话按当前语言「终端 N」> session 标题 >
+ * `Terminal <id 前 6 位>`;agent 发起的会话加 ` (<agentLabel>)` 后缀(未给标签时 ` (agent)`);进程已退出再加本地化「(已退出)」后缀。
+ * agent 给的名字 / 标签可见化后显示(换行、控制 / 双向字符替换,超长截断:lib/untrusted-text)。
  */
 export function terminalPanelTitle(input: TerminalTitleInput): string {
   const base = terminalBaseTitle(input);
-  const titled = input.originHint === 'agent' ? `${base} (agent)` : base;
+  const titled = input.originHint === 'agent' ? `${base} (${agentLabelOf(input)})` : base;
   return input.exited ? `${titled} ${t('panels.terminal.exited_suffix')}` : titled;
+}
+
+function agentLabelOf(input: TerminalTitleInput): string {
+  return input.agentLabel ? visibleUntrustedText(input.agentLabel, AGENT_LABEL_TITLE_MAX_CHARS) : 'agent';
 }
 
 /**
@@ -57,11 +67,17 @@ export interface TerminalTitleInput {
   readonly exited?: boolean;
   readonly userTitle?: string;
   readonly processName?: string;
+  /** agent 会话创建时自报的标签(create_session agentLabel,如 claude / codex);tab 后缀显示它。 */
+  readonly agentLabel?: string;
 }
 
-/** 不含 agent /「已退出」后缀的基础名(见 terminalPanelTitle;重命名框以它预填)。 */
+/** 不含 agent 标签 /「已退出」后缀的基础名(见 terminalPanelTitle;重命名框以它预填)。 */
 export function terminalBaseTitle(input: TerminalTitleInput): string {
   if (input.userTitle) return input.userTitle;
+  // agent 显式命名(main 只给未命名会话分配 defaultTitleIndex):VSCode createTerminal({ name }) 的名字固定,不被进程名覆盖。
+  if (input.originHint === 'agent' && input.defaultTitleIndex === undefined && input.sessionTitle) {
+    return visibleUntrustedText(input.sessionTitle, UNTRUSTED_LABEL_MAX_CHARS);
+  }
   // 已退出:前台程序随之结束(main 也会清 processName,这里防快照先后)。
   if (input.processName && !input.exited) return input.processName;
   return input.defaultTitleIndex !== undefined
@@ -79,6 +95,7 @@ export function terminalTitleInputOf(session: TerminalSessionSnapshot): Terminal
     exited: session.exitCode !== null,
     userTitle: session.userTitle,
     processName: session.processName,
+    agentLabel: session.agentLabel,
   };
 }
 

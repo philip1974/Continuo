@@ -1,7 +1,9 @@
 // 授权类弹窗的防误触守卫(agent 授权弹窗 AgentAuthPrompt 与插件权限弹窗 PermissionPrompt 共用)。
 //
 // 这类弹窗的出现时机由对方(agent / 插件)决定,且会抢走键盘焦点:用户正在终端 / 编辑器打字或点击时,落进弹窗的
-// 按键 / 连点不能变成授予。只对授予方向设防 —— 拒绝与 Esc 由调用方直接放行,初始焦点由调用方放在拒绝按钮上。
+// 按键 / 连点不能变成授予。插件权限弹窗只对授予方向设防(拒绝与 Esc 直接放行,初始焦点在拒绝按钮);agent 授权弹窗
+// 连拒绝方向也设防(被拒会进冷却,误拒让 agent 数十秒到数分钟拿不到授权):拒绝按钮同样标 PROMPT_GRANT_BUTTON_PROPS、
+// 先问 canGrant,Esc / 点遮罩先问 canDismiss,初始焦点放在对话框容器上(Modal 容器 data-autofocus)。
 // 防误触是授权弹窗的业务规则,不放进通用的 design Modal。
 //
 // 授予按钮的用法:标上 PROMPT_GRANT_BUTTON_PROPS,onClick 里先问 guard.canGrant(e)。
@@ -47,7 +49,7 @@ export interface PromptGrantGuard {
    * - 被拒掉的**指针**点击不能留下可用键盘授予的焦点(过早的单击 / 双击把焦点带到授予按钮上,停顿后的 Enter 各项
    *   键盘条件都满足):①指针点击会被拒的时刻(出现时间窗内、多击的后几击),弹窗里的 mousedown / pointerdown
    *   被 preventDefault,焦点不随按下移入;②点击被拒时焦点若已在该控件上,这次聚焦标为不可键盘授予,并把焦点
-   *   移回弹窗的初始焦点(拒绝按钮)。
+   *   移回弹窗的初始焦点(插件权限弹窗:拒绝按钮;agent 授权弹窗:对话框容器)。
    */
   readonly canGrant: (e: GrantClick) => boolean;
   /**
@@ -55,6 +57,11 @@ export interface PromptGrantGuard {
    * 给「对旧弹窗的连点 / 键重复不能落到新请求上」的场景用(连拒绝方向也挡);首次出现不受影响。
    */
   readonly switchSettled: () => boolean;
+  /**
+   * 不经按钮的拒绝方向收口(Esc / 点遮罩)是否算数:请求出现后 PROMPT_GRANT_ARM_DELAY_MS 内无效(被拒的同样把计时起点推后);
+   * 由按键触发时,这一下须是停顿后的单次按键 —— 输入流里的 Esc(vim 里 `ihello<Esc>`、取消补全)不算。被拒同样给提示。
+   */
+  readonly canDismiss: () => boolean;
   /**
    * 最近一次 canGrant 是否把激活拒掉了(PROMPT_GRANT_HINT_MS 后、被接受的激活之后、请求切换后复位)。
    * useSyncExternalStore 形状,供 PromptGrantHint 订阅。
@@ -140,8 +147,8 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
           now - s.shownAt >= PROMPT_GRANT_ARM_DELAY_MS
         );
       if (e.key === 'Tab' && e.shiftKey && isFirstFocusableOfGrantDialog(document.activeElement)) {
-        // Modal 的焦点陷阱会让第一个元素(拒绝)上的 Shift+Tab 回绕到最后一个元素(权限最大的授予按钮)。
-        // 拦下:焦点留在原处;向前 Tab 仍可到达所有元素。
+        // Modal 的焦点陷阱会让第一个元素(拒绝)/ 对话框容器(初始焦点)上的 Shift+Tab 回绕到最后一个元素(权限最大的
+        // 授予按钮)。拦下:焦点留在原处;向前 Tab 仍可到达所有元素。
         e.preventDefault();
         e.stopPropagation();
       }
@@ -205,6 +212,16 @@ export function usePromptGrantGuard(current: unknown): PromptGrantGuard {
         feedback.set(!ok);
         return ok;
       },
+      canDismiss: () => {
+        const s = state.current;
+        const now = Date.now();
+        let ok = s.armAt !== null && now - s.armAt >= PROMPT_GRANT_ARM_DELAY_MS;
+        if (!ok && s.armAt !== null) s.armAt = now;
+        // 触发这次收口的按键刚刚按下(Esc;capture 阶段已记下):须是停顿后的单次按键。点遮罩 → 最近没有按键,只看出现延迟。
+        if (ok && s.keyAt !== null && now - s.keyAt < PROMPT_GRANT_ARM_DELAY_MS) ok = s.keyDeliberate;
+        feedback.set(!ok);
+        return ok;
+      },
       switchSettled: () => {
         const at = state.current.switchedAt;
         return at === null || Date.now() - at >= PROMPT_GRANT_ARM_DELAY_MS;
@@ -249,12 +266,14 @@ function grantDialogOf(el: Element | null | undefined): Element | null {
 }
 
 function isFirstFocusableOfGrantDialog(el: Element | null): boolean {
-  return grantDialogOf(el)?.querySelector(FOCUSABLE_SELECTOR) === el;
+  const dialog = grantDialogOf(el);
+  return dialog !== null && (dialog === el || dialog.querySelector(FOCUSABLE_SELECTOR) === el);
 }
 
 /**
  * 被拒的指针点击落在已聚焦的控件上:这次聚焦标为不可键盘授予,并把焦点移回弹窗的初始焦点(与 design Modal 同一
- * 规则:[data-autofocus],否则第一个可聚焦元素 —— 两种弹窗里都是拒绝按钮)。移回而不是 blur:blur 后焦点落到
+ * 规则:容器自身带 [data-autofocus] → 容器(agent 授权弹窗);否则内部的 [data-autofocus],再否则第一个可聚焦元素
+ *(插件权限弹窗的拒绝按钮))。移回而不是 blur:blur 后焦点落到
  * body,读屏丢失位置、焦点陷阱也要等下一次 Tab 才接管;移回拒绝按钮,读屏播报的是一个确定的、安全的位置,
  * 被拒的原因由 status 区域播报。找不到可移回的元素时焦点留在原处,靠标记挡住键盘授予。
  */
@@ -263,7 +282,9 @@ function dropPointerFocus(s: GuardState, control: Element): void {
   s.focusByStreamTab = true;
   const dialog = grantDialogOf(control);
   const home =
-    dialog?.querySelector<HTMLElement>('[data-autofocus]:not([disabled])') ??
-    dialog?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+    dialog?.hasAttribute('data-autofocus') === true
+      ? (dialog as HTMLElement)
+      : (dialog?.querySelector<HTMLElement>('[data-autofocus]:not([disabled])') ??
+        dialog?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR));
   if (home != null && home !== control && !home.matches(GRANT_BUTTON_SELECTOR)) home.focus();
 }

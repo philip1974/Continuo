@@ -51,6 +51,7 @@ export function TerminalPanelView(
     sessionExited,
     userTitle,
     processName,
+    agentLabel,
   } = useTerminalStore(
     useShallow((s) => {
       const found = getIndexedTerminalSessionById(s.sessions, sessionId);
@@ -62,6 +63,7 @@ export function TerminalPanelView(
         sessionExited: found !== undefined && found.exitCode !== null,
         userTitle: found?.userTitle,
         processName: found?.processName,
+        agentLabel: found?.agentLabel,
       };
     }),
   );
@@ -74,6 +76,7 @@ export function TerminalPanelView(
     exited: sessionExited,
     userTitle,
     processName,
+    agentLabel,
   };
   const derivedTitle = terminalPanelTitle(titleInput);
   const inputAriaLabel = terminalInputAriaLabel(titleInput);

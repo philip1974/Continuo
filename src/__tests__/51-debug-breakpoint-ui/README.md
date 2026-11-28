@@ -4,6 +4,7 @@
 
 - `debug.store` 的断点按文件路径匹配到 CodeMirror tab 后,显示在独立 debug gutter。
 - 最近 `stopped` 的 active session 位置按文件路径匹配到 CodeMirror tab 后,显示 exec-line。
+- exec-line 的样子对齐 VSCode:整行黄底(`editor.stackFrameHighlightBackground`,`--md-debug-exec-line`,light / dark 各一值,与断点红色区分)+ 断点 gutter 里的黄色右指箭头(`--md-debug-exec-marker`,与断点红点同在一行时叠在其上);光标停在执行行上时编辑器当前行(`.cm-activeLine`)背景不盖住黄底(`decorations.spec.tsx`)。只管显示,停下时不自动打开 / 滚动到该文件。
 - 路径匹配使用 `path-cross.pathEquals`,包含 Windows 大小写折叠语义。
 - Markdown/Milkdown tab 不显示 debug 装饰,避免编辑/预览模式混入 CodeMirror 断点 UI。
 - `continued`、`terminated`、session 消失、tab 关闭或关窗时必须清理旧 exec-line 与断点,防止陈旧装饰。

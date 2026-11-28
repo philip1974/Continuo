@@ -42,3 +42,12 @@ main 已先清空全部「本次启动期间允许」(权威在 main);广播让�
 并取消残留弹窗(main 已结算这些请求,不撤掉的话用户点了只会得到 NOT_PENDING)。各 renderer 收到后执行与本地撤销相同的重置(见 `agent-auth-prompt` / `agent-terminal-mcp-auth`)。
 
 Prompt throttling (2026-11-18, security): `requestAgentAuth` now runs every request for a domain that is not yet "allowed for this launch" through the shared prompt throttle (deny cooldown / backoff / rate cap / one pending prompt per caller) and rejects with `AGENT_NOT_AUTHORIZED` when throttled — see `src/__tests__/agent-auth-prompt-throttle/`. Requests for a domain the user already allowed for this launch are approved in main directly (no pending entry, no IPC), and unallowed requests are single-flight per caller class, so the E229 pending caps are a backstop: the E229 case reaches the global cap by accumulating one pending prompt per caller class across many windows.
+
+T18 弹窗说明(`AgentAuthInfo.details` / `callerToken`,第五十八轮):工具门控把请求的关键参数(create_session 的 autorun / cwd /
+agentLabel、debug.launch 的 program / cwd)与调用方绑定的 MCP token(`McpCallCtx.callerToken`:HTTP bearer / stdio hello 所用 token;
+外部客户端没有)交给 `requestAgentAuth`。main 按 token 反查持有它的终端会话(`terminal.service.sessionIdForMcpToken`,
+`caller-terminal.spec.ts`)填 `details.callerSessionId`(调用方自报的同名字段被覆盖;external 不查),每字段截到
+`AGENT_AUTH_DETAIL_MAX`、空串去掉后随 payload 下发;token 本身不下发。**只作显示**:不进授权键、不影响节流 / 放行
+(已「本次启动期间允许」的域,不论说明如何都直接放行)。ingress 守卫 `isAgentAuthRequestPayload` 只收已知字段的不超长字符串。
+
+T19 撤销计数(`countAgentTerminalSessions`)与撤销终止的集合只含**仍在运行**的 agent 终端;已退出的不终止、不删除。

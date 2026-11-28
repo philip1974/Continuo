@@ -10,7 +10,7 @@
 // BDD: src/__tests__/agent-terminal-mcp-auth/
 
 import { create } from 'zustand';
-import { agentAuthDomainOf } from '../../electron/shared/agent-auth-channels';
+import { agentAuthDomainOf, type AgentAuthRequestDetails } from '../../electron/shared/agent-auth-channels';
 
 export type AuthDecision = 'once' | 'session' | 'denied';
 /**
@@ -24,6 +24,8 @@ export interface PendingAuthRequest {
   readonly method: string;
   /** 来自未绑定 Continuo 终端的外部客户端(弹窗标注来源)。 */
   readonly external?: boolean;
+  /** 弹窗说明:发起终端、关键参数(只作显示)。 */
+  readonly details?: AgentAuthRequestDetails;
 }
 
 interface EnsureInfo {
@@ -32,6 +34,7 @@ interface EnsureInfo {
   readonly method: string;
   /** 安全(F2):外部客户端请求 → 授权位记在 external 一侧(界面副本;放行由 main 按调用方类别判定)。 */
   readonly external?: boolean;
+  readonly details?: AgentAuthRequestDetails;
 }
 
 type AgentAuthState = {
@@ -161,6 +164,7 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
       requestId: info.requestId,
       method: info.method,
       ...(external ? { external: true } : {}),
+      ...(info.details ? { details: info.details } : {}),
     };
     return new Promise<EnsureOutcome>((resolve) => {
       slots.push({ req, resolve });

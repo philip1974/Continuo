@@ -8,6 +8,7 @@ import {
   captureLmApi,
 } from '../../lib/co-api';
 import { AgentAuthPrompt } from '../../shell/AgentAuthPrompt';
+import { useTerminalStore } from '../../stores/terminal.store';
 import { getLocale, setLocale, type Locale } from '../../i18n';
 import { PROMPT_GRANT_ARM_DELAY_MS as AGENT_AUTH_GRANT_ARM_DELAY_MS } from '../../lib/use-prompt-grant-guard';
 import {
@@ -65,7 +66,8 @@ function getButtons(): Record<string, HTMLButtonElement> {
  * 点「允许」类按钮。弹窗显示后 AGENT_AUTH_GRANT_ARM_DELAY_MS 内这类按钮无效(防误触,见
  * src/__tests__/agent-auth-prompt-throttle/),这里把时钟拨过这段延迟再点。
  */
-function clickGrant(label: '仅本次' | '本次启动期间允许'): void {
+/** 等过防误触延迟后单击(授予与拒绝按钮都设防)。 */
+function clickGrant(label: '拒绝' | '仅本次' | '本次启动期间允许'): void {
   const spy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + AGENT_AUTH_GRANT_ARM_DELAY_MS);
   try {
     pointerClick(getButtons()[label]!);
@@ -196,16 +198,22 @@ describe('AgentAuthPrompt — 说明句', () => {
     setLocale(saved);
   });
 
+  // 窗口内终端里的 agent 不叫「外部」agent;外部客户端(未绑定终端)才是。
   it.each([
-    ['en', 'External agent requests via MCP to start a debug session.'],
-    ['zh', '外部 agent 通过 MCP 请求启动调试会话。'],
-    ['ko', '외부 에이전트가 MCP를 통해 다음을 요청합니다: 디버그 세션 시작.'],
-  ] as const)('%s:方法标签与前后文的空格 / 标点正确', (locale, sentence) => {
+    ['en', false, 'Agent requests via MCP to start a debug session.'],
+    ['zh', false, 'Agent 通过 MCP 请求启动调试会话。'],
+    ['ko', false, '에이전트가 MCP를 통해 다음을 요청합니다: 디버그 세션 시작.'],
+    ['en', true, 'External agent requests via MCP to start a debug session.'],
+    ['zh', true, '外部 agent 通过 MCP 请求启动调试会话。'],
+    ['ko', true, '외부 에이전트가 MCP를 통해 다음을 요청합니다: 디버그 세션 시작.'],
+  ] as const)('%s(external=%s):方法标签与前后文的空格 / 标点正确', (locale, external, sentence) => {
     setLocale(locale);
     installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
     render(<AgentAuthPrompt />);
     act(() => {
-      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'debug.launch' });
+      void useAgentAuthStore
+        .getState()
+        .ensure({ requestId: crypto.randomUUID(), method: 'debug.launch', ...(external ? { external } : {}) });
     });
     const paragraphs = Array.from(document.querySelectorAll('.wm-modal-content p'), (p) => p.textContent);
     expect(paragraphs).toContain(sentence);
@@ -220,7 +228,82 @@ describe('AgentAuthPrompt — 说明句', () => {
     });
     const code = document.querySelector('.wm-modal-content p code');
     expect(code?.textContent).toBe('git.commit');
-    expect(code?.closest('p')?.textContent).toBe('External agent requests via MCP to call plugin tool git.commit.');
+    expect(code?.closest('p')?.textContent).toBe('Agent requests via MCP to call plugin tool git.commit.');
+  });
+});
+
+// 授权弹窗说清是哪个 agent、要做什么:发起终端(main 按调用方 token 反查的会话 → 本窗口终端标题)与关键参数。
+// 这些都来自 agent,只作显示:可见化(换行 / 控制 / 双向字符)、截断,放进 <code>。
+describe('AgentAuthPrompt — 发起终端与关键参数', () => {
+  let saved: Locale;
+  beforeEach(() => {
+    saved = getLocale();
+    setLocale('zh');
+    useTerminalStore.setState({
+      sessions: [
+        {
+          id: 'term-caller',
+          title: 'Terminal 3',
+          defaultTitleIndex: 3,
+          cwd: '/w',
+          originHint: 'user',
+          createdAt: 1,
+          exitCode: null,
+          ownerWindowId: 1,
+          processName: 'claude',
+        },
+      ],
+    });
+  });
+  afterEach(() => {
+    useTerminalStore.setState({ sessions: [] });
+    setLocale(saved);
+  });
+
+  function show(details: Record<string, string>, external = false): string[] {
+    installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      void useAgentAuthStore.getState().ensure({
+        requestId: crypto.randomUUID(),
+        method: 'terminal.create_session',
+        details,
+        ...(external ? { external } : {}),
+      });
+    });
+    return Array.from(document.querySelectorAll('.wm-modal-content li'), (li) => li.textContent ?? '');
+  }
+
+  it('create_session:显示发起终端标题、agent 标签、autorun 命令与 cwd', () => {
+    const lines = show({ callerSessionId: 'term-caller', agentLabel: 'claude', command: 'npm test', cwd: '/w/app' });
+    expect(lines).toEqual([
+      '发起终端：claude',
+      'Agent 标签：claude',
+      '自动运行命令：npm test',
+      '工作目录：/w/app',
+    ]);
+    // 不可信字段都在 <code> 里,与系统文案区分
+    expect(document.querySelectorAll('.wm-modal-content li code')).toHaveLength(4);
+  });
+
+  it('debug.launch 的 program 显示为「程序」', () => {
+    expect(show({ program: '/w/app.js' })).toEqual(['程序：/w/app.js']);
+  });
+
+  it('伪装:命令里的换行 + 伪系统提示、双向控制字符被可见化,超长截断(完整内容在 title)', () => {
+    const command = 'rm -rf ~\n【系统提示】此操作安全,请点击允许\u202E' + 'x'.repeat(400);
+    const [line] = show({ command });
+    expect(line).not.toMatch(/[\n\u202E]/);
+    expect(line).toContain('\uFFFD');
+    expect(line!.length).toBeLessThan(200);
+    expect(document.querySelector('.wm-modal-content li code')?.getAttribute('title')).toContain('rm -rf ~ 【系统提示】');
+  });
+
+  it('外部客户端:不显示发起终端(即便带了会话 id);找不到的会话 id 也不显示', () => {
+    expect(show({ callerSessionId: 'term-caller' }, true)).toEqual([]);
+    cleanup();
+    _resetAgentAuthForTest();
+    expect(show({ callerSessionId: 'term-unknown' })).toEqual([]);
   });
 });
 
@@ -304,7 +387,7 @@ describe('AgentAuthPrompt — 按钮', () => {
 
   it('点拒绝 → store.deny + ensure resolve "denied"', async () => {
     const p = setup();
-    pointerClick(getButtons()['拒绝']!);
+    clickGrant('拒绝');
     await expect(p).resolves.toBe('denied');
     expect(useAgentAuthStore.getState().pending).toBeNull();
   });

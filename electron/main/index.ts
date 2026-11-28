@@ -1203,8 +1203,15 @@ const getSessionOwner = (id: string): number | null =>
   terminalSessions.get(id)?.ownerWindowId ?? null;
 
 /** MCP 工具(终端 / debug / 插件三个域)共用的授权入口:交 agent-auth.service 判定,已授权域直接放行,未授权才转 renderer 弹窗。 */
-const ensureAgentAuthorized: EnsureAuthorized = (ownerWindowId, method, external) =>
-  requestAgentAuth({ method, ownerWindowId, external });
+// 弹窗说明(调用方 token → 发起终端、请求参数)只作显示,见 requestAgentAuth。
+const ensureAgentAuthorized: EnsureAuthorized = (ownerWindowId, method, external, request) =>
+  requestAgentAuth({
+    method,
+    ownerWindowId,
+    external,
+    ...(request?.callerToken ? { callerToken: request.callerToken } : {}),
+    ...(request?.params ? { details: request.params } : {}),
+  });
 
 async function startMcpHost(): Promise<void> {
   let brokerStarted = false;

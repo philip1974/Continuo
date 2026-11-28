@@ -27,6 +27,7 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 const focused = (): HTMLElement => document.activeElement as HTMLElement;
+const dialog = (): HTMLElement => document.querySelector<HTMLElement>('[role="dialog"]')!;
 
 /**
  * 在当前焦点元素上按一个键。jsdom 不做浏览器的默认动作,这里补上按钮的键盘激活:Enter / Space 落在按钮上 =
@@ -48,7 +49,7 @@ function tabTo(el: HTMLElement): void {
   if (fireEvent.keyDown(focused(), { key: 'Tab' })) el.focus();
 }
 
-/** 弹出一个授权弹窗并等过出现延迟(初始焦点已落在「拒绝」),返回其结算结果的读取器。 */
+/** 弹出一个授权弹窗并等过出现延迟(初始焦点已落在对话框容器),返回其结算结果的读取器。 */
 function prompt(): () => Promise<EnsureOutcome | null> {
   let outcome: EnsureOutcome | null = null;
   act(() => {
@@ -67,7 +68,7 @@ function prompt(): () => Promise<EnsureOutcome | null> {
   };
 }
 
-/** 弹出一个授权弹窗,只等初始焦点落到「拒绝」(不等出现延迟):用户还没注意到弹窗、输入流继续落进来。 */
+/** 弹出一个授权弹窗,只等初始焦点落到对话框容器(不等出现延迟):用户还没注意到弹窗、输入流继续落进来。 */
 function promptJustShown(): () => Promise<EnsureOutcome | null> {
   let outcome: EnsureOutcome | null = null;
   act(() => {
@@ -114,9 +115,12 @@ afterEach(() => {
 });
 
 describe('AgentAuthPrompt:授予按钮的键盘激活须是停顿后的有意按键', () => {
-  it('Shift+Tab 不能从「拒绝」回绕到授予按钮:焦点留在「拒绝」', async () => {
+  it('Shift+Tab 不能从对话框容器(初始焦点)/「拒绝」回绕到授予按钮:焦点留在原处', async () => {
     const outcome = prompt();
-    expect(focused()).toBe(button('拒绝'));
+    expect(focused()).toBe(dialog());
+    press('Tab', { shiftKey: true });
+    expect(focused()).toBe(dialog());
+    act(() => button('拒绝').focus());
     press('Tab', { shiftKey: true });
     expect(focused()).toBe(button('拒绝'));
     expect(await outcome()).toBeNull();
@@ -223,16 +227,30 @@ describe('AgentAuthPrompt:授予按钮的键盘激活须是停顿后的有意按
     expect(await outcome()).toBe('once');
   });
 
-  it('「拒绝」的键盘激活与 Esc 不受限制', async () => {
+  it('「拒绝」与 Esc 同样设防:打字流里的回车 / Esc 不拒绝;停顿后的 Esc、停顿后 Tab 到「拒绝」再停顿回车 → 拒绝', async () => {
     const outcome = prompt();
     type('abc');
-    press('Enter'); // 焦点在「拒绝」
+    press('Enter'); // 焦点在对话框容器:回车不点任何按钮
+    press('Escape'); // 紧跟打字的 Esc
+    expect(await outcome()).toBeNull();
+    advance(DELAY + 100);
+    press('Escape');
     expect(await outcome()).toBe('denied');
 
     const second = prompt();
-    type('abc');
-    press('Escape');
+    tabTo(button('拒绝'));
+    advance(DELAY + 100);
+    press('Enter');
     expect(await second()).toBe('denied');
+  });
+
+  it('打字流里 Tab 到「拒绝」后的回车不拒绝', async () => {
+    const outcome = promptJustShown();
+    type('ab');
+    tabTo(button('拒绝'));
+    advance(DELAY + 100);
+    press('Enter');
+    expect(await outcome()).toBeNull();
   });
 });
 

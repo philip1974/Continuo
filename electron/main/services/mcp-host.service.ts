@@ -116,6 +116,11 @@ export interface McpCallCtx {
    * 授权请求据此带 external 标记:main 按独立的调用方类别判定放行,不复用 / 不写入窗口级授权(弹窗标注来源)。
    */
   readonly external?: boolean;
+  /**
+   * 调用方绑定的 MCP token(HTTP = bearer token,stdio = hello 时交的 token;外部客户端没有)。每个终端 PTY 各签一个 token,
+   * main 据此反查发起调用的终端,只用于授权弹窗的来源说明 —— 不参与授权 / capability 判定,不出 main。
+   */
+  readonly callerToken?: string;
 }
 
 export interface McpRevokers {
@@ -1101,7 +1106,7 @@ export async function createMcpHost(
       const wid = windowTokens.get(token);
       if (typeof wid !== 'number') return null;
       // 安全 S3:bearer token 即调用方身份(callerSubject),供 capability 校验用。
-      return { ownerWindowId: wid, callerSubject: token };
+      return { ownerWindowId: wid, callerSubject: token, callerToken: token };
     },
     tools,
     serverInfo,

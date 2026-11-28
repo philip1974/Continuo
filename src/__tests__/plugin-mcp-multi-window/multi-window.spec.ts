@@ -433,7 +433,7 @@ describe('授权门控 · 插件工具经 agent 授权', () => {
     const { bridge, host, invokeRemote } = makeBridge(ensure);
     bridge.handleRegister(22, regPayload('git.commit', 'p.git'));
     await host.tools.get('git.commit')!.run({ m: 'x' }, { ownerWindowId: 2 });
-    expect(ensure).toHaveBeenCalledWith(2, 'plugin.git.commit', false);
+    expect(ensure).toHaveBeenCalledWith(2, 'plugin.git.commit', false, expect.any(Object));
     expect(invokeRemote.invokeCalls).toEqual([
       { owner: { pluginId: 'p.git', wcId: 22 }, name: 'git.commit', input: { m: 'x' } },
     ]);

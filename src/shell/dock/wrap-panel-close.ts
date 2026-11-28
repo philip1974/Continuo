@@ -224,12 +224,38 @@ export async function closePanelsInOrder(panels: readonly IDockviewPanel[]): Pro
  * 加面板但不抢激活:dockview addPanel 默认激活新面板,而 `inactive: true` 会让新 group 容器处于不可见渲染态
  *(xterm 数据进了内部但屏幕全黑)。改为默认加入后立即把激活还给原活动面板(DockShell 非用户意图的 editor
  * 面板与 Reconciler 的 agent 终端共用)。
+ *
+ * 也不抢 DOM 焦点(VSCode 扩展 createTerminal 不 show 时不打断输入):向右分屏会把原组的 DOM 挪进新的 split 容器、
+ * 作为 tab 加入会先把原面板内容藏起 —— 两者都让焦点元素失焦落到 body,用户正在编辑器里打的字全丢。加入前记下各文档
+ *(主窗 + 原活动组所在的 popout 子窗)的焦点元素,加入并还原激活后,焦点已丢(body / 无 / 已卸载)而原元素仍在文档里 →
+ * 还给它;焦点已在别处(不是丢失)不动。
  */
 export function addPanelKeepingActive(api: DockviewApi, options: AddPanelOptions): IDockviewPanel {
   const previousActivePanelId = api.activePanel?.api.id ?? null;
+  const focused = focusedElementsBefore(api);
   const panel = api.addPanel(options);
   if (previousActivePanelId && previousActivePanelId !== panel.api.id) {
     api.getPanel(previousActivePanelId)?.api.setActive();
   }
+  restoreLostFocus(focused);
   return panel;
+}
+
+function focusedElementsBefore(api: DockviewApi): Map<Document, HTMLElement> {
+  const docs = new Set<Document>();
+  if (typeof document !== 'undefined') docs.add(document);
+  const groupDoc = api.activeGroup?.element.ownerDocument;
+  if (groupDoc) docs.add(groupDoc);
+  const focused = new Map<Document, HTMLElement>();
+  for (const doc of docs) {
+    const el = doc.activeElement as HTMLElement | null;
+    if (el !== null && el !== doc.body && typeof el.focus === 'function') focused.set(doc, el);
+  }
+  return focused;
+}
+
+function restoreLostFocus(focused: ReadonlyMap<Document, HTMLElement>): void {
+  for (const [doc, el] of focused) {
+    if (el.isConnected && focusWithinOrLost(doc, null)) el.focus({ preventScroll: true });
+  }
 }

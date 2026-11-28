@@ -66,9 +66,11 @@ describe('verifyAndResolveCtx', () => {
 
   it('Bearer <已签发 token> → 解析出 owner 窗口与 callerSubject', async () => {
     await withHost((host, token) => {
+      // callerToken:只供授权弹窗反查发起终端(不参与判定)
       expect(host.verifyAndResolveCtx(`Bearer ${token}`)).toEqual({
         ownerWindowId: 7,
         callerSubject: token,
+        callerToken: token,
       });
     });
   });
@@ -144,6 +146,7 @@ describe('createMcpHost · broadcast cleanup', () => {
       expect(host.verifyAndResolveCtx(`BeArEr ${token}`)).toEqual({
         ownerWindowId: 7,
         callerSubject: token,
+        callerToken: token,
       });
       expect(host.verifyAndResolveCtx(`Bearer ${token}\n`)).toBeNull();
       expect(execSpy).not.toHaveBeenCalled();

@@ -29,7 +29,7 @@ describe('gateWithAuth(S2)', () => {
     const ensure = vi.fn(async () => decision);
     const gated = gateWithAuth(tool, ensure, AUTH);
     await expect(gated.run({ a: 1 }, ctx(7, 's'))).resolves.toEqual({ ok: true });
-    expect(ensure).toHaveBeenCalledWith(7, 'm:demo_tool', false);
+    expect(ensure).toHaveBeenCalledWith(7, 'm:demo_tool', false, {});
     expect(run).toHaveBeenCalledWith({ a: 1 }, ctx(7, 's'));
   });
 
@@ -40,7 +40,22 @@ describe('gateWithAuth(S2)', () => {
     const ensure = vi.fn(async () => 'once' as const);
     const gated = gateWithAuth(tool, ensure, AUTH);
     await gated.run({}, { ownerWindowId: 7, callerSubject: 's', external: true });
-    expect(ensure).toHaveBeenCalledWith(7, 'm:demo_tool', true);
+    expect(ensure).toHaveBeenCalledWith(7, 'm:demo_tool', true, {});
+  });
+
+  // 授权弹窗的说明(发起终端、关键参数):callerToken 与 paramsFor 的结果原样交给 ensureAuthorized,只作显示。
+  it('第四参:ctx.callerToken + paramsFor(入参)→ 弹窗说明素材', async () => {
+    const { tool } = makeTool();
+    const ensure = vi.fn(async () => 'once' as const);
+    const gated = gateWithAuth(tool, ensure, {
+      ...AUTH,
+      paramsFor: (_t, input) => ({ program: (input as { program: string }).program }),
+    });
+    await gated.run({ program: '/w/a.js' }, { ownerWindowId: 7, callerSubject: 's', callerToken: 'tok' });
+    expect(ensure).toHaveBeenCalledWith(7, 'm:demo_tool', false, {
+      callerToken: 'tok',
+      params: { program: '/w/a.js' },
+    });
   });
 
   it('denied → AGENT_NOT_AUTHORIZED,内部工具不执行', async () => {

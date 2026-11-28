@@ -61,6 +61,12 @@ describe('打磨 R39 — StatusBar 订阅派生 agent 计数', () => {
     }
   });
 
+  it('只计仍在运行的 agent 终端:已退出的不算(撤销只终止运行中的,与 main 同口径)', () => {
+    const exited = { ...sess('a2', 'agent'), exitCode: 0 };
+    expect(countAgentSessions([sess('a1', 'agent'), exited, sess('u1', 'user')])).toBe(1);
+    expect(countAgentSessions([exited])).toBe(0);
+  });
+
   it('非 agent session 变化(计数不变)→ StatusBar 不重渲', () => {
     installApi();
     const onRender = vi.fn();

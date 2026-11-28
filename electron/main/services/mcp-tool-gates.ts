@@ -20,13 +20,47 @@ export type EnsureAuthorized = (
   ownerWindowId: number,
   method: string,
   external: boolean,
+  request?: AuthRequestDisplay,
 ) => Promise<'once' | 'session' | 'denied'>;
+
+/**
+ * 授权弹窗的说明素材(只作显示,不参与授权判定 —— 放行仍只看 窗口 × 调用方类别 × 域)。
+ * - callerToken:调用方绑定的 MCP token(ctx.callerToken),main 据此反查发起终端;不发给 renderer。
+ * - params:本次请求的关键参数(agent 决定的值)。
+ */
+export interface AuthRequestDisplay {
+  readonly callerToken?: string;
+  readonly params?: AuthRequestParams;
+}
+
+export interface AuthRequestParams {
+  readonly command?: string;
+  readonly cwd?: string;
+  readonly program?: string;
+  readonly agentLabel?: string;
+}
+
+/** ctx + 参数 → 弹窗说明素材。 */
+export function authRequestDisplay(ctx: McpCallCtx, params?: AuthRequestParams): AuthRequestDisplay {
+  return {
+    ...(ctx.callerToken ? { callerToken: ctx.callerToken } : {}),
+    ...(params ? { params } : {}),
+  };
+}
+
+/** 从原始入参取字符串字段(弹窗说明用;入参尚未经内部工具校验,非字符串忽略)。 */
+export function stringField(input: unknown, key: string): string | undefined {
+  const v = input !== null && typeof input === 'object' ? (input as Record<string, unknown>)[key] : undefined;
+  return typeof v === 'string' ? v : undefined;
+}
 
 export interface AuthGateOptions {
   /** 传给授权弹窗的 method(UI 据此显示精确动作)。 */
   readonly methodFor: (tool: AnyMcpTool) => string;
   /** denied 时的错误消息。 */
   readonly deniedMessage: string;
+  /** 弹窗里显示的关键参数(只作显示)。 */
+  readonly paramsFor?: (tool: AnyMcpTool, input: unknown) => AuthRequestParams | undefined;
 }
 
 /**
@@ -52,6 +86,7 @@ export function gateWithAuth(
         ctx.ownerWindowId,
         opts.methodFor(tool),
         ctx.external === true,
+        authRequestDisplay(ctx, opts.paramsFor?.(tool, input)),
       );
       if (decision === 'denied') {
         throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, opts.deniedMessage);

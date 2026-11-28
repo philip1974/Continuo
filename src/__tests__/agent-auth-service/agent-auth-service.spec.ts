@@ -16,7 +16,9 @@ import {
 } from '../../../electron/main/services/agent-auth.service';
 import {
   AGENT_AUTH_CHANNELS,
+  AGENT_AUTH_DETAIL_MAX,
   AGENT_AUTH_PROMPT_TIMEOUT_MS,
+  isAgentAuthRequestPayload,
   type AgentAuthDecision,
   type AgentAuthRequestPayload,
 } from '../../../electron/shared/agent-auth-channels';
@@ -58,6 +60,7 @@ const terminalServiceMock = vi.hoisted(() => ({
   has: vi.fn(),
   kill: vi.fn(),
   forceKill: vi.fn(),
+  sessionIdForMcpToken: vi.fn((token: string) => (token === 'tok-caller' ? 'term-caller' : null)),
 }));
 
 vi.mock('electron', () => ({
@@ -78,6 +81,7 @@ vi.mock('../../../electron/main/services/terminal.service', () => ({
   has: terminalServiceMock.has,
   kill: terminalServiceMock.kill,
   forceKill: terminalServiceMock.forceKill,
+  sessionIdForMcpToken: terminalServiceMock.sessionIdForMcpToken,
 }));
 
 function makeSession(
@@ -208,6 +212,57 @@ describe('agent-auth-service: requestAgentAuth', () => {
     await expect(
       requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: closing.id }),
     ).resolves.toBe('denied');
+  });
+
+  // 弹窗说明(发起终端、关键参数):随请求发给 renderer,每个字段截到 AGENT_AUTH_DETAIL_MAX、空串不发;只作显示 ——
+  // 带了说明的请求获得「本次启动期间允许」后,同域请求不论说明如何都直接放行(说明不进授权键)。
+  it('details 随请求下发(截断、去空),不参与授权判定', async () => {
+    const win = makeWin(1);
+    electronMock.windows = [win];
+    const p = requestAgentAuth({
+      method: 'terminal.create_session',
+      ownerWindowId: 1,
+      callerToken: 'tok-caller',
+      // 调用方不能自报发起终端:details 里的 callerSessionId 以 token 反查结果为准
+      details: { callerSessionId: 'term-fake', command: 'x'.repeat(AGENT_AUTH_DETAIL_MAX + 50), cwd: '' },
+    });
+    const payload = firstAuthPayload(win);
+    expect(payload.details).toEqual({ callerSessionId: 'term-caller', command: 'x'.repeat(AGENT_AUTH_DETAIL_MAX) });
+    expect(isAgentAuthRequestPayload(payload)).toBe(true);
+    resolveAgentAuthRequest(payload.requestId, 'session');
+    await expect(p).resolves.toBe('session');
+    await expect(
+      requestAgentAuth({
+        method: 'terminal.send_text',
+        ownerWindowId: 1,
+        details: { command: 'evil' },
+      }),
+    ).resolves.toBe('session');
+    expect(win.webContents.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('callerToken → 发起终端会话 id(details.callerSessionId);外部客户端 / 查不到 → 不带;token 本身不下发', () => {
+    const win = makeWin(1);
+    electronMock.windows = [win];
+    void requestAgentAuth({ method: 'terminal.list_sessions', ownerWindowId: 1, callerToken: 'tok-caller' });
+    const payload = firstAuthPayload(win);
+    expect(payload.details).toEqual({ callerSessionId: 'term-caller' });
+    expect(JSON.stringify(payload)).not.toContain('tok-caller');
+    resolveAgentAuthRequest(payload.requestId, 'denied');
+
+    const win2 = makeWin(2);
+    electronMock.windows = [win, win2];
+    void requestAgentAuth({ method: 'terminal.list_sessions', ownerWindowId: 2, callerToken: 'tok-caller', external: true });
+    expect(firstAuthPayload(win2).details).toBeUndefined();
+  });
+
+  it('payload 守卫:details 只收已知字段、字符串且不超长', () => {
+    const base = { requestId: 'r', method: 'terminal.create_session' };
+    expect(isAgentAuthRequestPayload({ ...base, details: { program: '/a' } })).toBe(true);
+    expect(isAgentAuthRequestPayload({ ...base, details: { other: 'x' } })).toBe(false);
+    expect(isAgentAuthRequestPayload({ ...base, details: { command: 1 } })).toBe(false);
+    expect(isAgentAuthRequestPayload({ ...base, details: { cwd: 'x'.repeat(AGENT_AUTH_DETAIL_MAX + 1) } })).toBe(false);
+    expect(isAgentAuthRequestPayload({ ...base, details: null })).toBe(false);
   });
 
   it('T1: sends auth request to the main window and resolves with renderer decision', async () => {
@@ -572,6 +627,20 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
     expect(countAgentTerminalSessions()).toBe(3);
     expect(revokeAndKillAgentSessions().killed).toBe(3);
     expect(countAgentTerminalSessions()).toBe(0);
+  });
+
+  // 状态栏「N 个 agent」/ 撤销确认的数量只算仍在运行的 agent 终端;已退出的没有可终止的进程,撤销不动它(面板留着看输出)。
+  it('已退出的 agent 终端不计入撤销数,撤销也不终止 / 删除它', () => {
+    terminalServiceMock.has.mockReturnValue(true);
+    sessionStore.list = [
+      makeSession({ id: 'live', originHint: 'agent', ownerWindowId: 1 }),
+      makeSession({ id: 'done', originHint: 'agent', ownerWindowId: 1, exitCode: 0 }),
+    ];
+    expect(countAgentTerminalSessions()).toBe(1);
+    expect(revokeAndKillAgentSessions().killed).toBe(1);
+    expect(terminalServiceMock.forceKill).toHaveBeenCalledWith('live');
+    expect(terminalServiceMock.forceKill).not.toHaveBeenCalledWith('done');
+    expect(sessionStore.list.map((x) => x.id)).toEqual(['done']);
   });
 
   // race(R91,安全):撤销须同步结算所有 pending 授权请求为 denied + 清空。否则撤销前卡在授权

@@ -223,6 +223,7 @@
 ## [agent-auth-service](./agent-auth-service/README.md)
 
 - [`agent-auth-service.spec.ts`](./agent-auth-service/agent-auth-service.spec.ts)
+- [`caller-terminal.spec.ts`](./agent-auth-service/caller-terminal.spec.ts)
 
 ## [agent-create-as-new-panel](./agent-create-as-new-panel/README.md)
 
@@ -557,6 +558,8 @@
 ## [dock / 终端的焦点与组行为对齐 VSCode](./dock-terminal-vscode-focus/README.md)
 
 - [`active-tab-visible.spec.ts`](./dock-terminal-vscode-focus/active-tab-visible.spec.ts)
+- [`agent-terminal-group.spec.ts`](./dock-terminal-vscode-focus/agent-terminal-group.spec.ts)
+- [`agent-terminal-keeps-focus.spec.ts`](./dock-terminal-vscode-focus/agent-terminal-keeps-focus.spec.ts)
 - [`group-mru.spec.ts`](./dock-terminal-vscode-focus/group-mru.spec.ts)
 - [`new-terminal-focus.spec.ts`](./dock-terminal-vscode-focus/new-terminal-focus.spec.ts)
 - [`popout-reference.spec.ts`](./dock-terminal-vscode-focus/popout-reference.spec.ts)

@@ -148,6 +148,21 @@ async function httpStatus(h: McpHost, token: string): Promise<number> {
 }
 
 describe.skipIf(process.platform === 'win32')('stdio:token 吊销后已 hello 的连接失效', () => {
+  // 授权弹窗据调用方 token 反查发起终端:已 hello 的调用 ctx 带 callerToken(hello 所用 token);未 hello 的外部客户端没有。
+  it('已 hello 的调用 ctx 带 callerToken;未 hello 的外部客户端不带', async () => {
+    win.alive.add(7);
+    const { host: h, socketPath, run } = await start();
+    const token = h.issueWindowToken(7);
+    const bound = await connect(socketPath);
+    bound.hello(7, token);
+    expect(await bound.call()).toBeNull();
+    expect(run.mock.calls[0]![1]).toMatchObject({ ownerWindowId: 7, callerToken: token });
+    const external = await connect(socketPath);
+    expect(await external.call()).toBeNull();
+    expect(run.mock.calls[1]![1]).toMatchObject({ external: true });
+    expect(run.mock.calls[1]![1].callerToken).toBeUndefined();
+  });
+
   it('单个 token 被吊销(终端退出)→ tools/call 回 NO_WINDOW_CTX、不执行工具;用新 token 重新 hello 恢复', async () => {
     win.alive.add(7);
     const { host: h, socketPath, run } = await start();

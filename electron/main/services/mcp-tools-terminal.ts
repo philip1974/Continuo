@@ -41,7 +41,7 @@ import type { OriginHint } from '../../shared/origin-hint';
 import { PATH_MAX, LABEL_MAX } from '../../shared/terminal-create';
 import { AttachTargetSchema } from '../../shared/terminal-attach';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
-import type { EnsureAuthorized } from './mcp-tool-gates';
+import { authRequestDisplay, type EnsureAuthorized } from './mcp-tool-gates';
 import { trackAgentTerminalCreate } from './agent-terminal-inflight';
 import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
@@ -334,10 +334,12 @@ export function makeCreateSessionTool(
     ctx: McpCallCtx & { readonly signal: AbortSignal },
   ): Promise<CreateSessionOutput> {
     // 安全(F2):外部客户端(stdio 未发 hello)带 external 标记,不借窗口级授权。
+    // 弹窗显示 autorun 命令 / cwd / agentLabel 与发起终端(只作显示,不参与授权判定)。
     const decision = await deps.ensureAuthorized(
       ctx.ownerWindowId,
       MCP_TOOL_CREATE_SESSION,
       ctx.external === true,
+      authRequestDisplay(ctx, { command: input.autorun, cwd: input.cwd, agentLabel: input.agentLabel }),
     );
     if (decision === 'denied') {
       throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'agent terminal not authorized by user');

@@ -3,7 +3,7 @@
 // 过早的单击(出现后 +200ms)被拒,但焦点已在「本次启动期间允许」上,停顿 700ms 后的 Enter 满足全部键盘条件
 // (聚焦 ≥ 500ms、没打过字、停顿后的单次按键、焦点不是 Tab 带来的)→ 落成整域授予。两层:
 // ①指针点击会被拒的时刻,弹窗里的 mousedown / pointerdown 被 preventDefault(焦点不移入);
-// ②点击被拒时焦点若已在该控件上 → 这次聚焦不可键盘授予,焦点移回「拒绝」。
+// ②点击被拒时焦点若已在该控件上 → 这次聚焦不可键盘授予,焦点移回初始焦点(对话框容器)。
 // 真实 Chromium 的 mousedown 聚焦见 tests/e2e/permission-prompt-keyboard-grant-guard.spec.ts。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
@@ -28,6 +28,7 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 const focused = (): HTMLElement => document.activeElement as HTMLElement;
+const dialog = (): HTMLElement => document.querySelector<HTMLElement>('[role="dialog"]')!;
 
 function press(key: string): void {
   const el = focused();
@@ -49,7 +50,7 @@ function mouseClick(el: HTMLElement, detail = 1, focus: 'browser' | 'always' = '
   fireEvent.click(el, { detail });
 }
 
-/** 弹出授权弹窗(只等初始焦点落到「拒绝」,不等出现延迟),返回其结算结果的读取器。 */
+/** 弹出授权弹窗(只等初始焦点落到对话框容器,不等出现延迟),返回其结算结果的读取器。 */
 function prompt(): () => Promise<EnsureOutcome | null> {
   let outcome: EnsureOutcome | null = null;
   act(() => {
@@ -98,15 +99,15 @@ afterEach(() => {
 describe.each(['browser', 'always'] as const)(
   'AgentAuthPrompt:过早的点击被拒后,停顿后的键盘按键不落成授予(mousedown 聚焦:%s)',
   (focus) => {
-    it('G1:+200ms 单击「本次启动期间允许」→ 被拒;+700ms Enter → 未授予,焦点在「拒绝」', async () => {
+    it('G1:+200ms 单击「本次启动期间允许」→ 被拒;+700ms Enter → 未授予,焦点在对话框容器', async () => {
       const outcome = prompt();
       advance(170);
       mouseClick(button('本次启动期间允许'), 1, focus);
       expect(await outcome()).toBeNull();
-      expect(focused()).toBe(button('拒绝'));
+      expect(focused()).toBe(dialog());
       advance(700);
       press('Enter');
-      expect(await outcome()).toBe('denied');
+      expect(await outcome()).toBeNull();
     });
 
     it('G1b:双击落在「仅本次」(第一击过早、第二击 detail=2)→ +600ms Enter → 未授予', async () => {
@@ -116,10 +117,10 @@ describe.each(['browser', 'always'] as const)(
       advance(150);
       mouseClick(button('仅本次'), 2, focus);
       expect(await outcome()).toBeNull();
-      expect(focused()).toBe(button('拒绝'));
+      expect(focused()).toBe(dialog());
       advance(600);
       press('Enter');
-      expect(await outcome()).toBe('denied');
+      expect(await outcome()).toBeNull();
     });
   },
 );
@@ -180,7 +181,7 @@ describe('AgentAuthPrompt:正常路径不回归', () => {
     const outcome = prompt();
     advance(170);
     mouseClick(button('仅本次'), 1, 'always');
-    expect(focused()).toBe(button('拒绝'));
+    expect(focused()).toBe(dialog());
     advance(DELAY + 100);
     if (fireEvent.keyDown(focused(), { key: 'Tab' })) button('仅本次').focus();
     advance(DELAY + 100);
@@ -200,9 +201,12 @@ describe('AgentAuthPrompt:正常路径不回归', () => {
     expect(await outcome()).toBe('once');
   });
 
-  it('过早点「拒绝」照常立即拒绝', async () => {
+  it('过早点「拒绝」同样被拒(不应答、不进冷却);等满时间窗再点 → 拒绝', async () => {
     const outcome = prompt();
     advance(70);
+    mouseClick(button('拒绝'));
+    expect(await outcome()).toBeNull();
+    advance(DELAY);
     mouseClick(button('拒绝'));
     expect(await outcome()).toBe('denied');
   });

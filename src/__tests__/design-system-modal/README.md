@@ -34,6 +34,8 @@ Shift+Tab 在第一个上循环到最后一个;overlay click 调 onClose;关闭�
 
 - 挂载时:把当前 activeElement 存 prevFocus,raf 后聚焦第一个 focusable;
 - 没有 focusable → root.focus
+- 容器自身(调用方经 props 传 `data-autofocus`)→ 初始焦点就是 role=dialog 容器,不落在任何按钮上(授权弹窗:出现时机由对方
+  决定,用户打字中的空格 / 回车不能点下按钮);Tab 进第一个 focusable,Shift+Tab 回绕到最后一个(不逃出弹窗)
 - 打开后、用户按键 / 点按之前,焦点被程序移到弹窗外(如资源管理器拖放后 headless-tree 在定时器里聚焦源行,
   晚于 rAF)→ 拉回初始焦点(对齐 VSCode Dialog 焦点离开即拉回);用户操作之后不管;落到另一个 Modal
   (叠加弹出)或本 Modal 不在栈顶时不管

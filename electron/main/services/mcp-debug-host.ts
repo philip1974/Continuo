@@ -10,6 +10,7 @@ import type { AnyMcpTool } from './mcp-host.service';
 import {
   gateWithAuth,
   gateWithCapability,
+  stringField,
   type EnsureAuthorized,
 } from './mcp-tool-gates';
 import {
@@ -39,6 +40,11 @@ const DEBUG_AUTH_GATE = {
   methodFor: (tool: AnyMcpTool): string =>
     tool.name === MCP_TOOL_DEBUG_LAUNCH ? DEBUG_AUTH_METHOD_LAUNCH : DEBUG_AUTH_METHOD_CONTROL,
   deniedMessage: 'agent debug not authorized by user',
+  // 弹窗显示要启动的程序与工作目录(只作显示)。
+  paramsFor: (tool: AnyMcpTool, input: unknown) =>
+    tool.name === MCP_TOOL_DEBUG_LAUNCH
+      ? { program: stringField(input, 'program'), cwd: stringField(input, 'cwd') }
+      : undefined,
 } as const;
 
 /**

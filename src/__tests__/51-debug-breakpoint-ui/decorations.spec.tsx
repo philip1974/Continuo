@@ -107,4 +107,34 @@ describe('topic51 Phase3 Op1/Op2 · debug decorations', () => {
     expect(getComputedStyle(breakpointGutter).display).not.toBe('none');
     expect(view.dom.querySelector('.cm-debug-breakpoint-marker')).toBeTruthy();
   });
+
+  // VSCode:执行行黄底(editor.stackFrameHighlightBackground)+ glyph margin 黄色箭头;光标在执行行上时当前行背景不盖住它。
+  it('执行行在断点 gutter 显示箭头(与断点红点可同在一行),清除后箭头消失', () => {
+    const { view } = createView([debugDecorationsExtension()]);
+    setDebugDecorations(view, { breakpointLines: [2], execLine: 2 });
+    const cell = view.dom.querySelector('.cm-breakpoint-gutter .cm-debug-exec-marker')?.parentElement;
+    expect(cell).toBeTruthy();
+    expect(cell!.querySelector('.cm-debug-breakpoint-marker')).toBeTruthy();
+    setDebugDecorations(view, { breakpointLines: [2], execLine: null });
+    expect(view.dom.querySelector('.cm-debug-exec-marker')).toBeNull();
+    expect(view.dom.querySelector('.cm-debug-breakpoint-marker')).toBeTruthy();
+  });
+
+  it('执行行背景的选择器优先级高于编辑器主题的当前行(.cm-activeLine)背景', () => {
+    render(<CodeEditor tabId="t1" value="one\ntwo\nthree\n" fileName="a.ts" />);
+    const view = views.get('t1') as EditorView;
+    setDebugDecorations(view, { breakpointLines: [], execLine: 1 });
+    const line = view.dom.querySelector('.cm-line.cm-debug-exec-line')!;
+    expect(line.classList.contains('cm-activeLine')).toBe(true); // 光标默认在第 1 行
+    const rules = [...document.querySelectorAll('style')].flatMap((el) => [...(el.sheet?.cssRules ?? [])]);
+    const bgSpecificity = (cls: string): number =>
+      Math.max(
+        ...rules
+          .filter((r): r is CSSStyleRule => r instanceof CSSStyleRule && r.style.backgroundColor !== '')
+          .flatMap((r) => r.selectorText.split(','))
+          .filter((sel) => sel.includes(cls) && line.matches(sel.trim()))
+          .map((sel) => (sel.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g) ?? []).length),
+      );
+    expect(bgSpecificity('cm-debug-exec-line')).toBeGreaterThan(bgSpecificity('cm-activeLine'));
+  });
 });

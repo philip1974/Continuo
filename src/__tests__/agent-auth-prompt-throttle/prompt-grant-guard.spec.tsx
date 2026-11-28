@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// 安全:授权弹窗出现后的一小段时间内,「允许」类按钮的鼠标 / 键盘激活无效(用户正在打字 / 点击时弹窗抢焦点,
-// 按键不能落成授予);「拒绝」与 Esc 立即可用。行为见同目录 README。
+// 安全:授权弹窗出现后的一小段时间内,「允许」类按钮与「拒绝」/ Esc 的激活都无效(用户正在打字 / 点击时弹窗抢焦点,
+// 按键不能落成授予,也不能落成会进冷却的拒绝);初始焦点在对话框容器上。行为见同目录 README。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { _resetLmApiForTest, captureLmApi } from '../../lib/co-api';
@@ -102,24 +102,46 @@ describe('AgentAuthPrompt:授予方向的防误触延迟', () => {
     },
   );
 
-  it('「拒绝」弹出后立即可用', async () => {
+  it('「拒绝」同样有出现延迟:延迟内点击无效(不应答、不进冷却),之后有效', async () => {
     const outcome = prompt();
+    pointerClick(button('拒绝'));
+    expect(await outcome()).toBeNull();
+    expect(store().pending).not.toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(AGENT_AUTH_GRANT_ARM_DELAY_MS);
+    });
     pointerClick(button('拒绝'));
     expect(await outcome()).toBe('denied');
   });
 
-  it('Esc 弹出后立即可用(按拒绝收口)', async () => {
+  it('Esc:延迟内无效;停顿后的 Esc 按拒绝收口;输入流里紧跟别的按键的 Esc 不算', async () => {
     const outcome = prompt();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(await outcome()).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(AGENT_AUTH_GRANT_ARM_DELAY_MS);
+    });
+    // vim 里 `ihello<Esc>`:Esc 紧跟在打字之后
+    fireEvent.keyDown(document, { key: 'o' });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(await outcome()).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(AGENT_AUTH_GRANT_ARM_DELAY_MS);
+    });
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(await outcome()).toBe('denied');
   });
 
-  it('初始焦点仍在「拒绝」', () => {
-    prompt();
+  it('初始焦点在对话框容器上,不在任何按钮上(打字中的空格 / 回车不点下按钮)', async () => {
+    const outcome = prompt();
     act(() => {
       vi.advanceTimersByTime(50);
     });
-    expect(document.activeElement).toBe(button('拒绝'));
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(document.activeElement).toBe(dialog);
+    fireEvent.keyDown(document.activeElement!, { key: ' ' });
+    fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
+    expect(await outcome()).toBeNull();
   });
 
   it('上一个弹窗落定后紧接着显示排队的下一个 → 延迟重新计时(对旧弹窗的连点不落到新请求上)', async () => {
@@ -178,9 +200,14 @@ describe('AgentAuthPrompt:双击 / 过早的点击不能跨过出现延迟', () 
     expect(await outcome()).toBe('session');
   });
 
-  it('「拒绝」不受影响:延迟内、双击的第二击都立即生效', async () => {
+  it('「拒绝」同样:延迟内无效,双击的第二击不算', async () => {
     const outcome = prompt();
+    fireEvent.click(button('拒绝'), { detail: 1 });
+    advance(D + 10);
     fireEvent.click(button('拒绝'), { detail: 2 });
+    expect(await outcome()).toBeNull();
+    advance(D);
+    fireEvent.click(button('拒绝'), { detail: 1 });
     expect(await outcome()).toBe('denied');
   });
 });

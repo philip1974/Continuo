@@ -76,7 +76,7 @@ describe('theme.css 单层色板与 @theme inline 链路', () => {
   });
 
   it('Continuo 自有 --md-* 槽位在 theme.css 的 :root 与 .dark 都给值', () => {
-    const own = ['--md-debug-breakpoint:', '--md-debug-exec-line:', '--md-fg-dim:', '--md-rating:'];
+    const own = ['--md-debug-breakpoint:', '--md-debug-exec-line:', '--md-debug-exec-marker:', '--md-fg-dim:', '--md-rating:'];
     const light = extractMdVars(getRootBlock(LM_THEME));
     const dark = extractMdVars(getDarkBlock(LM_THEME));
     for (const v of own) {

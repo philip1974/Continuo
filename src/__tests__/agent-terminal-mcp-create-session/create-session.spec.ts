@@ -373,3 +373,19 @@ describe('makeCreateSessionTool · 入参尺寸 fail-closed(E32)', () => {
     expect(createSessionOutputSchema.safeParse(r).success).toBe(true);
   });
 });
+
+// 授权弹窗说清「要做什么」:autorun 命令、cwd、agentLabel 与调用方 token 作为第四参交给授权(只作显示)。
+describe('makeCreateSessionTool · 授权弹窗说明', () => {
+  it('ensureAuthorized 第四参带 autorun / cwd / agentLabel 与 ctx.callerToken', async () => {
+    const ensureAuthorized = vi.fn(async () => 'once' as const);
+    const tool = makeCreateSessionTool({ ...makeOkDeps(), ensureAuthorized });
+    await tool.run(
+      { autorun: 'npm test', cwd: '/w', agentLabel: 'claude' } as never,
+      { ownerWindowId: 1, callerSubject: 's', callerToken: 'tok' },
+    );
+    expect(ensureAuthorized).toHaveBeenCalledWith(1, MCP_TOOL_CREATE_SESSION, false, {
+      callerToken: 'tok',
+      params: { command: 'npm test', cwd: '/w', agentLabel: 'claude' },
+    });
+  });
+});

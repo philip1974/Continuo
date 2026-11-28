@@ -30,13 +30,35 @@ class BreakpointMarker extends GutterMarker {
 
 const breakpointMarker = new BreakpointMarker();
 
+/**
+ * 当前执行行的 gutter 箭头(VSCode glyph margin 的 debug-stackframe 图标,黄色 debugIcon.breakpointCurrentStackframeForeground)。
+ * 与断点红点同在断点 gutter;同一行两者都有时箭头叠在红点上(VSCode 同:断点 + 栈帧合成图标)。
+ */
+class ExecMarker extends GutterMarker {
+  eq(other: GutterMarker): boolean {
+    return other instanceof ExecMarker;
+  }
+
+  toDOM(): Node {
+    const marker = document.createElement('span');
+    marker.className = 'cm-debug-exec-marker';
+    return marker;
+  }
+}
+
+const execMarker = new ExecMarker();
+
+function validLine(state: EditorView['state'], line: number | null): line is number {
+  return line !== null && Number.isInteger(line) && line >= 1 && line <= state.doc.lines;
+}
+
 function createBreakpointMarkers(
   state: EditorView['state'],
   lines: readonly number[],
 ): RangeSet<GutterMarker> {
   const builder = new RangeSetBuilder<GutterMarker>();
   const uniqueLines = Array.from(new Set(lines))
-    .filter((line) => Number.isInteger(line) && line >= 1 && line <= state.doc.lines)
+    .filter((line) => validLine(state, line))
     .sort((a, b) => a - b);
 
   for (const lineNumber of uniqueLines) {
@@ -47,22 +69,16 @@ function createBreakpointMarkers(
   return builder.finish();
 }
 
-function createExecLineDecoration(
+function createExecLineDecorations(
   state: EditorView['state'],
   lineNumber: number | null,
-): DecorationSet {
-  if (
-    lineNumber === null ||
-    !Number.isInteger(lineNumber) ||
-    lineNumber < 1 ||
-    lineNumber > state.doc.lines
-  ) {
-    return Decoration.none;
-  }
-
-  return Decoration.set([
-    Decoration.line({ class: 'cm-debug-exec-line' }).range(state.doc.line(lineNumber).from),
-  ]);
+): { readonly decorations: DecorationSet; readonly markers: RangeSet<GutterMarker> } {
+  if (!validLine(state, lineNumber)) return { decorations: Decoration.none, markers: RangeSet.empty };
+  const from = state.doc.line(lineNumber).from;
+  return {
+    decorations: Decoration.set([Decoration.line({ class: 'cm-debug-exec-line' }).range(from)]),
+    markers: RangeSet.of([execMarker.range(from)]),
+  };
 }
 
 // 两个 field 都把「行号」(store 里的事实来源)和据此算出的装饰一起存。文档一变就按行号重建,而不是让
@@ -86,8 +102,9 @@ const breakpointMarkersField = StateField.define<{
 const execLineDecorationField = StateField.define<{
   readonly line: number | null;
   readonly decorations: DecorationSet;
+  readonly markers: RangeSet<GutterMarker>;
 }>({
-  create: () => ({ line: null, decorations: Decoration.none }),
+  create: () => ({ line: null, decorations: Decoration.none, markers: RangeSet.empty }),
   update(value, transaction) {
     let line = value.line;
     let changed = false;
@@ -98,7 +115,7 @@ const execLineDecorationField = StateField.define<{
       }
     }
     if (!changed && !transaction.docChanged) return value;
-    return { line, decorations: createExecLineDecoration(transaction.state, line) };
+    return { line, ...createExecLineDecorations(transaction.state, line) };
   },
   provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
 });
@@ -108,7 +125,10 @@ const debugDecorationsHostExtension: Extension = [
   execLineDecorationField,
   gutter({
     class: 'cm-breakpoint-gutter',
-    markers: (view) => view.state.field(breakpointMarkersField).markers,
+    markers: (view) => [
+      view.state.field(breakpointMarkersField).markers,
+      view.state.field(execLineDecorationField).markers,
+    ],
   }),
   EditorView.baseTheme({
     '.cm-breakpoint-gutter': {
@@ -117,6 +137,7 @@ const debugDecorationsHostExtension: Extension = [
     '.cm-breakpoint-gutter .cm-gutterElement': {
       minWidth: '16px',
       padding: '0 4px',
+      position: 'relative',
     },
     '.cm-debug-breakpoint-marker': {
       display: 'inline-block',
@@ -126,8 +147,22 @@ const debugDecorationsHostExtension: Extension = [
       backgroundColor: 'var(--color-debug-breakpoint)',
       verticalAlign: 'middle',
     },
-    '.cm-debug-exec-line': {
+    // 执行行黄底(VSCode editor.stackFrameHighlightBackground)。选择器带 .cm-line 抬高优先级:光标在执行行上时
+    // 编辑器主题的 .cm-activeLine 背景不得盖住它(否则看起来只是普通当前行)。
+    '.cm-line.cm-debug-exec-line': {
       backgroundColor: 'var(--color-debug-exec-line)',
+    },
+    // 右指箭头(VSCode codicon debug-stackframe),居中叠在断点 gutter 格子里。
+    '.cm-debug-exec-marker': {
+      position: 'absolute',
+      left: '50%',
+      top: '50%',
+      width: '10px',
+      height: '10px',
+      transform: 'translate(-50%, -50%)',
+      clipPath: 'polygon(0 15%, 55% 15%, 100% 50%, 55% 85%, 0 85%)',
+      backgroundColor: 'var(--color-debug-exec-marker)',
+      pointerEvents: 'none',
     },
   }),
 ];

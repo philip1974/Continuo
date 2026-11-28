@@ -2,7 +2,7 @@
 // 订阅 main 推的 'agent-auth:request' → 调 store.ensure → 等用户决定 → 应答 main。
 // 已「本次启动期间允许」的域在 main 直接放行,不会推到这里。
 
-import { useEffect, useId, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, type MouseEvent, type ReactNode } from 'react';
 import { Button, Modal } from '@/design';
 import { coApi } from '@/lib/co-api';
 import {
@@ -26,7 +26,9 @@ import {
   type PromptGrantGuard,
 } from '@/lib/use-prompt-grant-guard';
 import { PromptGrantHint } from '@/lib/prompt-grant-hint';
-import { UntrustedText } from '@/lib/untrusted-text';
+import { UNTRUSTED_PATH_MAX_CHARS, UntrustedText } from '@/lib/untrusted-text';
+import { useTerminalStore } from '@/stores/terminal.store';
+import { terminalPanelTitle, terminalTitleInputOf } from '@/shell/dock/terminal-panel-id';
 import {
   MCP_TOOL_AWAIT_STOP_HOOK,
   MCP_TOOL_CREATE_SESSION,
@@ -83,6 +85,7 @@ export function AgentAuthPrompt() {
         requestId,
         method,
         ...(external ? { external } : {}),
+        ...(payload.details ? { details: payload.details } : {}),
       });
       // main 已撤销并结算了该请求(本地仅取消弹窗)→ 不再 respond:main 已无该 pending,会返回
       // NOT_PENDING 并弹出误导性的「授权响应失败」。
@@ -145,7 +148,17 @@ function AgentAuthPromptBody({
   const grant = (kind: 'once' | 'session', e: MouseEvent<HTMLButtonElement>): void => {
     if (guard.canGrant(e)) grantNow(kind);
   };
-  const deny = useAgentAuthStore((s) => s.deny);
+  const denyNow = useAgentAuthStore((s) => s.deny);
+  // 拒绝同样设防:被拒会进冷却(main prompt-throttle,连续被拒翻倍),打字流里落进弹窗的空格 / 回车 / Esc 不能变成拒绝。
+  // 被守卫挡下的拒绝不应答 main,自然不计入冷却。
+  const deny = (e: MouseEvent<HTMLButtonElement>): void => {
+    if (guard.canGrant(e)) denyNow();
+  };
+  // Esc / 点遮罩 = 拒绝(VSCode 对话框 Esc = 取消),同样计入冷却;出现延迟内 / 输入流里的 Esc 不算。
+  // 稳定引用:Modal 的焦点 / 键盘 effect 依赖 onClose,每次渲染换新函数会让它重跑(重新抢初始焦点)。
+  const dismiss = useCallback((): void => {
+    if (guard.canDismiss()) denyNow();
+  }, [guard, denyNow]);
   const t = useT();
   const descriptionId = useId();
   // debug 域的请求:标题与说明讲调试器能做什么(授权也只记在 debug 域)。
@@ -172,9 +185,38 @@ function AgentAuthPromptBody({
       </>
     );
   }
-  const [bodyBefore = '', bodyAfter = ''] = t('permissions.agent.body', { action: UNTRUSTED_SLOT }).split(
-    UNTRUSTED_SLOT,
-  );
+  // 窗口内终端里的 agent 不是「外部」agent:说明句按调用方类别区分。
+  const [bodyBefore = '', bodyAfter = ''] = t(
+    pending.external ? 'permissions.agent.body_external' : 'permissions.agent.body',
+    { action: UNTRUSTED_SLOT },
+  ).split(UNTRUSTED_SLOT);
+  const details = pending.details;
+  // 发起终端:main 按调用方 token 反查的会话 id → 本窗口终端 store 里的标题(同 tab 标题,含 agent 标签后缀)。
+  const callerSessionId = pending.external ? undefined : details?.callerSessionId;
+  const callerTitle = useTerminalStore((st) => {
+    if (callerSessionId === undefined) return null;
+    const found = st.sessions.find((x) => x.id === callerSessionId);
+    return found ? terminalPanelTitle(terminalTitleInputOf(found)) : null;
+  });
+  // 一条「标签:{value}」说明,value 为对方可控文本(可见化后放进 <code>)。
+  function detailLine(key: TranslationKey, value: string | undefined, max?: number): ReactNode {
+    if (!value) return null;
+    const [before = '', after = ''] = t(key, { value: UNTRUSTED_SLOT }).split(UNTRUSTED_SLOT);
+    return (
+      <li>
+        {before}
+        <UntrustedText text={value} {...(max !== undefined ? { max } : {})} />
+        {after}
+      </li>
+    );
+  }
+  const detailLines = [
+    callerTitle !== null ? detailLine('permissions.agent.caller_terminal', callerTitle) : null,
+    detailLine('permissions.agent.detail_agent_label', details?.agentLabel),
+    detailLine('permissions.agent.detail_command', details?.command, UNTRUSTED_PATH_MAX_CHARS),
+    detailLine('permissions.agent.detail_program', details?.program, UNTRUSTED_PATH_MAX_CHARS),
+    detailLine('permissions.agent.detail_cwd', details?.cwd, UNTRUSTED_PATH_MAX_CHARS),
+  ].filter((line) => line !== null);
   const titleKey: TranslationKey = isDebug
     ? 'permissions.agent.title_debug'
     : isPlugin
@@ -189,16 +231,18 @@ function AgentAuthPromptBody({
   return (
     <Modal
       visible
-      onClose={deny}
+      onClose={dismiss}
       aria-labelledby="agent-auth-title"
       aria-describedby={descriptionId}
+      // 初始焦点在对话框容器上(不在任何按钮上):弹窗在用户打字时出现,空格 / 回车不点下按钮;Tab 进入按钮。
+      data-autofocus=""
     >
       {/* a11y(A13):dialog 关联标题。 */}
       <h2 id="agent-auth-title" className="mb-1 text-sm font-medium text-fg">
         {t(titleKey)}
       </h2>
-      {/* a11y:请求说明(动作名 / 外部调用方 / 授权后果)经 aria-describedby 关联 —— 初始焦点在按钮上,
-          不关联时读屏只读标题与按钮,听不到请求的是什么。 */}
+      {/* a11y:请求说明(动作名 / 调用方 / 关键参数 / 授权后果)经 aria-describedby 关联 —— 初始焦点在对话框容器上,
+          不关联时读屏只读标题,听不到请求的是什么。 */}
       <div id={descriptionId}>
         {/* 一条带 {action} 插值的完整句子(各语言自己决定空格 / 标点 / 语序);方法标签是 ReactNode(插件工具名等
             不可信文本要可见化),按占位符拆成前后两段嵌入。 */}
@@ -207,6 +251,10 @@ function AgentAuthPromptBody({
           {methodLabel(pending.method)}
           {bodyAfter}
         </p>
+        {/* 是哪个 agent、要做什么:发起终端与关键参数(都来自 agent,只作显示,不影响授权判定)。 */}
+        {detailLines.length > 0 ? (
+          <ul className="mb-3 space-y-1 text-xs text-fg-muted">{detailLines}</ul>
+        ) : null}
         {/* 安全(F2):外部客户端请求标注来源 —— 弹窗出现在主窗,但调用方并非该窗口终端里的 agent。 */}
         {pending.external ? (
           <p className="mb-3 text-xs text-fg">{t('permissions.agent.external_caller')}</p>
@@ -218,7 +266,7 @@ function AgentAuthPromptBody({
       {/* 「尚未生效」提示的常驻 status 区域放在按钮上方(占说明与按钮之间的间距),底部不多出空白。 */}
       <PromptGrantHint guard={guard} />
       <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={deny}>
+        <Button variant="ghost" size="sm" {...PROMPT_GRANT_BUTTON_PROPS} onClick={deny}>
           {t('permissions.agent.deny')}
         </Button>
         <Button

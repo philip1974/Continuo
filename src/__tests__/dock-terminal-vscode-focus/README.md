@@ -40,3 +40,12 @@
    终端的组(VSCode 终端 / 编辑器组受最小宽度约束),组不会越分越多、压到下限后被挤出窗口右边界。连开 10 个终端,
    每个组都在 dock 内、每个终端都能从 tab 条或「⌄N」到达。之后再把窗口缩窄到放不下全部组的最小宽度时仍会裁切
    (VSCode 网格同样如此),不在本条范围内。
+7. **agent 终端聚在一个组**(`agent-terminal-group.spec.ts`):agent(MCP `create_session`)新建的终端,主窗 grid 里已有
+   agent 终端时作为 tab 加进最后那个 agent 终端的组;第一个 agent 终端照第 6 条在最后一个终端右侧分屏。此前每个 agent 终端
+   都向右再拆一列,几个 agent 终端就把编辑器挤到不足 200px(VSCode 扩展 `createTerminal` 只在终端面板里多一个 tab,
+   不拆分)。用户的新建终端(⌘T)与「拆分终端」不受影响。
+8. **agent 终端加入不抢 DOM 焦点**(`agent-terminal-keeps-focus.spec.ts`):`addPanelKeepingActive`(agent 终端、非用户意图
+   的编辑器面板共用)加面板前记下主窗与原活动组所在文档的焦点元素,加入并还原活动面板后,若焦点已丢失(body / 无 /
+   元素已卸载 —— 向右分屏会把原组 DOM 挪进新 split 容器、作为 tab 加入会先藏起原面板内容)且原元素仍在文档里,把焦点
+   还给它:用户在编辑器里连续打字时 agent 新建终端,后续按键仍进编辑器(VSCode 扩展 `createTerminal` 不 `show` 时不打断
+   输入)。焦点原本就在 body、或已被移到别处(不是丢失)→ 不动。

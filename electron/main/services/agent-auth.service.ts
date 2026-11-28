@@ -12,7 +12,9 @@ import {
   AGENT_AUTH_PROMPT_TIMEOUT_MS,
   AGENT_AUTH_QUEUE_MAX_MS,
   agentAuthDomainOf,
+  clipAgentAuthDetails,
   type AgentAuthDecision,
+  type AgentAuthRequestDetails,
   type AgentAuthRequestPayload,
   type RevokeResult,
 } from '../../shared/agent-auth-channels';
@@ -199,6 +201,23 @@ export interface AgentAuthInfo {
   readonly ownerWindowId?: number;
   /** 安全(F2):调用方是未绑定 Continuo 终端的外部客户端 → main 按独立的调用方类别记授权,弹窗标注来源。 */
   readonly external?: boolean;
+  /**
+   * 弹窗说明(发起终端、关键参数):**只作显示**,来自 agent,不参与下方任何放行 / 节流判断(域、调用方类别只由
+   * method 与 external 决定)。发送前截断(clipAgentAuthDetails)。
+   */
+  readonly details?: AgentAuthRequestDetails;
+  /** 调用方绑定的 MCP token:反查发起终端(details.callerSessionId),同样只作显示;外部客户端忽略。不发给 renderer。 */
+  readonly callerToken?: string;
+}
+
+/** 弹窗说明 = 请求参数 + 发起终端(按调用方 token 反查;外部客户端 / 查不到 → 无)。 */
+function displayDetailsOf(info: AgentAuthInfo): AgentAuthRequestDetails | undefined {
+  const callerSessionId =
+    info.external !== true && info.callerToken ? termService.sessionIdForMcpToken(info.callerToken) : null;
+  return clipAgentAuthDetails({
+    ...info.details,
+    callerSessionId: callerSessionId ?? undefined,
+  });
 }
 
 /**
@@ -284,10 +303,12 @@ export async function requestAgentAuth(
     const entry: PendingAuth = { windowId: win.id, shownAt: null, timer: queueTimer, settle };
     pending.set(requestId, entry);
     markDisplayed(win.id);
+    const details = displayDetailsOf(info);
     const payload: AgentAuthRequestPayload = {
       requestId,
       method: info.method,
       ...(info.external === true ? { external: true } : {}),
+      ...(details ? { details } : {}),
     };
     // race(R62):pending.set 在前、send 在后。若 win 通过了上面的 isDestroyed 检查,但其
     // webContents 在此刻已销毁(窗口正在关闭的竞态窗口),send 会同步抛("Object has been
@@ -414,13 +435,21 @@ export function setMcpHostRef(host: McpHost | null): void {
 }
 
 /**
- * 全部窗口的 agent terminal 数 —— 即撤销会终止的会话数(与下方 revoke 的筛选同口径)。
+ * 撤销会终止的会话:仍在运行的 agent terminal(已退出的进程已结束、其 MCP token 已随退出吊销,没有可终止的 ——
+ * 面板留着供用户看退出前的输出,同 VSCode 终端退出后保留)。计数与撤销同一口径(isRevocableAgentSession)。
+ */
+function isRevocableAgentSession(s: { readonly originHint: string; readonly exitCode: number | null }): boolean {
+  return s.originHint === 'agent' && s.exitCode === null;
+}
+
+/**
+ * 全部窗口仍在运行的 agent terminal 数 —— 即撤销会终止的会话数(与下方 revoke 的筛选同口径)。
  * 撤销确认框据此显示数量:renderer 的 terminal store 只含本窗口会话,不能代表撤销的作用范围。
  */
 export function countAgentTerminalSessions(): number {
   let count = 0;
   for (const s of terminalSessions.getAll()) {
-    if (s.originHint === 'agent') count += 1;
+    if (isRevocableAgentSession(s)) count += 1;
   }
   return count;
 }
@@ -428,7 +457,7 @@ export function countAgentTerminalSessions(): number {
 /**
  * 撤销 session 授权:
  *  1. rotate MCP token(已运行的 agent CLI 持的旧 token 立刻 401)
- *  2. 终止所有 originHint='agent' 的 PTY + 删 metadata
+ *  2. 终止所有仍在运行的 originHint='agent' 的 PTY + 删 metadata(已退出的 agent 终端保留面板,见 isRevocableAgentSession)
  *
  * 不动 originHint='user' 的 session;不重启 mcp host。
  * 「本次启动期间允许」在此清空(权威在 main);各窗口 renderer 的界面副本经 REVOKED 广播重置。
@@ -452,7 +481,7 @@ export function revokeAndKillAgentSessions(): RevokeResult {
   // terminalSessions.getAll() 已返回快照数组;remove 改 Map 不影响本轮遍历。
   const snapshot = terminalSessions.getAll();
   for (const s of snapshot) {
-    if (s.originHint !== 'agent') continue;
+    if (!isRevocableAgentSession(s)) continue;
     // 用户**显式撤销** agent 授权是安全动作:force(立即 SIGKILL)而非 Ctrl+C + 3s grace。否则吞 SIGINT /
     // 正在跑破坏性命令的 agent 子进程在撤销后还能继续运行最长 3s。token 已 rotate 挡住新 MCP 调用,但已在跑的
     // 本地子进程不受 token 影响,必须立即强杀。

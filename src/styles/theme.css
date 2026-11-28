@@ -35,9 +35,12 @@
   /* 底部状态栏高度(StatusBar 的 h-statusbar;ToastViewport 据此把 toast 放在状态栏上方,不盖住它)。 */
   --wm-statusbar-height: 24px;
 
-  /* Debug 可视化:断点 gutter 红点 + 当前命中行背景(light 占位也给完整槽位) */
+  /* Debug 可视化:断点 gutter 红点 + 当前执行行黄底 / gutter 黄箭头(light 占位也给完整槽位)。执行行取 VSCode
+   * editor.stackFrameHighlightBackground(light #ffff6673)与 debugIcon.breakpointCurrentStackframeForeground(light #BE8700),
+   * 与断点红色区分开。 */
   --md-debug-breakpoint: #d32f2f;
-  --md-debug-exec-line: rgba(211, 47, 47, 0.14);
+  --md-debug-exec-line: rgba(255, 255, 102, 0.45);
+  --md-debug-exec-marker: #be8700;
 
   /* 次要弱化文字(MD3 无对应槽)。大量用作 10–12px 正文,须对 surface / container / container-high
    * ≥ 4.5:1(5.91 / 5.21 / 4.94);亮色 --md-outline(#79747e)在 container-low 上只有 4.14,故另取。 */
@@ -93,7 +96,8 @@
 .dark {
   /* Debug 可视化 */
   --md-debug-breakpoint: #ff6b6b;
-  --md-debug-exec-line: rgba(255, 107, 107, 0.16);
+  --md-debug-exec-line: rgba(255, 255, 0, 0.2); /* VSCode dark #ffff0033 */
+  --md-debug-exec-marker: #ffcc00;
 
   /* 次要弱化文字(MD3 无对应槽,取 --md-outline 同值):对 surface / panel / hover 5.85 / 5.19 / 4.52。
    * 原 #6c6f7e 在 panel 上仅 3.30、hover 上 2.87。 */
@@ -161,6 +165,7 @@
   --color-info: var(--md-info);
   --color-debug-breakpoint: var(--md-debug-breakpoint);
   --color-debug-exec-line: var(--md-debug-exec-line);
+  --color-debug-exec-marker: var(--md-debug-exec-marker);
   /* 评分星 text-rating(Continuo 自有 --md-rating,两主题各有取值) */
   --color-rating: var(--md-rating);
   /* 列表命中字符 text-list-highlight(命令面板 / Quick Open 匹配高亮) */

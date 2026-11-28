@@ -99,7 +99,10 @@ describe('50 · agent debug MCP host', () => {
       ctx,
     );
 
-    expect(ensureAuthorized).toHaveBeenCalledWith(WIN, 'debug.launch', false);
+    // 弹窗说明带上要启动的程序(只作显示)
+    expect(ensureAuthorized).toHaveBeenCalledWith(WIN, 'debug.launch', false, {
+      params: { program: '/repo/app.js', cwd: undefined },
+    });
     expect(service.launchSession).toHaveBeenCalledWith(
       { program: '/repo/app.js', stopOnEntry: false },
       { ownerWindowId: WIN, controllerToken: ME },
@@ -152,7 +155,7 @@ describe('50 · agent debug MCP host', () => {
       ctx,
     );
 
-    expect(ensureAuthorized).toHaveBeenCalledWith(WIN, 'debug.*', false);
+    expect(ensureAuthorized).toHaveBeenCalledWith(WIN, 'debug.*', false, {});
   });
 
   it('授权被拒时不触达 DebugService', async () => {

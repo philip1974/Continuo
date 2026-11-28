@@ -146,6 +146,34 @@ describe('Modal — a11y(A20) 初始焦点', () => {
   });
 });
 
+describe('Modal — 初始焦点在容器自身', () => {
+  // 授权弹窗:出现时机由对方决定,初始焦点不落在任何按钮上(用户打字中的空格 / 回车不点下按钮)。
+  it('容器标 [data-autofocus] → 初始焦点是 role=dialog 本身;Tab 进第一个按钮,Shift+Tab 回绕到最后一个(不逃出弹窗)', () => {
+    const raf = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    try {
+      render(
+        <Modal visible data-autofocus="">
+          <button type="button">first</button>
+          <button type="button">last</button>
+        </Modal>,
+      );
+      const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+      expect(document.activeElement).toBe(dialog);
+      const shiftTab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true });
+      document.dispatchEvent(shiftTab);
+      expect(shiftTab.defaultPrevented).toBe(true);
+      expect(document.activeElement?.textContent).toBe('last');
+    } finally {
+      raf.mockRestore();
+    }
+  });
+});
+
 describe('Modal — onClose 路径', () => {
   it('点 overlay(按下与松开都在遮罩上)→ onClose', () => {
     const onClose = vi.fn();

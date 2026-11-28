@@ -128,6 +128,9 @@ interface AgentAuthState {
 撤销终止的是**所有窗口**的 agent terminal,renderer 只知道本窗口的会话。main 提供 `agent-auth:count-agent-terminals`
 (`safeHandle`:受信 frame、入参空对象)返回 `{ count }`,与撤销实际终止的集合同口径(`countAgentTerminalSessions`)。
 不受信 frame → `DENIED`,多余入参 → `BAD_INPUT` —— `revoke-global-count.spec.ts`;界面侧见 `status-bar/`。
+只计**仍在运行**的 agent terminal(`exitCode === null`):已退出的进程已结束、MCP token 已随退出吊销,撤销不终止也不删除它
+(面板留着看退出前的输出);状态栏「N 个 agent」与撤销提示里本窗口的数量同口径(`countAgentSessions`)——
+`agent-auth-service.spec.ts`、`49-polish-bugfixes/statusbar-agent-count-subscription.spec.tsx`。
 
 ### 边界
 

@@ -148,10 +148,11 @@ function PluginStatusItemContent({ spec }: { spec: StatusBarItemSpec }) {
   );
 }
 
+/** 本窗口仍在运行的 agent 终端数(已退出的不算:撤销终止的也只是运行中的,与 main countAgentTerminalSessions 同口径)。 */
 export function countAgentSessions(sessions: readonly TerminalSession[]): number {
   let count = 0;
   for (const session of sessions) {
-    if (session.originHint === 'agent') {
+    if (session.originHint === 'agent' && session.exitCode === null) {
       count += 1;
     }
   }

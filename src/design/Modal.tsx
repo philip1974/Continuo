@@ -124,9 +124,15 @@ export function Modal({
     // 一律聚焦 first)。用 data-autofocus 而非 React
     // autoFocus:后者在 commit 期 imperatively 聚焦、不渲染 DOM 属性(无法在此查到),且会
     // 污染 prevFocus 还原。
+    // 弹窗容器自身标 [data-autofocus](调用方经 props 传入)→ 初始焦点落在容器上、不落在任何按钮上:出现时机由对方决定的
+    // 授权弹窗(用户可能正在打字,空格 / 回车不能落在按钮上),读屏仍读出 aria-labelledby / describedby,Tab 进入按钮。
     const focusInitial = () => {
       const root = contentRef.current;
       if (root == null) return;
+      if (root.hasAttribute('data-autofocus')) {
+        root.focus();
+        return;
+      }
       const explicit = root.querySelector<HTMLElement>(
         '[data-autofocus]:not([disabled])',
       );
@@ -182,7 +188,11 @@ export function Modal({
         return;
       }
       const active = doc.activeElement;
-      if (e.shiftKey && active === first) {
+      // 焦点在容器自身(初始焦点):Shift+Tab 浏览器会把焦点移出弹窗 → 回绕到最后一个(Tab 自然进入第一个)。
+      if (e.shiftKey && active === root) {
+        e.preventDefault();
+        last.focus();
+      } else if (e.shiftKey && active === first) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && active === last) {

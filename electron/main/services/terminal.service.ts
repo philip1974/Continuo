@@ -599,6 +599,18 @@ export async function createTerminal(
   }
 }
 
+/**
+ * 持有该 MCP token 的终端会话 id(每个 PTY 签发一个 token 注入其 env);没有 → null。只给授权弹窗显示「来自哪个终端」用,
+ * 不作授权依据(同用户进程读到 token 也能冒用,见 agent-terminal-mcp-auth 残余风险)。
+ */
+export function sessionIdForMcpToken(token: string): string | null {
+  if (!token) return null;
+  for (const [id, instance] of instances) {
+    if (instance.mcpToken === token) return id;
+  }
+  return null;
+}
+
 export function has(id: string): boolean {
   return instances.has(id);
 }
