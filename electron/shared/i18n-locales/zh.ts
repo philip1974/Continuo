@@ -132,9 +132,11 @@ export const zh: Record<TranslationKey, string> = {
   // settings.general
   'settings.general.tab_title': '通用',
   'settings.general.theme.title': '主题',
-  'settings.general.theme.description': '选择 Continuo 的视觉主题。「跟随系统」随操作系统切换。',
+  'settings.general.theme.description': '选择 Continuo 的视觉主题。「跟随系统」随操作系统切换，系统开启高对比度时自动使用高对比度主题。',
   'settings.general.theme.light': '亮色',
   'settings.general.theme.dark': '暗色',
+  'settings.general.theme.hc_dark': '高对比度深色',
+  'settings.general.theme.hc_light': '高对比度浅色',
   'settings.general.theme.system': '跟随系统',
   'settings.general.language.title': '语言',
   'settings.general.language.description': '选择 Continuo 的界面语言。立即生效。',

@@ -142,9 +142,11 @@ export const en = {
   // settings.general (10)
   'settings.general.tab_title': 'General',
   'settings.general.theme.title': 'Theme',
-  'settings.general.theme.description': "Choose Continuo's visual theme. system follows the OS.",
+  'settings.general.theme.description': "Choose Continuo's visual theme. system follows the OS, including its high contrast setting.",
   'settings.general.theme.light': 'Light',
   'settings.general.theme.dark': 'Dark',
+  'settings.general.theme.hc_dark': 'Dark High Contrast',
+  'settings.general.theme.hc_light': 'Light High Contrast',
   'settings.general.theme.system': 'System',
   'settings.general.language.title': 'Language',
   'settings.general.language.description': "Choose Continuo's UI language. Changes take effect immediately.",

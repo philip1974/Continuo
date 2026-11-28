@@ -12,6 +12,7 @@ import type { Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
 import { codeMirrorFind } from './codemirror-find';
+import { isDarkTheme, type ResolvedTheme } from '../../../electron/shared/window-background';
 
 /** 选区底:theme.css 的 --md-editor-selection(两主题各取值,保证注释 / 关键字等语法色叠选区后的对比度,见该 token 注释)。 */
 const SELECTION = 'var(--md-editor-selection)';
@@ -86,7 +87,8 @@ function chromeTheme(dark: boolean): Extension {
       '.cm-textfield': {
         backgroundColor: 'var(--md-surface-container-low)',
         color: 'var(--md-on-surface)',
-        border: '1px solid var(--md-outline-variant)',
+        // 输入框描边同 design Input(--md-outline,控件边界 ≥ 3:1)
+        border: '1px solid var(--md-outline)',
         borderRadius: '4px',
         padding: '2px 6px',
         fontFamily: 'var(--wm-font-sans)',
@@ -223,8 +225,9 @@ const HIGHLIGHT: Extension = syntaxHighlighting(codeHighlightStyle);
 const DARK: Extension = [chromeTheme(true), HIGHLIGHT];
 const LIGHT: Extension = [chromeTheme(false), HIGHLIGHT];
 
-export function codeEditorTheme(resolved: 'light' | 'dark'): Extension {
-  return resolved === 'dark' ? DARK : LIGHT;
+/** 高对比度两套按明暗取变体;HC 专有的边框(当前行 / 选区 / 匹配等)在 src/styles/high-contrast.css。 */
+export function codeEditorTheme(resolved: ResolvedTheme): Extension {
+  return isDarkTheme(resolved) ? DARK : LIGHT;
 }
 
 /**

@@ -1,4 +1,4 @@
-// 颜色主题选择器(VSCode workbench.action.selectTheme 的 Quick Pick):列出 亮色 / 暗色 / 跟随系统,可输入过滤;打开时选中当前
+// 颜色主题选择器(VSCode workbench.action.selectTheme 的 Quick Pick):列出 亮色 / 暗色 / 高对比度深色 / 高对比度浅色 / 跟随系统,可输入过滤;打开时选中当前
 // 主题(行尾标「当前」),↑↓ 移动即预览(setThemePreview,只改界面不写设置;VSCode 同为 'preview' 目标),Enter / 单击写入设置
 // general.theme 并关闭,Esc / 点遮罩关闭并恢复原主题(store.close 清预览)。列表机制走共享 usePickerList。
 // BDD: src/__tests__/theme-commands/
@@ -19,6 +19,8 @@ import { useThemePickerStore } from './store';
 const MODE_LABEL_KEYS: Record<ThemeMode, string> = {
   light: 'settings.general.theme.light',
   dark: 'settings.general.theme.dark',
+  hcDark: 'settings.general.theme.hc_dark',
+  hcLight: 'settings.general.theme.hc_light',
   system: 'settings.general.theme.system',
 };
 

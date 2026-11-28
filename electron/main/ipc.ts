@@ -38,6 +38,7 @@ import { registerShellIpc } from './ipc/shell.ipc';
 import { registerWindowIpc, type WindowIpcDeps } from './ipc/window.ipc';
 import { registerI18nIpc } from './ipc/i18n.ipc';
 import { registerAccessibilityIpc } from './ipc/accessibility.ipc';
+import { registerHostColorSchemeIpc } from './ipc/host-color-scheme.ipc';
 import { registerMarketplaceIpc } from './ipc/marketplace.ipc';
 import { registerPluginFsIpc } from './ipc/plugin-fs.ipc';
 import { registerPluginDataIpc } from './ipc/plugin-data.ipc';
@@ -360,4 +361,7 @@ export function registerIpc(deps: WindowIpcDeps): void {
 
   // 系统读屏检测(初值 + 变化广播;终端 screenReaderMode 用)
   registerAccessibilityIpc();
+
+  // 系统配色(明暗 + 高对比度;「跟随系统」主题自动切高对比度用)
+  registerHostColorSchemeIpc();
 }

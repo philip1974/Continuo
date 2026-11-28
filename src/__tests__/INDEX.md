@@ -1186,6 +1186,13 @@
 
 - [`header-actions.spec.tsx`](./header-actions/header-actions.spec.tsx)
 
+## [high-contrast-theme(高对比度深色 / 高对比度浅色主题 + 系统高对比度自动切换)](./high-contrast-theme/README.md)
+
+- [`hc-host-color-scheme.spec.ts`](./high-contrast-theme/hc-host-color-scheme.spec.ts)
+- [`hc-terminal.spec.tsx`](./high-contrast-theme/hc-terminal.spec.tsx)
+- [`hc-theme-switch.spec.tsx`](./high-contrast-theme/hc-theme-switch.spec.tsx)
+- [`hc-tokens.spec.ts`](./high-contrast-theme/hc-tokens.spec.ts)
+
 ## [hook-broker-field-caps (E150)](./hook-broker-field-caps/README.md)
 
 - [`parse-stop-payload-caps.spec.ts`](./hook-broker-field-caps/parse-stop-payload-caps.spec.ts)

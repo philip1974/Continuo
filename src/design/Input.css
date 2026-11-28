@@ -2,7 +2,9 @@
   width: 100%;
   padding: var(--wm-space-2) var(--wm-space-3);
   border-radius: var(--wm-radius-lg);
-  border: 1px solid var(--md-outline-variant);
+  /* 容器描边 = --md-outline(MD3 outlined text field 的 outline 槽;outline-variant 是分隔线,对底色暗 1.84 / 亮 1.55:1,
+   * 不足 WCAG 1.4.11 的 3:1)。BDD:src/__tests__/high-contrast-theme/ */
+  border: 1px solid var(--md-outline);
   background-color: var(--md-surface-container-low);
   color: var(--md-on-surface);
   font-family: var(--wm-font-sans);

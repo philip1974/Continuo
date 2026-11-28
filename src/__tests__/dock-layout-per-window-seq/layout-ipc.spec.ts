@@ -44,6 +44,8 @@ vi.mock('electron', () => ({
     // registerIpc 也注册读屏检测(app.on('accessibility-support-changed'))
     on: vi.fn(),
   },
+  // registerIpc 也注册系统配色变化(nativeTheme.on('updated'),高对比度主题)
+  nativeTheme: { on: vi.fn() },
   ipcMain: {
     handle: vi.fn(
       (

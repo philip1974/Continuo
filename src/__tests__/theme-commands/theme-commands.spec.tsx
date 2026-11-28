@@ -49,12 +49,12 @@ const options = () => screen.queryAllByRole('option');
 const selected = () => options().find((o) => o.getAttribute('aria-selected') === 'true')?.getAttribute('data-theme-mode');
 const spec = (id: string) => themeCommandSpecs().find((c) => c.id === id)!;
 
-/** OS 配色(prefers-color-scheme)。 */
+/** OS 配色(prefers-color-scheme;系统高对比度 forced-colors / prefers-contrast 关,见 high-contrast-theme/)。 */
 function mockSystemDark(dark: boolean): void {
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: (q: string) => ({
-      matches: q.includes('dark') ? dark : !dark,
+      matches: q === '(prefers-color-scheme: dark)' ? dark : q === '(prefers-color-scheme: light)' ? !dark : false,
       media: q,
       addEventListener: () => {},
       removeEventListener: () => {},
@@ -114,12 +114,18 @@ describe('命令', () => {
 });
 
 describe('颜色主题选择器', () => {
-  it('列出 亮色 / 暗色 / 跟随系统;选中当前主题,当前项标「当前」', () => {
+  it('列出 亮色 / 暗色 / 高对比度深色 / 高对比度浅色 / 跟随系统;选中当前主题,当前项标「当前」', () => {
     setTheme('light');
     renderApp();
     act(() => openThemePicker());
-    expect(options().map((o) => o.getAttribute('data-theme-mode'))).toEqual(['light', 'dark', 'system']);
-    expect(options().map((o) => o.textContent)).toEqual(['LightCurrent', 'Dark', 'System']);
+    expect(options().map((o) => o.getAttribute('data-theme-mode'))).toEqual(['light', 'dark', 'hcDark', 'hcLight', 'system']);
+    expect(options().map((o) => o.textContent)).toEqual([
+      'LightCurrent',
+      'Dark',
+      'Dark High Contrast',
+      'Light High Contrast',
+      'System',
+    ]);
     expect(selected()).toBe('light');
   });
 
@@ -149,7 +155,7 @@ describe('颜色主题选择器', () => {
     expect(isDark()).toBe(false);
 
     act(() => openThemePicker());
-    fireEvent.click(screen.getByRole('option', { name: /Dark/ }));
+    fireEvent.click(screen.getByRole('option', { name: 'Dark' }));
     expect(theme()).toBe('dark');
     expect(isDark()).toBe(true);
   });
@@ -160,7 +166,7 @@ describe('颜色主题选择器', () => {
     renderApp();
     act(() => openThemePicker());
     fireEvent.change(input(), { target: { value: 'light' } });
-    expect(options().map((o) => o.getAttribute('data-theme-mode'))).toEqual(['light']);
+    expect(options().map((o) => o.getAttribute('data-theme-mode'))).toEqual(['light', 'hcLight']);
     expect(isDark()).toBe(false);
     fireEvent.change(input(), { target: { value: 'zzz' } });
     expect(screen.getByRole('status').textContent).toBe(zh['theme_picker.no_match']);
@@ -186,7 +192,7 @@ describe('颜色主题选择器', () => {
     act(() => openThemePicker());
     fireEvent.keyDown(input(), { key: 'ArrowDown' });
     fireEvent.keyDown(input(), { key: 'ArrowDown' });
-    expect(selected()).toBe('light');
+    expect(selected()).toBe('hcLight');
     act(() => useThemePickerStore.getState().close());
     expect(isDark()).toBe(true);
     expect(theme()).toBe('dark');

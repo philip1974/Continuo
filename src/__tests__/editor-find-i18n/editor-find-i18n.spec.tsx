@@ -125,7 +125,7 @@ describe('查找面板外观走设计 token(亮 / 暗)', () => {
     act(() => void openSearchPanel(view));
     const css = [...document.querySelectorAll('style')].map((s) => s.textContent ?? '').join('\n') +
       (document.adoptedStyleSheets ?? []).flatMap((s) => [...s.cssRules].map((r) => r.cssText)).join('\n');
-    expect(css).toMatch(/\.cm-textfield[^{]*\{[^}]*var\(--md-outline-variant\)/);
+    expect(css).toMatch(/\.cm-textfield[^{]*\{[^}]*var\(--md-outline\)/);
     expect(css).toMatch(/\.cm-button[^{]*\{[^}]*var\(--md-/);
     expect(css).toMatch(/input\[type=["']?checkbox["']?\][^{]*\{[^}]*accent-color:\s*var\(--md-primary\)/);
     // 暗色:面板声明 color-scheme: dark(未勾选的原生复选框不是白方块)

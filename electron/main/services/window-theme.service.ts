@@ -10,15 +10,24 @@ import { z } from 'zod';
 import { atomicWriteJson } from '../lib/atomic-write';
 import { readFileCappedFd } from '../lib/read-fh-capped';
 import { createSerialQueue } from '../../shared/run-serial-per-key';
-import type { ResolvedTheme } from '../../shared/window-background';
+import {
+  RESOLVED_THEME_VALUES,
+  THEME_MODE_VALUES,
+  type ResolvedTheme,
+} from '../../shared/window-background';
+import {
+  hostColorSchemeFromNativeTheme,
+  systemResolvedTheme,
+  type HostColorScheme,
+} from '../../shared/host-color-scheme';
 
 export const WINDOW_THEME_FILE_NAME = 'window-theme.json';
 const MAX_FILE_BYTES = 4 * 1024;
 
 const WindowThemeSchema = z.object({
-  theme: z.enum(['light', 'dark']),
-  /** 主题模式;system 时冷启动按 OS 当前外观(nativeTheme)决定,不用上次解析值。旧数据 / 未上报时可缺省。 */
-  mode: z.enum(['light', 'dark', 'system']).optional(),
+  theme: z.enum(RESOLVED_THEME_VALUES),
+  /** 主题模式;system 时冷启动按 OS 当前外观(nativeTheme,含高对比度)决定,不用上次解析值。旧数据 / 未上报时可缺省。 */
+  mode: z.enum(THEME_MODE_VALUES).optional(),
 });
 export type WindowThemeState = z.infer<typeof WindowThemeSchema>;
 
@@ -30,9 +39,14 @@ const writeQueue = createSerialQueue();
 
 const themeFile = (): string => path.join(app.getPath('userData'), WINDOW_THEME_FILE_NAME);
 
-/** 当前窗口底色主题:system 模式跟随 OS 当前外观,否则用最近上报 / 持久化的解析值。 */
+/** 系统当前配色(VSCode ThemeMainService.getColorScheme;高对比度含 Windows 高对比度、macOS 增强对比度 / 反转颜色)。 */
+export function getHostColorScheme(): HostColorScheme {
+  return hostColorSchemeFromNativeTheme(process.platform, nativeTheme);
+}
+
+/** 当前窗口底色主题:system 模式跟随 OS 当前外观(含高对比度),否则用最近上报 / 持久化的解析值。 */
 export function getWindowTheme(): ResolvedTheme {
-  if (state.mode === 'system') return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  if (state.mode === 'system') return systemResolvedTheme(getHostColorScheme());
   return state.theme;
 }
 

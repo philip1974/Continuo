@@ -1,4 +1,4 @@
-// 主题 Provider:切 .dark class on <html>,system 模式跟随 OS;默认 dark。
+// 主题 Provider:按主题给 <html> 定 class(dark / hc-black / hc-light),system 模式跟随 OS(含系统高对比度);默认 dark。
 // mode 的唯一存储是设置值 general.theme(values-store;设置页的「主题」项读写同一份)。此前 Provider 另存一份
 // localStorage 键、再由 useThemeBinding 从设置值单向同步,两份存储靠胶水保持一致。旧键只在启动时迁移一次后删除。
 
@@ -12,6 +12,12 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
+import {
+  THEME_MODE_VALUES,
+  isDarkTheme,
+  type ResolvedTheme,
+  type ThemeModeValue,
+} from '../../electron/shared/window-background';
 import { create } from 'zustand';
 import {
   getStoredSettingValue,
@@ -20,17 +26,21 @@ import {
 } from '@/plugins/settings/values-store';
 import { GENERAL_THEME } from '@/plugins/settings/core-setting-specs';
 import { getPopoutDocuments, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
+import { resolveSystemTheme, useSystemTheme } from './host-color-scheme';
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+/** 主题设置值:亮 / 暗 / 高对比度深 / 高对比度浅 / 跟随系统。 */
+export type ThemeMode = ThemeModeValue;
+/** 实际生效的主题(= VSCode ColorScheme)。 */
+export type ColorScheme = ResolvedTheme;
 
 /** 主题模式全集(颜色主题选择器的列表顺序,同设置页选项)。 */
-export const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'system'];
+export const THEME_MODES: readonly ThemeMode[] = THEME_MODE_VALUES;
 
 export interface ThemeContextValue {
   /** 设置值 general.theme(不含预览)。 */
   readonly mode: ThemeMode;
-  /** 实际生效的亮 / 暗(颜色主题选择器预览中 → 预览项)。 */
-  readonly resolved: 'light' | 'dark';
+  /** 实际生效的主题(颜色主题选择器预览中 → 预览项;system 已按 OS 解析,含高对比度)。 */
+  readonly resolved: ColorScheme;
   setMode: (mode: ThemeMode) => void;
 }
 
@@ -46,7 +56,7 @@ export const ThemeContext = createContext<ThemeContextValue>({
 });
 
 function isThemeMode(v: unknown): v is ThemeMode {
-  return v === 'light' || v === 'dark' || v === 'system';
+  return (THEME_MODES as readonly unknown[]).includes(v);
 }
 
 /**
@@ -89,21 +99,20 @@ export function currentThemeMode(): ThemeMode {
   return isThemeMode(stored) ? stored : THEME_DEFAULT;
 }
 
-/** 模式 → 亮 / 暗(system 按 prefers-color-scheme)。 */
-export function resolveThemeMode(mode: ThemeMode): 'light' | 'dark' {
-  return mode === 'system' ? resolveSystemPreference() : mode;
+/** 模式 → 生效主题(system 按 OS 明暗 + 高对比度)。 */
+export function resolveThemeMode(mode: ThemeMode): ColorScheme {
+  return mode === 'system' ? resolveSystemTheme() : mode;
 }
 
-function resolveSystemPreference(): 'light' | 'dark' {
-  if (typeof globalThis.window === 'undefined') return 'dark';
-  if (typeof globalThis.window.matchMedia !== 'function') return 'dark';
-  return globalThis.window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light';
-}
-
-function applyThemeClass(doc: Document, resolved: 'light' | 'dark'): void {
-  doc.documentElement.classList.toggle('dark', resolved === 'dark');
+/**
+ * <html> 主题 class:`dark` = 暗色系(含高对比度深,明暗判定只看它,同 VSCode isDark);`hc-black` / `hc-light` = 高对比度
+ * (VSCode workbench 同名 class)。design-tokens.css / theme.css 的 `.hc-black` / `.hc-light` 色板排在 `.dark` 之后覆盖。
+ */
+export function applyThemeClass(doc: Document, resolved: ColorScheme): void {
+  const cl = doc.documentElement.classList;
+  cl.toggle('dark', isDarkTheme(resolved));
+  cl.toggle('hc-black', resolved === 'hcDark');
+  cl.toggle('hc-light', resolved === 'hcLight');
 }
 
 interface ThemeProviderProps {
@@ -117,35 +126,10 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   const preview = useThemePreviewStore((s) => s.preview);
   const popoutDocs = useSyncExternalStore(subscribePopoutDocuments, getPopoutDocuments);
   const setValue = useSettingsValuesStore((st) => st.setValue);
-  const [systemPref, setSystemPref] = useState<'light' | 'dark'>(
-    resolveSystemPreference,
-  );
+  const systemTheme = useSystemTheme();
 
   const effective = preview ?? mode;
-  const resolved: 'light' | 'dark' = effective === 'system' ? systemPref : effective;
-
-  useEffect(() => {
-    if (typeof globalThis.window === 'undefined') return;
-    // 边界(E90):matchMedia 不保证存在(与 resolveSystemPreference 同守卫)。
-    if (typeof globalThis.window.matchMedia !== 'function') return;
-    const mql = globalThis.window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => {
-      setSystemPref(e.matches ? 'dark' : 'light');
-    };
-    // 边界(E90):MediaQueryList 事件订阅 API 不保证存在 —— 现代为 add/removeEventListener,
-    // 旧 WebKit/Electron / 受限测试环境 / 畸形 polyfill 可能只有 addListener/removeListener,
-    // 甚至都没有。feature-detect:优先现代、回退旧、都无则跳过订阅(订阅不可用不应让根 Provider
-    // 挂载 effect 抛错、打断主题系统乃至 renderer 启动)。cleanup 对称。
-    if (typeof mql.addEventListener === 'function') {
-      mql.addEventListener('change', handler);
-      return () => mql.removeEventListener('change', handler);
-    }
-    if (typeof mql.addListener === 'function') {
-      mql.addListener(handler); // 旧环境回退
-      return () => mql.removeListener(handler);
-    }
-    return;
-  }, []);
+  const resolved: ColorScheme = effective === 'system' ? systemTheme : effective;
 
   // popout 子窗各自跑一份 App(按同一设置值定 class),但预览只在本 JS 环境 —— 子窗的 <html> 也由这里同步,子窗里打开
   // 的颜色主题选择器预览才看得见(VSCode:辅助窗口与主窗同一主题)。无预览时与子窗自己算的结果一致。

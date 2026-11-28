@@ -26,6 +26,13 @@ function getDarkBlock(css: string): string {
   return m?.[1] ?? '';
 }
 
+/** 高对比度两套(<html class="dark hc-black"> / "hc-light",排在 .dark 之后覆盖;见 high-contrast-theme/)。 */
+function getHcBlock(css: string, cls: 'hc-black' | 'hc-light'): string {
+  const m = css.match(new RegExp(`\\.${cls}\\s*\\{([\\s\\S]*?)\\n\\}`));
+  return m?.[1] ?? '';
+}
+const HC_CLASSES = ['hc-black', 'hc-light'] as const;
+
 describe('design-tokens.css MD3 完整性', () => {
   it(':root 与 .dark 下的 --md-* 数量严格相等', () => {
     const lightVars = extractMdVars(getRootBlock(DESIGN_TOKENS));
@@ -39,6 +46,17 @@ describe('design-tokens.css MD3 完整性', () => {
     const darkSet = new Set(extractMdVars(getDarkBlock(DESIGN_TOKENS)));
     expect([...lightSet].sort()).toEqual([...darkSet].sort());
   });
+
+  // 高对比度两套与基础套一一对应:漏一个槽位 = HC 下该处静默沿用暗色 / 亮色值(hc-black 与 .dark 同挂时取暗色,
+  // hc-light 取 :root 亮色),对比度失守。
+  for (const cls of HC_CLASSES) {
+    it(`.${cls} 定义的 --md-* 名称集合与 :root 完全一致`, () => {
+      const lightSet = new Set(extractMdVars(getRootBlock(DESIGN_TOKENS)));
+      const hc = extractMdVars(getHcBlock(DESIGN_TOKENS, cls));
+      expect(hc.length).toBe(new Set(hc).size);
+      expect([...new Set(hc)].sort()).toEqual([...lightSet].sort());
+    });
+  }
 
   it('必含 MD3 核心槽位 surface / primary / on-surface / outline / state-hover', () => {
     const required = [
@@ -90,6 +108,13 @@ describe('theme.css 单层色板与 @theme inline 链路', () => {
     const dark = new Set(extractMdVars(getDarkBlock(LM_THEME)));
     expect(light.has('--md-syntax-keyword:')).toBe(true);
     expect([...light].sort()).toEqual([...dark].sort());
+  });
+
+  it('theme.css 自有 --md-* 槽位在 .hc-black / .hc-light 与 :root 名称集合一致', () => {
+    const light = [...new Set(extractMdVars(getRootBlock(LM_THEME)))].sort();
+    for (const cls of HC_CLASSES) {
+      expect([...new Set(extractMdVars(getHcBlock(LM_THEME, cls)))].sort(), cls).toEqual(light);
+    }
   });
 
   it('@theme inline 暴露 14 个 --color-* 语义 token,全部 var(--md-*) 解析', () => {

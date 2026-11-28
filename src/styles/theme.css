@@ -9,7 +9,8 @@
  *   3. @theme inline 把 Continuo 自有的 --color-* 私有 token 映射到 --md-*,
  *      Tailwind v4 自动生成 bg-canvas / text-fg / border-line 等 utility。
  *
- * 默认 dark 模式(index.html <html class="dark">),light 为占位色板。
+ * 默认 dark 模式(index.html <html class="dark">),light 为占位色板;高对比度两套 .hc-black(与 .dark 同挂)/ .hc-light
+ * 排在后面覆盖(ThemeProvider.applyThemeClass)。
  */
 
 @import './design-tokens.css';
@@ -95,6 +96,11 @@
    * 非文字装饰,只求与底色可辨、当前块那一条明显更深。 */
   --md-indent-guide: #d3d3d8;
   --md-indent-guide-active: #939399;
+
+  /* 高对比度边框(VSCode contrastBorder / contrastActiveBorder;MD3 无对应槽)。亮 / 暗主题为 null(透明),只在 .hc-black /
+   * .hc-light 有色;规则集中在 high-contrast.css(只在 HC 下命中)。 */
+  --md-contrast-border: transparent;
+  --md-contrast-active-border: transparent;
 }
 
 /* ── Continuo 自有槽位的暗色值(MD3 色板本体在 design-tokens.css .dark)── */
@@ -149,6 +155,99 @@
   /* 编辑器缩进参考线:VSCode 暗色默认 #404040 / #707070(底 #1e1e1e),按 --md-surface #11131b 取同等明度差、带底色色相。 */
   --md-indent-guide: #343744;
   --md-indent-guide-active: #6c6f7e;
+
+  --md-contrast-border: transparent;
+  --md-contrast-active-border: transparent;
+}
+
+/* ── Continuo 自有槽位的高对比度值(VSCode hcDark / hcLight 默认;MD3 色板本体在 design-tokens.css .hc-black / .hc-light)──
+ * 文字类对 HC 承载面(含调试执行行底、编辑器选区底)≥ 7:1,UI 类 ≥ 3:1。BDD:src/__tests__/high-contrast-theme/ */
+.hc-black {
+  --md-contrast-border: #6fc3df;
+  --md-contrast-active-border: #f38518;
+
+  /* debugIcon.breakpointForeground(三主题同值)/ breakpointCurrentStackframeForeground hcDark。执行行底比 VSCode
+   * #ffff0033 淡(12%)、另由 high-contrast.css 加执行箭头色边框:行内语法色仍 ≥ 7。 */
+  --md-debug-breakpoint: #e51400;
+  --md-debug-exec-line: rgba(255, 255, 0, 0.12);
+  --md-debug-exec-marker: #ffcc00;
+
+  /* 编辑器选区:contrastActiveBorder 15% 淡底(另由 high-contrast.css 画边框);不用 VSCode 的不透明选区底 —— CodeMirror 选区层
+   * 在文字下方,改不了选中文字的颜色。 */
+  --md-editor-selection: rgba(243, 133, 24, 0.15);
+
+  --md-fg-dim: #c8c8c8;
+  --md-rating: #ffd370;
+  /* list.highlightForeground hcDark = focusBorder 同色相 */
+  --md-list-highlight: #f9a03f;
+
+  /* 语法色:hc_black.json 同色相(keyword #569cd6 / comment #7ca668 / string #ce9178 / heading #6796e6 / invalid #f44747
+   * 提亮到对选区 / 执行行底 ≥ 7,其余原值)。链接 textLink.foreground hcDark #21a6ff 提亮。 */
+  --md-syntax-keyword: #7cb7ec;
+  --md-syntax-name: #9cdcfe;
+  --md-syntax-function: #dcdcaa;
+  --md-syntax-constant: #b5cea8;
+  --md-syntax-definition: #ffffff;
+  --md-syntax-type: #4ec9b0;
+  --md-syntax-operator: #d4d4d4;
+  --md-syntax-comment: #93bd80;
+  --md-syntax-string: #dfaa8f;
+  --md-syntax-heading: #8eb0f0;
+  --md-syntax-link: #5cbcff;
+  --md-syntax-invalid: #ff8f8f;
+
+  /* gitDecoration.* hcDark(deleted / conflicting #c74e39 提亮,ignored #a7a8a9 提亮) */
+  --md-git-modified: #e2c08d;
+  --md-git-added: #a1e3ad;
+  --md-git-untracked: #73c991;
+  --md-git-deleted: #f0907c;
+  --md-git-conflict: #f0907c;
+  --md-git-ignored: #b3b3b3;
+
+  --md-indent-guide: #7f7f7f;
+  --md-indent-guide-active: #ffffff;       /* hc_black.json editorIndentGuide.activeBackground1 */
+}
+
+.hc-light {
+  --md-contrast-border: #0f4a85;
+  --md-contrast-active-border: #006bbd;
+
+  /* 执行箭头:VSCode hcLight #BE8700 对白底仅 3.16、悬停底 2.68,加深 */
+  --md-debug-breakpoint: #e51400;
+  --md-debug-exec-line: rgba(255, 255, 102, 0.45); /* editor.stackFrameHighlightBackground hcLight #ffff6673 */
+  --md-debug-exec-marker: #895503;
+
+  --md-editor-selection: rgba(0, 107, 189, 0.15);
+
+  --md-fg-dim: #454545;
+  --md-rating: #634000;
+  --md-list-highlight: #0f4a85;
+
+  /* 语法色:hc_light.json(string / keyword / heading / link 同为 #0F4A85,VSCode 原样;function #5e2cbc / constant #096d48 /
+   * type #185e73 / comment #515151 / invalid #b5200d 加深到对悬停 / 选区底 ≥ 7) */
+  --md-syntax-keyword: #0f4a85;
+  --md-syntax-name: #001080;
+  --md-syntax-function: #4f24a0;
+  --md-syntax-constant: #054d33;
+  --md-syntax-definition: #292929;
+  --md-syntax-type: #124b5c;
+  --md-syntax-operator: #000000;
+  --md-syntax-comment: #454545;
+  --md-syntax-string: #0f4a85;
+  --md-syntax-heading: #0f4a85;
+  --md-syntax-link: #0f4a85;
+  --md-syntax-invalid: #8a180a;
+
+  /* gitDecoration.* hcLight(modified #895503 / untracked #007100 / deleted #ad0707 / ignored #8e8e90 加深) */
+  --md-git-modified: #634000;
+  --md-git-added: #334805;
+  --md-git-untracked: #005200;
+  --md-git-deleted: #8f0606;
+  --md-git-conflict: #8f0606;
+  --md-git-ignored: #454545;
+
+  --md-indent-guide: #767676;
+  --md-indent-guide-active: #292929;
 }
 
 /* ── Tailwind v4 @theme:把 LM 14 个语义 token 映射到 MD3 ───── */

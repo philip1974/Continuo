@@ -63,8 +63,8 @@ describe('Input 样式契约', () => {
 describe('SegmentedControl 样式契约', () => {
   const SEG = css('src/design/SegmentedControl.css');
 
-  it('轨道有 1px outline-variant 描边,与所在面板区分', () => {
-    expect(ruleBody(SEG, '.wm-segmented')).toMatch(/border:\s*1px solid var\(--md-outline-variant\)/);
+  it('轨道有 1px outline 描边(控件边界 ≥ 3:1,见 high-contrast-theme/),与所在面板区分', () => {
+    expect(ruleBody(SEG, '.wm-segmented')).toMatch(/border:\s*1px solid var\(--md-outline\)/);
   });
 
   // 选中指示须对相邻色(轨道 surface-container-low)≥ 3:1(WCAG 1.4.11):secondary-container 底色本身与轨道

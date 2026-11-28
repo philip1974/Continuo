@@ -1,0 +1,194 @@
+/* 高对比度主题(<html class="hc-black"> / "hc-light")的边框与轮廓。颜色在 design-tokens.css / theme.css 的 .hc-black /
+ * .hc-light;本文件只补「HC 下才画」的边框 —— 对齐 VSCode:亮 / 暗主题的 contrastBorder / contrastActiveBorder 为 null,
+ * HC 主题里输入框 / 按钮 / 菜单 / 面板 / tab 画 contrastBorder,选中 / 活动 / 悬停 / 当前行 / 查找匹配画 contrastActiveBorder
+ *(src/vs/platform/theme/common/colors/*.ts、listWidget.ts、multiEditorTabsControl.ts、editorColorRegistry.ts)。
+ *
+ * 选择器一律以 :root:is(.hc-black, .hc-light) 开头(亮 / 暗主题零影响;high-contrast-theme 规范守护)。
+ * 非 layer(unlayered,同 forced-colors.css):压过 design(components)、Tailwind utilities 的 outline-none,以及
+ * CodeMirror / Milkdown 注入的未分层主题样式(靠 :root 前缀的特异性)。
+ * 语义选择器(aria-selected / aria-current / aria-pressed / data-highlighted / data-state / design data-active)与
+ * forced-colors.css 同一套:新组件只要暴露标准状态属性就自动获得。BDD:src/__tests__/high-contrast-theme/ */
+
+/* ── 悬停:1px dashed(VSCode list.hoverOutline / toolbar.hoverOutline = contrastActiveBorder)。:where 零特异性,
+ * 被下面的选中 / 焦点规则覆盖。 */
+:root:is(.hc-black, .hc-light)
+  :where(
+    button:not(:disabled),
+    [role="button"]:not([aria-disabled="true"]),
+    [role="option"],
+    [role="menuitem"],
+    [role="treeitem"],
+    [role="tab"],
+    a[href]
+  ):where(:hover) {
+  outline: 1px dashed var(--md-contrast-active-border);
+  outline-offset: -1px;
+}
+
+/* ── 选中 / 当前 / 按下 / 菜单高亮:1px solid 内嵌(VSCode 活动 tab outline 1px solid、列表选中项轮廓)。 */
+:root:is(.hc-black, .hc-light)
+  :is(
+    [aria-selected="true"],
+    [aria-current]:not([aria-current="false"]),
+    [aria-pressed="true"],
+    [data-highlighted],
+    [data-state="checked"],
+    [data-state="on"],
+    [data-active="true"]
+  ) {
+  outline: 1px solid var(--md-contrast-active-border);
+  outline-offset: -1px;
+}
+
+/* ── 键盘焦点:2px solid focusBorder(选中项获焦也比单纯选中更粗)。dock tab 的焦点由 dockview.css 的 ::after 画,不叠第二层。 */
+:root:is(.hc-black, .hc-light)
+  :is(button, a[href], [tabindex]:not([tabindex="-1"]), summary, input, textarea, select):not(.dv-tab [role="tab"]):focus-visible {
+  outline: 2px solid var(--md-focus-ring);
+  outline-offset: -2px;
+}
+
+/* ── 控件边框 = contrastBorder(input.border / dropdown.border / button.border / button.secondaryBorder / checkbox.border)。 */
+:root:is(.hc-black, .hc-light) .wm-input,
+:root:is(.hc-black, .hc-light) .wm-segmented,
+:root:is(.hc-black, .hc-light) .wm-switch,
+:root:is(.hc-black, .hc-light) .wm-button:not([data-variant="ghost"]),
+:root:is(.hc-black, .hc-light) .cm-editor .cm-textfield,
+:root:is(.hc-black, .hc-light) .cm-editor .cm-button {
+  border-color: var(--md-contrast-border);
+}
+/* 校验失败保持错误色描边(inputValidation.errorBorder) */
+:root:is(.hc-black, .hc-light) .wm-input[aria-invalid="true"] {
+  border-color: var(--md-error);
+}
+/* 分段控件选中项 / 按钮悬停:VSCode inputOption.activeBorder / button.hoverBackground 同底色,靠边框 */
+:root:is(.hc-black, .hc-light) .wm-segmented-option[data-active="true"] {
+  border-color: var(--md-contrast-active-border);
+}
+
+/* ── 对话框 / 通知 / 浮层边框(widget.border / notificationToast.border / menu.border = contrastBorder)。 */
+:root:is(.hc-black, .hc-light) .wm-modal-content,
+:root:is(.hc-black, .hc-light) .cm-editor .cm-tooltip {
+  border-color: var(--md-contrast-border);
+}
+:root:is(.hc-black, .hc-light) .toast {
+  border-width: 2px;
+}
+
+/* ── dock:tab 间分隔(tab.border = contrastBorder);活动组的活动 tab 1px solid(上面的选中规则),非活动组的活动 tab
+ * 1px dotted(multiEditorTabsControl:.tab.selected:not(.active) dotted)。活动 tab 顶部强调条改 contrastActiveBorder。 */
+:root:is(.hc-black, .hc-light) .dockview-theme-abyss .dv-tab {
+  border-right: 1px solid var(--md-contrast-border);
+}
+:root:is(.hc-black, .hc-light) .dockview-theme-abyss .dv-inactive-group [role="tab"][aria-selected="true"] {
+  outline-style: dotted;
+}
+:root:is(.hc-black, .hc-light) .dockview-theme-abyss .dv-tabs-and-actions-container {
+  border-bottom: 1px solid var(--md-contrast-border);
+}
+:root:is(.hc-black, .hc-light) [role="tab"] > .bg-accent {
+  background-color: var(--md-contrast-active-border);
+}
+
+/* ── 链接下划线(VSCode HC 主题链接一律下划线;textLink.foreground 已在 token)。 */
+:root:is(.hc-black, .hc-light) a[href],
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror a {
+  text-decoration: underline;
+}
+
+/* ── 列表命中字符(命令面板 / Quick Open 的 <mark>):加下划线,不只靠颜色(同 forced-colors.css)。 */
+:root:is(.hc-black, .hc-light) mark.text-list-highlight {
+  text-decoration: underline;
+}
+
+/* ── CodeMirror(代码编辑器 / Markdown Source / Markdown 代码块 / 冲突比较)── */
+/* 当前行:无底色,contrastActiveBorder 边框(editor.lineHighlightBorder hcDark #f38518 / hcLight contrastBorder)。 */
+:root:is(.hc-black, .hc-light) .cm-editor .cm-activeLine {
+  background-color: transparent;
+  outline: 1px solid var(--md-contrast-active-border);
+  outline-offset: -1px;
+}
+/* 行号 = 前景(editorLineNumber.foreground hcDark 白 / hcLight #292929),当前行号 = contrastActiveBorder。 */
+:root:is(.hc-black, .hc-light) .cm-editor .cm-gutters {
+  color: var(--md-on-surface);
+}
+:root:is(.hc-black, .hc-light) .cm-editor .cm-activeLineGutter {
+  background-color: transparent;
+  color: var(--md-contrast-active-border);
+}
+/* 选区:淡底(theme.css 的 HC --md-editor-selection)+ contrastActiveBorder 边框。 */
+:root:is(.hc-black, .hc-light) .cm-editor .cm-selectionBackground,
+:root:is(.hc-black, .hc-light) .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
+  outline: 1px solid var(--md-contrast-active-border);
+  outline-offset: -1px;
+}
+/* 查找:其它匹配 1px dashed、当前匹配 2px solid,无底色(editor.findMatch(Highlight)Border = contrastActiveBorder)。 */
+:root:is(.hc-black, .hc-light) .cm-editor .cm-searchMatch {
+  background-color: transparent;
+  outline: 1px dashed var(--md-contrast-active-border);
+}
+:root:is(.hc-black, .hc-light) .cm-editor .cm-searchMatch.cm-searchMatch-selected {
+  background-color: transparent;
+  outline: 2px solid var(--md-contrast-active-border);
+}
+/* 出现处高亮(editor.selectionHighlightBorder = contrastActiveBorder):1px dotted,无底色。 */
+:root:is(.hc-black, .hc-light) .cm-editor .cm-selectionMatch {
+  background-color: transparent;
+  outline: 1px dotted var(--md-contrast-active-border);
+}
+/* 括号匹配(editorBracketMatch.border = contrastBorder)。 */
+:root:is(.hc-black, .hc-light) .cm-editor.cm-focused .cm-matchingBracket,
+:root:is(.hc-black, .hc-light) .cm-editor.cm-focused .cm-nonmatchingBracket {
+  background-color: transparent;
+  outline: 1px solid var(--md-contrast-border);
+}
+/* 调试执行行:淡底(--md-debug-exec-line)+ 执行箭头色边框。 */
+:root:is(.hc-black, .hc-light) .cm-editor .cm-line.cm-debug-exec-line {
+  outline: 1px solid var(--md-debug-exec-marker);
+  outline-offset: -1px;
+}
+/* 查找选项 toggle 勾选态(inputOption.activeBorder = contrastBorder,底透明)。 */
+:root:is(.hc-black, .hc-light) .cm-editor .cm-panel label.cm-search-option:has(input:checked) {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--md-contrast-active-border);
+}
+/* 冲突比较:diff 用边框代替色块(diffEditor.inserted/removedTextBorder;HC 下 inserted/removed 底色为 null)。 */
+:root:is(.hc-black, .hc-light) .cm-editor .cm-changedLine,
+:root:is(.hc-black, .hc-light) .cm-editor .cm-deletedChunk {
+  background-color: transparent;
+}
+:root:is(.hc-black, .hc-light) .cm-editor.cm-merge-a .cm-changedText,
+:root:is(.hc-black, .hc-light) .cm-editor .cm-deletedChunk .cm-deletedText {
+  background: none;
+  outline: 1px dashed var(--md-git-deleted);
+}
+:root:is(.hc-black, .hc-light) .cm-editor.cm-merge-b .cm-changedText {
+  background: none;
+  outline: 1px dashed var(--md-git-added);
+}
+
+/* ── Milkdown(编辑 / 预览)── */
+/* 代码块 / 引用 / 表格单元格 / 行内代码边框(textPreformat.border / textBlockQuote.border / contrastBorder)。 */
+:root:is(.hc-black, .hc-light) .milkdown .milkdown-code-block,
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror td,
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror th {
+  border: 1px solid var(--md-contrast-border);
+}
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror blockquote {
+  border-left: 3px solid var(--md-on-surface);
+}
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror :not(pre) > code {
+  outline: 1px solid var(--md-contrast-border);
+}
+/* 查找匹配同编辑器:其它 dashed、当前 2px solid,无底色。 */
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror .co-find-match {
+  background-color: transparent;
+  outline: 1px dashed var(--md-contrast-active-border);
+}
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror .co-find-match.co-find-match-current {
+  background-color: transparent;
+  outline: 2px solid var(--md-contrast-active-border);
+}
+/* 文字选区(原生 ::selection):同代码编辑器选区的淡底,不改文字色(系统默认选区色在 HC 底上对比不足)。 */
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror ::selection {
+  background-color: var(--md-editor-selection);
+}

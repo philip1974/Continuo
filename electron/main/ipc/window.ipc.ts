@@ -43,7 +43,7 @@ import { clearWindow as clearEditorDocuments } from '../services/window-editor-d
 import { codedError, errorMessage, thrownFields } from '../../shared/error-message';
 import { mapNodeErrnoCode } from './fs/path-utils';
 import { windowSeqCount } from '../services/window-seq.service';
-import { WINDOW_BACKGROUND_COLORS } from '../../shared/window-background';
+import { RESOLVED_THEME_VALUES, THEME_MODE_VALUES, WINDOW_BACKGROUND_COLORS } from '../../shared/window-background';
 import { setMenuKeybindings } from '../menu-keybindings';
 import { setMenuChecked } from '../menu-checked';
 import { getWindowTheme, setWindowTheme } from '../services/window-theme.service';
@@ -273,9 +273,9 @@ function applyWindowViewAction(win: BrowserWindow, action: WindowViewAction, rel
 
 const NotifyThemeInput = z
   .object({
-    theme: z.enum(['light', 'dark']),
-    // 主题模式(可缺省):system 时 main 冷启动按 OS 当前外观决定首窗底色
-    mode: z.enum(['light', 'dark', 'system']).optional(),
+    theme: z.enum(RESOLVED_THEME_VALUES),
+    // 主题模式(可缺省):system 时 main 冷启动按 OS 当前外观(含高对比度)决定首窗底色
+    mode: z.enum(THEME_MODE_VALUES).optional(),
   })
   .strict();
 

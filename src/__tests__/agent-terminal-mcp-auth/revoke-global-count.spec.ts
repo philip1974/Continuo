@@ -13,6 +13,8 @@ const h = vi.hoisted(() => ({
 vi.mock('electron', () => ({
   // registerIpc 也注册读屏检测(app.on('accessibility-support-changed'))
   app: { getPath: vi.fn(() => '/tmp'), on: vi.fn() },
+  // registerIpc 也注册系统配色变化(nativeTheme.on('updated'),高对比度主题)
+  nativeTheme: { on: vi.fn() },
   ipcMain: {
     handle: vi.fn((channel: string, fn: (event: unknown, raw: unknown) => Promise<unknown>) => {
       h.handlers.set(channel, fn);

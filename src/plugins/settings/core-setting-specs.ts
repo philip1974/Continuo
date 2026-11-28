@@ -552,6 +552,9 @@ export const SEARCH_USE_IGNORE_FILES: CoreSettingSpec<boolean> = {
 const THEME_OPTION_LABELS: Record<ThemeMode, { label: string; labelKey: string }> = {
   light: { label: 'Light', labelKey: 'settings.general.theme.light' },
   dark: { label: 'Dark', labelKey: 'settings.general.theme.dark' },
+  // VSCode 内置主题名(extensions/theme-defaults:hcColorThemeLabel / lightHcColorThemeLabel)
+  hcDark: { label: 'Dark High Contrast', labelKey: 'settings.general.theme.hc_dark' },
+  hcLight: { label: 'Light High Contrast', labelKey: 'settings.general.theme.hc_light' },
   system: { label: 'System', labelKey: 'settings.general.theme.system' },
 };
 

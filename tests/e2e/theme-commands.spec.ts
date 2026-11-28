@@ -67,7 +67,8 @@ test('颜色主题:命令面板可搜到;选中当前项;↑↓ 预览不写设�
   // 英文原名也能搜到(界面语言不论)
   await runFromPalette(win, 'Color Theme', COLOR_THEME_CMD);
   await expect(picker(win)).toBeFocused({ timeout: 5_000 });
-  await expect(win.locator('[role="option"]')).toHaveCount(3);
+  // 亮色 / 暗色 / 高对比度深色 / 高对比度浅色 / 跟随系统(high-contrast-theme)
+  await expect(win.locator('[role="option"]')).toHaveCount(5);
   await expect.poll(() => selectedMode(win)).toBe('dark');
 
   // ↑ → 亮色预览:<html> 去掉 dark,设置值不变
@@ -84,8 +85,10 @@ test('颜色主题:命令面板可搜到;选中当前项;↑↓ 预览不写设�
   // 跟随系统:预览按 prefers-color-scheme(Playwright 默认模拟 light,显式设成 light / dark)
   await win.emulateMedia({ colorScheme: 'light' });
   await runFromPalette(win, 'Color Theme', COLOR_THEME_CMD);
-  await picker(win).press('ArrowDown');
-  await expect.poll(() => selectedMode(win)).toBe('system');
+  for (const mode of ['hcDark', 'hcLight', 'system']) {
+    await picker(win).press('ArrowDown');
+    await expect.poll(() => selectedMode(win)).toBe(mode);
+  }
   await expect.poll(() => isDark(win)).toBe(false);
   await win.emulateMedia({ colorScheme: 'dark' });
   await expect.poll(() => isDark(win)).toBe(true);

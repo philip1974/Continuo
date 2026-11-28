@@ -111,6 +111,12 @@ import {
   ACCESSIBILITY_CHANNELS,
   isAccessibilitySupportChangedPayload,
 } from '../shared/accessibility-channels';
+import {
+  HOST_COLOR_SCHEME_CHANNELS,
+  isHostColorScheme,
+  type HostColorScheme,
+} from '../shared/host-color-scheme';
+import type { ResolvedTheme, ThemeModeValue } from '../shared/window-background';
 import { pluginDataRaw } from './plugin-data.preload';
 import { pluginFsRaw } from './plugin-fs.preload';
 import { pluginShellStreamRaw } from './plugin-shell-stream.preload';
@@ -584,14 +590,21 @@ const api = {
     setZoomLevel: (level: number): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(WINDOW_CHANNELS.SET_ZOOM_LEVEL, { level }),
     /**
-     * renderer 解析出的主题(light / dark)变化时通知 main:所有窗口底色改为对应画布色,新窗口 / popout 沿用;
+     * renderer 解析出的主题(light / dark / hcDark / hcLight)变化时通知 main:所有窗口底色改为对应画布色,新窗口 / popout 沿用;
      * main 同时持久化(含主题模式 mode,system 时冷启动按 OS 外观),下次冷启动首窗即用。
      */
-    notifyTheme: (
-      theme: 'light' | 'dark',
-      mode?: 'light' | 'dark' | 'system',
-    ): Promise<IpcResult<void>> =>
+    notifyTheme: (theme: ResolvedTheme, mode?: ThemeModeValue): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(WINDOW_CHANNELS.NOTIFY_THEME, mode === undefined ? { theme } : { theme, mode }),
+    /** 系统配色(明暗 + 高对比度,main 按 nativeTheme 判定;「跟随系统」主题用)。 */
+    getHostColorScheme: (): Promise<IpcResult<HostColorScheme>> => ipcRenderer.invoke(HOST_COLOR_SCHEME_CHANNELS.GET),
+    /** 订阅系统配色变化(main 广播);畸形 payload 丢弃。返 unsubscribe。 */
+    onHostColorSchemeChanged: (cb: (scheme: HostColorScheme) => void): (() => void) =>
+      subscribeIpc(
+        HOST_COLOR_SCHEME_CHANNELS.CHANGED,
+        guardedListener(isHostColorScheme, '[theme] dropped malformed host-color-scheme payload', (payload) =>
+          cb({ dark: payload.dark, highContrast: payload.highContrast }),
+        ),
+      ),
     /**
      * 本窗口当前的界面缩放系数(⌘- / ⌘+ / ⌘0 的页面缩放,1 = 100%)。同步读取(webFrame,沙箱 preload 可用);变化时 renderer
      * 收到 resize。macOS 标题栏据此反向缩放,保持与原生红绿灯等高(VSCode titlebarPart counter-zoom)。

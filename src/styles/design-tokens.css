@@ -153,3 +153,127 @@
 
   --wm-shadow-popover: 0 14px 40px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.35);
 }
+
+/* 高对比度深色(VSCode「Dark High Contrast」,workbench class hc-black;<html> 同时带 .dark —— 本块排在 .dark 之后,
+ * 同特异性后者胜)。取值照 VSCode colorRegistry 的 hcDark 默认:画布 / 面板 / 侧栏全黑(editor / sideBar / panel
+ * .background),前景白;分隔线 / 控件边框 = contrastBorder #6fc3df(--md-outline-variant,全部 border-line 随之);焦点 =
+ * focusBorder #f38518。主色(选中 / 活动指示、文字强调)取 contrastActiveBorder 同色相、提亮到对悬停底 ≥ 7:1。
+ * 容器色一律黑底 + 白字(VSCode inputValidation / notification 的 hcDark 同为黑底,语义靠边框 / 图标色区分)。
+ * 文字对 surface…container-highest ≥ 7:1、边界 ≥ 3:1(BDD:src/__tests__/high-contrast-theme/)。 */
+.hc-black {
+  --md-surface: #000000;
+  --md-surface-dim: #000000;
+  --md-surface-bright: #000000;
+  --md-surface-container-lowest: #000000;
+  --md-surface-container-low: #000000;
+  --md-surface-container: #000000;
+  --md-surface-container-high: #1a1a1a;    /* list.hoverBackground hcDark(white 10%) */
+  --md-surface-container-highest: #1f1f1f;
+  --md-on-surface: #ffffff;
+  --md-on-surface-variant: #e6e6e6;
+  --md-outline: #b3b3b3;                   /* input.placeholderForeground hcDark(foreground 70%) */
+  --md-outline-variant: #6fc3df;           /* contrastBorder */
+
+  --md-primary: #f9a03f;
+  --md-on-primary: #000000;
+  --md-primary-container: #000000;         /* button.background hcDark */
+  --md-on-primary-container: #ffffff;
+  --md-secondary: #6fc3df;
+  --md-on-secondary: #000000;
+  --md-secondary-container: #000000;
+  --md-on-secondary-container: #ffffff;
+  --md-tertiary: #6fc3df;
+  --md-on-tertiary: #000000;
+  --md-tertiary-container: #000000;
+  --md-on-tertiary-container: #ffffff;
+
+  --md-error: #f9a08e;                     /* errorForeground hcDark #F48771 提亮 */
+  --md-on-error: #000000;
+  --md-error-container: #000000;
+  --md-on-error-container: #ffffff;
+  --md-success: #89d185;
+  --md-on-success: #000000;
+  --md-success-container: #000000;
+  --md-on-success-container: #ffffff;
+  --md-warning: #ffd370;                   /* editorWarning.foreground hcDark */
+  --md-on-warning: #000000;
+  --md-warning-container: #000000;
+  --md-on-warning-container: #ffffff;
+
+  --md-info: #85bcfa;                      /* editorInfo.foreground hcDark #59a4f9 提亮 */
+  --md-on-info: #000000;
+  --md-info-container: #000000;
+  --md-on-info-container: #ffffff;
+  --md-focus-ring: #f38518;                /* focusBorder hcDark */
+  --md-scrim: rgba(0, 0, 0, 0.7);
+  --md-state-hover: rgba(255, 255, 255, 0.1);
+  --md-state-focus: rgba(255, 255, 255, 0.12);
+  --md-state-pressed: rgba(255, 255, 255, 0.12);
+  --md-state-disabled: rgba(255, 255, 255, 0.65); /* disabledForeground hcDark #A5A5A5 */
+  --md-state-disabled-container: rgba(255, 255, 255, 0.12);
+
+  --wm-terminal-input-bg: #000000;
+  --wm-terminal-input-fg: #ffffff;
+  --wm-terminal-border: #6fc3df;
+  --wm-shadow-popover: none;               /* widget.shadow hcDark = null(浮层靠边框) */
+}
+
+/* 高对比度浅色(VSCode「Light High Contrast」,class hc-light,无 .dark)。照 hcLight 默认:白底、前景 #292929、
+ * contrastBorder #0f4a85、focusBorder #006bbd、按钮 #0f4a85 白字、悬停 = #0f4a85 10%。 */
+.hc-light {
+  --md-surface: #ffffff;
+  --md-surface-dim: #ffffff;
+  --md-surface-bright: #ffffff;
+  --md-surface-container-lowest: #ffffff;
+  --md-surface-container-low: #ffffff;
+  --md-surface-container: #ffffff;
+  --md-surface-container-high: #e7edf3;    /* list.hoverBackground hcLight(#0F4A85 10%) */
+  --md-surface-container-highest: #e1e8f1;
+  --md-on-surface: #292929;
+  --md-on-surface-variant: #333333;
+  --md-outline: #454545;
+  --md-outline-variant: #0f4a85;           /* contrastBorder */
+
+  --md-primary: #0f4a85;
+  --md-on-primary: #ffffff;
+  --md-primary-container: #0f4a85;         /* button.background hcLight */
+  --md-on-primary-container: #ffffff;
+  --md-secondary: #0f4a85;
+  --md-on-secondary: #ffffff;
+  --md-secondary-container: #ffffff;
+  --md-on-secondary-container: #292929;
+  --md-tertiary: #0f4a85;
+  --md-on-tertiary: #ffffff;
+  --md-tertiary-container: #ffffff;
+  --md-on-tertiary-container: #292929;
+
+  --md-error: #8a180a;                     /* errorForeground hcLight #B5200D 加深 */
+  --md-on-error: #ffffff;
+  --md-error-container: #ffffff;
+  --md-on-error-container: #292929;
+  --md-success: #005200;
+  --md-on-success: #ffffff;
+  --md-success-container: #ffffff;
+  --md-on-success-container: #292929;
+  --md-warning: #634000;                   /* editorWarning.foreground hcLight #895503 加深 */
+  --md-on-warning: #ffffff;
+  --md-warning-container: #ffffff;
+  --md-on-warning-container: #292929;
+
+  --md-info: #003f8a;
+  --md-on-info: #ffffff;
+  --md-info-container: #ffffff;
+  --md-on-info-container: #292929;
+  --md-focus-ring: #006bbd;                /* focusBorder hcLight */
+  --md-scrim: rgba(0, 0, 0, 0.45);
+  --md-state-hover: rgba(15, 74, 133, 0.1);
+  --md-state-focus: rgba(15, 74, 133, 0.15);
+  --md-state-pressed: rgba(15, 74, 133, 0.15);
+  --md-state-disabled: rgba(0, 0, 0, 0.5); /* disabledForeground hcLight #7F7F7F */
+  --md-state-disabled-container: rgba(0, 0, 0, 0.12);
+
+  --wm-terminal-input-bg: #ffffff;
+  --wm-terminal-input-fg: #292929;
+  --wm-terminal-border: #0f4a85;
+  --wm-shadow-popover: none;
+}

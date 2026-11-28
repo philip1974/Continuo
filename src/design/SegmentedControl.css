@@ -7,7 +7,8 @@
   gap: var(--wm-space-0_5);
   border-radius: 4px;
   padding: var(--wm-space-0_5);
-  border: 1px solid var(--md-outline-variant);
+  /* 外框同 Input 用 --md-outline(控件边界 ≥ 3:1;outline-variant 只作分隔线) */
+  border: 1px solid var(--md-outline);
   background-color: var(--md-surface-container-low);
   font-family: var(--wm-font-sans);
 }

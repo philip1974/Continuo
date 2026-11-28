@@ -3,7 +3,7 @@
 //   - 删 loadTerminalConfig(我们没 config IPC,内联默认值)
 //   - scrollback 改 20000(决策 #3:跑 Agent CLI 输出大)
 //   - electronAPI.terminal → coApi.terminal
-// theme:跟随 ThemeProvider 的 resolved(dark/light)— 与 CodeEditor 一致,
+// theme:跟随 ThemeProvider 的 resolved(light / dark / hcDark / hcLight)— 与 CodeEditor 一致,
 //   切主题时不重建 term,只改 term.options.theme(避免丢历史输出)。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -31,7 +31,7 @@ import {
   getIndexedTerminalSessionById,
   useTerminalStore,
 } from '@/stores/terminal.store';
-import { useTheme } from '@/theme';
+import { useTheme, type ColorScheme } from '@/theme';
 import {
   disposeQueue,
   registerOsc7Cwd,
@@ -151,8 +151,12 @@ const DARK_THEME: ITheme = {
 //   **dim 单元 xterm 按 ratio/2 处理(红队 P0.1)**:light dim 实际保 ~3.5:1(AA Large),
 //   非 AA 但可读;commit body 显式声明此点,不谎称达 AA。
 //   构造时 + theme effect 同步 set,避免主题切换残留旧值。
-/** 终端最低对比度(xterm minimumContrastRatio):light 7、dark 4.5,见上方注释。构造时与主题切换时同用。 */
-export function terminalMinimumContrastRatio(resolved: 'light' | 'dark'): number {
+/**
+ * 终端最低对比度(xterm minimumContrastRatio):light 7、dark 4.5,见上方注释;高对比度两套 7 —— VSCode 是独立设置
+ * terminal.integrated.minimumContrastRatio(默认 4.5,不随主题),Continuo 无此设置,按 HC 文字 ≥ 7 的目标取 AAA(HC 16 色多数对
+ * 黑 / 白底不足 7,如 hcDark blue #0000ee 2.2:1,靠它拔亮)。构造时与主题切换时同用。
+ */
+export function terminalMinimumContrastRatio(resolved: ColorScheme): number {
   return resolved === 'dark' ? 4.5 : 7;
 }
 
@@ -179,6 +183,70 @@ const LIGHT_THEME: ITheme = {
   brightCyan: '#3192aa',
   brightWhite: '#57606a',
 };
+
+// 高对比度两套:VSCode terminalColorRegistry 的 hcDark / hcLight 默认值(16 色逐项照抄;前景 terminal.foreground,光标
+// editorCursor.foreground,选区 = 内置 hc_black / hc_light 主题的 editor.selectionBackground + terminal.selectionForeground)。
+// background = 对应 --md-surface(design-tokens.css `.hc-black` / `.hc-light`),由 high-contrast-theme 规范守护。
+const HC_DARK_THEME: ITheme = {
+  background: '#000000',
+  foreground: '#ffffff',
+  cursor: '#ffffff',
+  selectionBackground: '#ffffff',
+  selectionForeground: '#000000',
+  black: '#000000',
+  red: '#cd0000',
+  green: '#00cd00',
+  yellow: '#cdcd00',
+  blue: '#0000ee',
+  magenta: '#cd00cd',
+  cyan: '#00cdcd',
+  white: '#e5e5e5',
+  brightBlack: '#7f7f7f',
+  brightRed: '#ff0000',
+  brightGreen: '#00ff00',
+  brightYellow: '#ffff00',
+  brightBlue: '#5c5cff',
+  brightMagenta: '#ff00ff',
+  brightCyan: '#00ffff',
+  brightWhite: '#ffffff',
+};
+
+const HC_LIGHT_THEME: ITheme = {
+  background: '#ffffff',
+  foreground: '#292929',
+  cursor: '#0f4a85',
+  selectionBackground: '#0f4a85',
+  selectionForeground: '#ffffff',
+  black: '#292929',
+  red: '#cd3131',
+  green: '#136c13',
+  yellow: '#949800',
+  blue: '#0451a5',
+  magenta: '#bc05bc',
+  cyan: '#0598bc',
+  white: '#555555',
+  brightBlack: '#666666',
+  brightRed: '#cd3131',
+  brightGreen: '#00bc00',
+  brightYellow: '#b5ba00',
+  brightBlue: '#0451a5',
+  brightMagenta: '#bc05bc',
+  brightCyan: '#0598bc',
+  brightWhite: '#a5a5a5',
+};
+
+const TERMINAL_THEMES: Readonly<Record<ColorScheme, ITheme>> = {
+  light: LIGHT_THEME,
+  dark: DARK_THEME,
+  hcDark: HC_DARK_THEME,
+  hcLight: HC_LIGHT_THEME,
+};
+
+/** 主题 → xterm 配色。 */
+export function terminalThemeFor(scheme: ColorScheme): ITheme {
+  return TERMINAL_THEMES[scheme];
+}
+
 
 /**
  * OSC7 cwd 接受的 host:空 / localhost + 本机 hostname。shell 集成(bash/fish)与 oh-my-zsh 等发
@@ -544,8 +612,7 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
       lineHeight: initOptions.lineHeight,
       cursorStyle: initOptions.cursorStyle,
       screenReaderMode: initOptions.screenReaderMode,
-      theme: initOptions.resolved === 'dark' ? DARK_THEME : LIGHT_THEME,
-      // light 7 (AAA), dark 4.5(VSCode 默认)— 见 LIGHT_THEME 注释 (issue #24)
+      theme: terminalThemeFor(initOptions.resolved),
       minimumContrastRatio: terminalMinimumContrastRatio(initOptions.resolved),
     });
     const fitAddon = new FitAddon();
@@ -993,7 +1060,7 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
-    term.options.theme = resolved === 'dark' ? DARK_THEME : LIGHT_THEME;
+    term.options.theme = terminalThemeFor(resolved);
     // 同步 minimumContrastRatio,避免主题切换后残留另一主题的值
     term.options.minimumContrastRatio = terminalMinimumContrastRatio(resolved);
   }, [resolved]);

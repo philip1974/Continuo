@@ -132,9 +132,11 @@ export const ko: Record<TranslationKey, string> = {
   // settings.general
   'settings.general.tab_title': '일반',
   'settings.general.theme.title': '테마',
-  'settings.general.theme.description': 'Continuo의 시각 테마를 선택합니다. ‘시스템’은 OS 설정을 따릅니다.',
+  'settings.general.theme.description': 'Continuo의 시각 테마를 선택합니다. ‘시스템’은 OS 설정을 따르며, OS에서 고대비를 켜면 고대비 테마를 사용합니다.',
   'settings.general.theme.light': '라이트',
   'settings.general.theme.dark': '다크',
+  'settings.general.theme.hc_dark': '고대비 다크',
+  'settings.general.theme.hc_light': '고대비 라이트',
   'settings.general.theme.system': '시스템',
   'settings.general.language.title': '언어',
   'settings.general.language.description': 'Continuo의 UI 언어를 선택합니다. 즉시 적용됩니다.',
