@@ -81,9 +81,11 @@ function captureReference(body: HTMLElement, channelId: string, firstLine: numbe
 function renderLines(lines: readonly string[], firstLine: number, from: number, to: number): ReactNode[] {
   const out = new Array<ReactNode>(to - from);
   for (let n = from; n < to; n += 1) {
+    const text = lines[n - firstLine];
     out[n - from] = (
       <div key={n} data-line={n} className="min-h-[1lh]">
-        {lines[n - firstLine]}
+        {/* 空行放 <br>(同 contenteditable 的空行):空 div 在选区 / 复制文本里不产生换行,跨空行复制会丢掉空行。 */}
+        {text ? text : <br />}
       </div>
     );
   }

@@ -200,6 +200,14 @@ describe('宿主写入:激活失败、加载跳过原因、运行时错误;卸�
 });
 
 describe('输出面板', () => {
+  it('空行渲染成带 <br> 的行(选中 / 复制跨空行时保留换行),非空行只有文本', () => {
+    ensureOutputChannel('e', 'Empty', 'e');
+    appendToOutputChannel('e', 'a\n\n\nb\n');
+    const view = render(<Output />);
+    const line = (n: number) => view.container.querySelector<HTMLElement>(`[data-line="${n}"]`)!;
+    expect([0, 1, 2, 3].map((n) => line(n).innerHTML)).toEqual(['a', '<br>', '<br>', 'b']);
+  });
+
   it('没有通道 → 只显示空状态;有通道 → 下拉切换、清除、自动滚动开关', () => {
     const { container, unmount } = render(<Output />);
     expect(container.textContent).toBe('No output yet.');

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorState, type Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { ensureSyntaxTree, highlightingFor, language } from '@codemirror/language';
+import { tags } from '@lezer/highlight';
 import { CodeEditor, languageDescriptionFor, pickLanguage } from '../../panels/Editor/CodeEditor';
 import { tokenizeLogLine } from '../../panels/Editor/codemirror-log-language';
 import { logTags } from '../../panels/Editor/codemirror-log-tags';
@@ -97,6 +98,38 @@ describe('Log 语言(VSCode extensions/log:`.log` 与 `*.log.?`)', () => {
       expect(highlightingFor(state, [logTags.warning])).not.toBe(highlightingFor(state, [logTags.info]));
     }
   });
+});
+
+describe('Log 语言渲染出的 DOM(四套主题)', () => {
+  it.each(['dark', 'light', 'hcDark', 'hcLight'] as const)(
+    '%s:ERROR / FATAL 的 span 带 logTags.error 的高亮类(红色粗体),不是通用 invalid;字符串带 logTags.string 的类',
+    async (resolved) => {
+      const utils = render(
+        <ThemeContext.Provider value={{ mode: resolved, resolved, setMode: () => {} }}>
+          <CodeEditor tabId={`/${resolved}.log`} value={'ERROR boom "quoted"\nFATAL down\nINFO ok\n'} fileName="t.log" />
+        </ThemeContext.Provider>,
+      );
+      await act(async () => {});
+      const view = EditorView.findFromDOM(utils.container.querySelector<HTMLElement>('.cm-editor')!)!;
+      await waitFor(() => expect(view.state.facet(language)?.name).toBe('log'));
+      // 文本所在 span 及其到行为止的祖先的全部类(选中匹配等装饰会再套一层 span)
+      const classesOf = (text: string): string[] => {
+        let el: Element | null =
+          [...view.contentDOM.querySelectorAll('span')].findLast((e) => e.textContent === text) ?? null;
+        const out: string[] = [];
+        for (; el && !el.classList.contains('cm-line'); el = el.parentElement) out.push(...el.classList);
+        return out;
+      };
+      await waitFor(() => expect(classesOf('ERROR')).not.toEqual([]));
+      const errorClass = highlightingFor(view.state, [logTags.error])!;
+      const invalidClass = highlightingFor(view.state, [tags.invalid]);
+      expect(errorClass).toBeTruthy();
+      expect(errorClass).not.toBe(invalidClass);
+      for (const word of ['ERROR', 'FATAL']) expect(classesOf(word), word).toContain(errorClass);
+      expect(classesOf('"quoted"')).toContain(highlightingFor(view.state, [logTags.string])!);
+      expect(classesOf('INFO')).toContain(highlightingFor(view.state, [logTags.info])!);
+    },
+  );
 });
 
 describe('JSON 家族(VSCode extensions/json)', () => {

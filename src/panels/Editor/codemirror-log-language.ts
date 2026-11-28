@@ -85,14 +85,22 @@ function nextToken(line: string, pos: number): [LogToken | null, number] {
   return [token, Math.max(pos + 1, pos + m[0].length)];
 }
 
+// StreamLanguage 解析 token 名时先查内置的旧 CodeMirror 5 名字表(`error` → invalid、`type`、`header` …),命中就不看
+// tokenTable —— 直接用 `error` 作 token 名,ERROR / FATAL 会被当成 t.invalid、主题里 logTags.error 的红色粗体不生效。
+// 所以对外的 token 名统一加 `log` 前缀(logError / logString …),保证只从这张表解析。
+const tokenName = (token: LogToken): string => `log${token[0]!.toUpperCase()}${token.slice(1)}`;
+const TOKEN_TABLE = Object.fromEntries(
+  (Object.keys(logTags) as LogToken[]).map((token) => [tokenName(token), logTags[token]]),
+);
+
 const logParser: StreamParser<null> = {
   name: 'log',
   token(stream) {
     const [token, end] = nextToken(stream.string, stream.pos);
     stream.pos = end;
-    return token;
+    return token && tokenName(token);
   },
-  tokenTable: logTags,
+  tokenTable: TOKEN_TABLE,
 };
 
 export function logLanguageSupport(): LanguageSupport {

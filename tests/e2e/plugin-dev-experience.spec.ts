@@ -364,3 +364,56 @@ export default class Fill extends Plugin {
     }
   });
 });
+
+// 第七十轮 A 组审计:输出区按行分块渲染后,跨空行选中 / 复制丢了空行(空的块级行不产生换行)。BDD: src/__tests__/plugin-output-channel/
+test.describe('插件开发体验(第七十轮)', () => {
+  const BLANK = 'com.e2e.blank';
+  const BLANK_MAIN = `const { Plugin } = globalThis.co;
+export default class Blank extends Plugin {
+  onload() {
+    this.app.output.appendLine('copy a');
+    this.app.output.appendLine('');
+    this.app.output.appendLine('');
+    this.app.output.appendLine('copy b');
+    this.app.output.appendLine('');
+    this.app.output.appendLine('copy c');
+  }
+}
+`;
+
+  test.beforeEach(() => {
+    writePlugin(BLANK, { id: BLANK, name: 'PDX Blank', version: '1.0.0' }, BLANK_MAIN);
+    writeFileSync(path.join(ud, 'plugins', '_enabled.json'), JSON.stringify([BLANK]));
+  });
+
+  test('跨空行选中输出:选区文本保留空行(与通道内容的换行一致)', async () => {
+    const { app, win } = await launch();
+    try {
+      await win.evaluate(() => globalThis.__continuoTest!.executeCommand('workbench.view.output'));
+      const picker = win.locator('[data-output-channel-picker]');
+      await expect(picker).toBeVisible({ timeout: 15_000 });
+      await picker.click();
+      await win.getByRole('menuitemradio', { name: 'PDX Blank' }).click();
+      const body = win.locator(`[data-output-channel="plugin:${BLANK}"]`);
+      await expect(body).toContainText('copy c');
+      // 从「copy a」开头拖选到「copy c」末尾(真实鼠标选区),读选区文本(不经系统剪贴板)
+      const range = await body.evaluate((el) => {
+        const lines = [...el.querySelectorAll('[data-line]')];
+        const first = lines.find((l) => l.textContent === 'copy a')!.getBoundingClientRect();
+        const last = lines.find((l) => l.textContent === 'copy c')!;
+        const r = document.createRange();
+        r.selectNodeContents(last);
+        const end = r.getBoundingClientRect();
+        return { x0: first.left + 1, y0: first.top + first.height / 2, x1: end.right - 1, y1: end.top + end.height / 2 };
+      });
+      await win.mouse.move(range.x0, range.y0);
+      await win.mouse.down();
+      await win.mouse.move(range.x1, range.y1, { steps: 5 });
+      await win.mouse.up();
+      const selected = await win.evaluate(() => window.getSelection()?.toString() ?? '');
+      expect(selected.replace(/\n+$/, '')).toBe('copy a\n\n\ncopy b\n\ncopy c');
+    } finally {
+      await closeDiscardingUnsaved(app);
+    }
+  });
+});

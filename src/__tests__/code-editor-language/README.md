@@ -19,7 +19,8 @@
     按需加载。规则移植自 `log.tmLanguage.json`(同位置按规则顺序、取最早开始的匹配):日期 / 时间、级别关键字
     (TRACE·verbose / DEBUG / INFO·NOTICE / WARN / ERROR·FATAL·FAIL,含 `[warn]` 形式、`error:` 形式与时间戳后的单字母级别)、
     GUID / 哈希 / 数字 / 布尔 / `0x…` / URL / 带点的名字(常量)、引号字符串、`…Exception` 类型名、`at …` 栈帧行。颜色走语义 token
-    (`--md-syntax-*`,亮 / 暗 / 两套高对比度):错误红色粗体、警告黄、信息绿、调试蓝、日期 / verbose 注释色。语言名 `log`
+    (`--md-syntax-*`,亮 / 暗 / 两套高对比度):错误红色粗体、警告黄、信息绿、调试蓝、日期 / verbose 注释色(渲染出的 ERROR / FATAL 用日志错误色,不落到通用
+    invalid 色)。语言名 `log`
     (格式化等命令显示该名)。
   - 其余按 `@codemirror/language-data` 的语言表(与 Markdown 编辑模式代码块同源)按扩展名 / 文件名匹配,另补该表认不出的常见文件:
     `Dockerfile.*` / `*.dockerfile` / `Containerfile` → Dockerfile;`.env` / `.env.*` → Properties;
@@ -42,4 +43,4 @@
 | File | 覆盖 |
 |---|---|
 | `code-editor-language.spec.tsx` | .ts 泛型箭头函数无解析错误且后续 token 正常;各扩展名对应的 TS / JSX 配置;常见语言 / 补充文件名匹配;懒加载后高亮生效;加载中改名 / 卸载不串台 |
-| `log-and-json-lines.spec.tsx` | Log 的文件匹配(`.log` / `*.log.?`)、各规则着色、加载后语言名与四套主题配色;JSON 家族扩展名 / 文件名;jsonl 逐行解析且语言名 jsonl |
+| `log-and-json-lines.spec.tsx` | Log 的文件匹配(`.log` / `*.log.?`)、各规则着色、加载后语言名与四套主题配色、四套主题下渲染出的 span 带对应日志高亮类;JSON 家族扩展名 / 文件名;jsonl 逐行解析且语言名 jsonl |
