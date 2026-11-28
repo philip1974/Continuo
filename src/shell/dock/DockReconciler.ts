@@ -87,6 +87,8 @@ export function __reconcilerSeenSessionCountForTest(): number {
 /** 仅测试用:重置模块级 first-appearance 记录。 */
 export function __resetReconcilerForTest(): void {
   everAddedSessionIds.clear();
+  splitNext = null;
+  splitBySession = null;
   pendingFocusSessionId = null;
   if (pendingFocusTimer) {
     clearTimeout(pendingFocusTimer);
@@ -111,6 +113,49 @@ function consumePendingFocus(sessionId: string): boolean {
     pendingFocusTimer = null;
   }
   return true;
+}
+
+// 拆分终端(VSCode workbench.action.terminal.split,见 terminal-split):新终端落在父终端右侧(父终端在 popout 子窗 / 浮动组 →
+// 加进父终端的组,留在该窗口)。create resolve 前 session id 未知 → 挂在 splitNext 上,由下一个首次出现的 user 终端认领
+//(session 推送可能早于 RPC reply);resolve 后未被认领 → 按 id 记下,推送到达时认领。
+interface SplitPlacement {
+  readonly parentPanelId: string;
+}
+let splitNext: SplitPlacement | null = null;
+let splitBySession: { readonly sessionId: string; readonly placement: SplitPlacement } | null = null;
+
+/**
+ * 登记「下一个新建的 user 终端是 parentPanelId 的拆分」;返回的函数在 create 落定后调用(sessionId:新终端 id,失败 null)。
+ */
+export function expectSplitTerminal(parentPanelId: string): (sessionId: string | null) => void {
+  const placement: SplitPlacement = { parentPanelId };
+  splitNext = placement;
+  return (sessionId) => {
+    if (splitNext !== placement) return; // 已被认领(或被更新的拆分取代)
+    splitNext = null;
+    if (sessionId !== null) splitBySession = { sessionId, placement };
+  };
+}
+
+function takeSplitPlacement(session: TerminalSession, isFirstAppearance: boolean): SplitPlacement | null {
+  if (splitBySession?.sessionId === session.id) {
+    const { placement } = splitBySession;
+    splitBySession = null;
+    return placement;
+  }
+  if (splitNext === null || session.originHint !== 'user' || !isFirstAppearance) return null;
+  const placement = splitNext;
+  splitNext = null;
+  return placement;
+}
+
+/** 拆分出的终端的落点:父终端在主窗 grid → 右侧新组(太窄放不下 → 加进父终端的组);在 popout / 浮动组 → 加进父终端的组。 */
+function splitPosition(api: DockviewApi, placement: SplitPlacement | null): AddPanelOptions['position'] | undefined {
+  if (placement === null) return undefined;
+  const parent = api.getPanel(placement.parentPanelId);
+  if (!parent) return undefined;
+  const direction = isGridPanel(parent) ? splitDirectionFor(api, parent.id) : 'within';
+  return { referencePanel: parent.id, direction };
 }
 
 function sessionsById(
@@ -174,9 +219,12 @@ export function reconcileTerminalPanels(
         continue;
       }
 
-      const position = lastRefId
-        ? { referencePanel: lastRefId, direction: splitDirectionFor(api, lastRefId) }
-        : gridFallbackPosition(api);
+      const isFirstAppearance = !everAddedSessionIds.has(session.id);
+      const position =
+        splitPosition(api, takeSplitPlacement(session, isFirstAppearance)) ??
+        (lastRefId
+          ? { referencePanel: lastRefId, direction: splitDirectionFor(api, lastRefId) }
+          : gridFallbackPosition(api));
       // user 路径走 coApi.terminal.create → main 同时 RPC reply + IPC push
       // sessions-changed。renderer 的 IPC handler 可能比 RPC await resolve 先跑,
       // 此时 user 路径的 setPendingFocus 还没执行 → pendingFocus 命不中。
@@ -186,7 +234,6 @@ export function reconcileTerminalPanels(
       // user terminal 经 workspaceRoot 过滤隐藏、切回再现 = 重新进 added,若仍走 originHint 兜底
       // 会被误判新建而抢焦点。everAddedSessionIds 记录曾出现过的 id:重现的 session 已在其中 →
       // 不兜底(除非显式 pendingFocus);真新建不在其中 → 保留兜底聚焦。
-      const isFirstAppearance = !everAddedSessionIds.has(session.id);
       everAddedSessionIds.add(session.id);
       // race(R105):兜底加「是快照中最新 user session」约束,迟到的较旧 user session 不抢焦点。
       const isLatestUserSession =

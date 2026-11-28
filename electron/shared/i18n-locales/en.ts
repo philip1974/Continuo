@@ -109,6 +109,7 @@ export const en = {
   'menu.go.previous_editor': 'Previous Editor',
   'menu.terminal.label': 'Terminal',
   'menu.terminal.new_terminal': 'New Terminal',
+  'menu.terminal.split_terminal': 'Split Terminal',
   'menu.terminal.toggle_terminal': 'Toggle Terminal',
   'menu.help.label': 'Help',
   'menu.help.show_all_commands': 'Show All Commands',
@@ -233,6 +234,7 @@ export const en = {
 
   // commands.* (7)
   'commands.terminal.new.title': 'New Terminal',
+  'commands.terminal.split.title': 'Split Terminal',
   'commands.terminal.toggle.title': 'Toggle Terminal',
   'commands.terminal.zoom.title': 'Toggle Terminal Zoom',
   'commands.terminal.search.title': 'Find in Terminal',

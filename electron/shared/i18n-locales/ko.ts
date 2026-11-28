@@ -100,6 +100,7 @@ export const ko: Record<TranslationKey, string> = {
   'menu.go.previous_editor': '이전 편집기',
   'menu.terminal.label': '터미널',
   'menu.terminal.new_terminal': '새 터미널',
+  'menu.terminal.split_terminal': '터미널 분할',
   'menu.terminal.toggle_terminal': '터미널 설정/해제',
   'menu.help.label': '도움말',
   'menu.help.show_all_commands': '모든 명령 표시',
@@ -220,6 +221,7 @@ export const ko: Record<TranslationKey, string> = {
 
   // commands.*
   'commands.terminal.new.title': '새 터미널',
+  'commands.terminal.split.title': '터미널 분할',
   'commands.terminal.toggle.title': '터미널 전환',
   'commands.terminal.zoom.title': '터미널 확대/축소 전환',
   'commands.terminal.search.title': '터미널에서 찾기',

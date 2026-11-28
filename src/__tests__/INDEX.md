@@ -2290,6 +2290,10 @@
 
 - [`sync.spec.ts`](./terminal-sessions-sync/sync.spec.ts)
 
+## [拆分终端](./terminal-split/README.md)
+
+- [`terminal-split.spec.ts`](./terminal-split/terminal-split.spec.ts)
+
 ## [terminal-store (M-Terminal Step T3 + Agent Terminal MCP P1)](./terminal-store/README.md)
 
 - [`terminal-store.spec.ts`](./terminal-store/terminal-store.spec.ts)

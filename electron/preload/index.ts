@@ -31,7 +31,13 @@ import {
 } from '../shared/fs-channels';
 import type { TextEncodingId } from '../shared/text-encoding';
 import { FS_PATH_MAX } from '../shared/fs-limits';
-import { isSearchEvent, SEARCH_CHANNELS, type SearchEvent, type SearchQuery } from '../shared/workspace-search';
+import {
+  isSearchEvent,
+  SEARCH_CHANNELS,
+  type SearchEvent,
+  type SearchQuery,
+  type SearchStartResult,
+} from '../shared/workspace-search';
 import {
   isTsLanguageEvent,
   TS_LANGUAGE_CHANNELS,
@@ -210,10 +216,13 @@ const api = {
   git: {
     status: (root: string): Promise<IpcResult<GitStatusResult>> => ipcRenderer.invoke(GIT_CHANNELS.STATUS, { root }),
   },
-  /** 在文件中查找(workspace-search):根由 main 取自本窗口工作区;结果经 onEvent 分批推送。 */
+  /**
+   * 在文件中查找(workspace-search):根由 main 取自本窗口工作区(root = renderer 当前的根,只用于比对,不符 → STALE);
+   * 结果经 onEvent 分批推送。
+   */
   search: {
-    start: (searchId: string, query: SearchQuery): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(SEARCH_CHANNELS.START, { searchId, query }),
+    start: (searchId: string, query: SearchQuery, root: string): Promise<IpcResult<SearchStartResult>> =>
+      ipcRenderer.invoke(SEARCH_CHANNELS.START, { searchId, query, root }),
     cancel: (searchId: string): Promise<IpcResult<void>> => ipcRenderer.invoke(SEARCH_CHANNELS.CANCEL, { searchId }),
     onEvent: (cb: (event: SearchEvent) => void): (() => void) =>
       subscribeIpc(

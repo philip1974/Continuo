@@ -17,7 +17,7 @@ vi.mock('@/plugins/co-app', () => ({ coApp: { editor: { openFile: vi.fn() } } })
 
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useEditorStore } from '@/stores/editor.store';
-import { __resetSearchForTest, rerunSearch, SEARCH_DEBOUNCE_MS, useSearchStore } from '@/panels/Search/search-store';
+import { __resetSearchForTest, SEARCH_DEBOUNCE_MS, useSearchStore } from '@/panels/Search/search-store';
 import {
   hydrateStores,
   initExplorerPersistence,
@@ -112,7 +112,7 @@ describe('重启恢复', () => {
       files: [],
     });
     // 恢复后工作区根再变化(启动期 root 恢复晚于面板挂载)也不重搜:恢复出的输入还没搜过
-    rerunSearch();
+    useWorkspaceStore.setState({ root: '/w2' });
     await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS * 3);
     expect(h.start).not.toHaveBeenCalled();
   });

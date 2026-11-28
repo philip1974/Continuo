@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import type { SearchEvent, SearchFileResult, SearchQuery } from '../../../electron/shared/workspace-search';
 
 const h = vi.hoisted(() => ({
-  start: vi.fn(async (_id: string, _q: unknown) => ({ ok: true })),
+  start: vi.fn(async (_id: string, _q: unknown, _root?: string): Promise<{ ok: true; data?: unknown }> => ({ ok: true })),
   cancel: vi.fn(async (_id: string) => ({ ok: true })),
   listener: null as ((e: unknown) => void) | null,
   openFile: vi.fn(async (_p: string, _o?: unknown) => ({ ok: true, lineApplied: true })),
@@ -44,6 +44,8 @@ import {
   __resetSearchForTest,
   focusNextSearchResult,
   SEARCH_DEBOUNCE_MS,
+  SEARCH_STALE_RETRY_MAX,
+  SEARCH_STALE_RETRY_MS,
   useSearchStore,
 } from '@/panels/Search/search-store';
 
@@ -68,7 +70,7 @@ function type(value: string) {
 const flush = () => act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
 const lastStart = () => {
   const call = h.start.mock.calls.at(-1)!;
-  return { id: call[0], query: call[1] as SearchQuery };
+  return { id: call[0], query: call[1] as SearchQuery, root: call[2] };
 };
 const emit = (e: SearchEvent) => act(() => h.listener!(e));
 const match = (line: number, column: number, preview: string, start: number, length: number) => ({
@@ -129,6 +131,87 @@ describe('去抖与取消', () => {
     flush();
     expect(h.start).not.toHaveBeenCalled();
     expect(screen.getByRole('status').textContent).toBe('请先在资源管理器中打开工作区');
+  });
+});
+
+describe('换工作区(VSCode SearchView.onDidChangeFolderLocation:按新位置重搜)', () => {
+  const STALE = { ok: true as const, data: { stale: true } };
+  const settle = () => act(async () => {});
+  const setRoot = (root: string | null) => act(() => useWorkspaceStore.setState({ root }));
+
+  it('已有结果时换根:旧结果立即清空,按当前查询对新根重搜(请求带新根)', () => {
+    render(<SearchPanel />);
+    type('foo');
+    flush();
+    expect(lastStart().root).toBe('/w');
+    emit({ searchId: lastStart().id, kind: 'files', files });
+    expect(screen.getAllByRole('treeitem').length).toBeGreaterThan(0);
+    const first = lastStart().id;
+    setRoot('/w2');
+    expect(screen.queryByRole('treeitem')).toBeNull();
+    expect(h.cancel).toHaveBeenCalledWith(first);
+    expect(h.start).toHaveBeenCalledTimes(2);
+    expect(lastStart()).toMatchObject({ root: '/w2', query: { pattern: 'foo' } });
+    expect(useSearchStore.getState().status).toBe('searching');
+  });
+
+  it('面板没打开时换根同样作废旧结果并重搜', () => {
+    render(<SearchPanel />);
+    type('foo');
+    flush();
+    emit({ searchId: lastStart().id, kind: 'files', files });
+    cleanup();
+    setRoot('/w2');
+    expect(useSearchStore.getState().files).toEqual([]);
+    expect(lastStart().root).toBe('/w2');
+  });
+
+  it('main 回 STALE(根登记还没跟上):同一 searchId 稍后重发,期间保持「搜索中」、不报错', async () => {
+    render(<SearchPanel />);
+    type('foo');
+    flush();
+    h.start.mockResolvedValueOnce(STALE).mockResolvedValueOnce(STALE);
+    setRoot('/w2');
+    const { id } = lastStart();
+    await settle();
+    expect(h.start).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTime(SEARCH_STALE_RETRY_MS));
+    await act(async () => vi.advanceTimersByTime(SEARCH_STALE_RETRY_MS));
+    expect(h.start).toHaveBeenCalledTimes(4);
+    expect(h.start.mock.calls.slice(1).map((c) => [c[0], c[2]])).toEqual([[id, '/w2'], [id, '/w2'], [id, '/w2']]);
+    expect(useSearchStore.getState()).toMatchObject({ status: 'searching', error: null });
+    emit({ searchId: id, kind: 'files', files: [{ ...files[1]!, path: '/w2/b.md' }] });
+    emit({ searchId: id, kind: 'done', limitHit: false, filesLimitHit: false });
+    expect(screen.getByRole('status').textContent).toContain('1 个文件中有 1 个结果');
+  });
+
+  it('「请先打开工作区」后打开文件夹 → 按新根搜索;新查询 / 再次换根后旧的重发作废', async () => {
+    useWorkspaceStore.setState({ root: null });
+    render(<SearchPanel />);
+    type('foo');
+    flush();
+    expect(h.start).not.toHaveBeenCalled();
+    h.start.mockResolvedValueOnce(STALE);
+    setRoot('/w');
+    expect(lastStart().root).toBe('/w');
+    await settle();
+    setRoot('/w2');
+    await act(async () => vi.advanceTimersByTime(SEARCH_STALE_RETRY_MS * 3));
+    expect(h.start.mock.calls.map((c) => c[2])).toEqual(['/w', '/w2']);
+    setRoot(null);
+    expect(screen.getByRole('status').textContent).toBe('请先在资源管理器中打开工作区');
+  });
+
+  it('根始终登记不上(重试用尽)→ 工作区根目录错误', async () => {
+    render(<SearchPanel />);
+    type('foo');
+    flush();
+    h.start.mockResolvedValue(STALE);
+    setRoot('/w2');
+    for (let i = 0; i <= SEARCH_STALE_RETRY_MAX; i += 1) await act(async () => vi.advanceTimersByTime(SEARCH_STALE_RETRY_MS));
+    expect(h.start).toHaveBeenCalledTimes(SEARCH_STALE_RETRY_MAX + 2);
+    expect(useSearchStore.getState()).toMatchObject({ status: 'error', error: { code: 'BAD_ROOT' } });
+    expect(screen.getByRole('status').textContent).toContain('工作区根目录');
   });
 });
 

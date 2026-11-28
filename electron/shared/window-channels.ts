@@ -178,6 +178,7 @@ export const MENU_COMMAND_IDS = [
   'workbench.action.previousEditor',
   // 终端
   'terminal.new',
+  'workbench.action.terminal.split',
 ] as const;
 
 export type MenuCommandId = (typeof MENU_COMMAND_IDS)[number];

@@ -17,6 +17,7 @@ import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { onEditorPathChange, useEditorStore } from '@/stores/editor.store';
 import { isSameOrInsidePath } from '@/lib/path-cross';
+import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { mergeDiskBatch, searchOpenEditors, searchOverrideKey, searchRelPath } from './open-editor-search';
 import {
   buildSearchRegExp,
@@ -37,6 +38,12 @@ function ignoreFilesSettingOn(): boolean {
 }
 
 export const SEARCH_DEBOUNCE_MS = 300;
+/**
+ * main 回 STALE(换根时本搜索早于 App 的 window:notify-root 到达,main 还按旧根 / 未登记)→ 隔这么久重发,至多这么多次
+ *(与资源管理器 git 状态的 GIT_STALE_RETRY_* 同一约定);根始终登记不上(notify-root 被拒)→ 报工作区根目录错误。
+ */
+export const SEARCH_STALE_RETRY_MS = 100;
+export const SEARCH_STALE_RETRY_MAX = 30;
 
 /** cancelled:用户取消了在途搜索(VSCode search.action.cancel),已收到的结果保留。 */
 export type SearchStatus = 'idle' | 'searching' | 'done' | 'cancelled' | 'error' | 'invalid' | 'no-workspace';
@@ -116,6 +123,8 @@ const INITIAL = {
 let currentId: string | null = null;
 let seq = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
+/** STALE 重发的定时器(取消 / 新查询时清掉)。 */
+let staleTimer: ReturnType<typeof setTimeout> | undefined;
 let unsubscribe: (() => void) | null = null;
 /** 当前搜索的工作区根与已在内存里搜过的文件(覆盖键);合并截断标记。 */
 let currentRoot = '';
@@ -187,6 +196,8 @@ function schedule(): void {
 }
 
 function cancelCurrent(): void {
+  clearTimeout(staleTimer);
+  staleTimer = undefined;
   if (currentId === null) return;
   const id = currentId;
   currentId = null;
@@ -246,10 +257,30 @@ function run(): void {
   searchedInMemory = local.searched;
   mergedLimitHit = local.limitHit;
   useSearchStore.setState({ ...EMPTY_RESULTS, status: 'searching', files: local.files, resultCount: local.resultCount });
+  startOnMain(id, query, root, 0);
+}
+
+/**
+ * 请 main 按本窗口登记的根开始搜索(带上 renderer 认为的根)。STALE = 登记还没跟上(换根 / 首次打开文件夹)→ 稍后用同一
+ * searchId 重发,期间状态保持「搜索中」、不显示上一个文件夹的结果;重试用尽 → BAD_ROOT。
+ */
+function startOnMain(id: string, query: SearchQuery, root: string, attempt: number): void {
   const failed = (err: unknown) => fail(id, 'EXCEPTION', err instanceof Error ? err.message : String(err));
   try {
-    coApi.search.start(id, query).then((r) => {
-      if (!r.ok) fail(id, r.code, r.message);
+    coApi.search.start(id, query, root).then((r) => {
+      if (!r.ok) {
+        fail(id, r.code, r.message);
+        return;
+      }
+      if (r.data === null || r.data === undefined || currentId !== id) return;
+      if (attempt >= SEARCH_STALE_RETRY_MAX) {
+        fail(id, ERROR_CODES.BAD_ROOT, 'workspace folder is not registered for this window');
+        return;
+      }
+      staleTimer = setTimeout(() => {
+        staleTimer = undefined;
+        if (currentId === id) startOnMain(id, query, root, attempt + 1);
+      }, SEARCH_STALE_RETRY_MS);
     }, failed);
   } catch (err) {
     failed(err);
@@ -383,13 +414,19 @@ onEditorPathChange((c) => {
 });
 
 /**
- * 工作区切换:旧结果作废,按当前查询重搜。还没搜过(查询为空 / 重启恢复出的输入,status 都是 idle)且无在途查询 → 不搜
- *(恢复输入不自动重搜;去抖中的输入由其定时器照常搜)。
+ * 工作区切换:旧结果立即作废,按当前查询对新根重搜(VSCode SearchView.onDidChangeFolderLocation → rerunSearchForNewLocation)。
+ * 还没搜过(查询为空 / 重启恢复出的输入,status 都是 idle)且无在途查询 → 不搜(恢复输入不自动重搜;去抖中的输入由其定时器
+ * 照常搜)。在 store 里订阅而不是放在面板 effect:与 setRoot 同步(换根后的第一帧就不显示旧结果),面板没打开时换根也作废。
+ * main 的根登记可能还没跟上 → search:start 回 STALE 后重发(startOnMain)。
  */
-export function rerunSearch(): void {
+function rerunSearch(): void {
   if (useSearchStore.getState().status === 'idle' && currentId === null) return;
   useSearchStore.getState().searchNow();
 }
+
+useWorkspaceStore.subscribe((s, prev) => {
+  if (s.root !== prev.root) rerunSearch();
+});
 
 /**
  * 打开某个匹配并选中它(失败统一提示;列 / 长度均为 UTF-16,与编辑器同一单位)。preview:单击 / F4 以预览方式打开(VSCode;
@@ -481,6 +518,8 @@ export function restoreSearchInput(input: PersistedSearchInput | undefined): voi
 export function __resetSearchForTest(): void {
   clearTimeout(timer);
   timer = undefined;
+  clearTimeout(staleTimer);
+  staleTimer = undefined;
   currentId = null;
   seq = 0;
   currentRoot = '';

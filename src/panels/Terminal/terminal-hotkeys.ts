@@ -88,6 +88,21 @@ export const TERMINAL_NEW_COMMAND = {
   secondaryHotkeys: ['ctrl+shift+`'] as readonly string[],
 } as const;
 
+/**
+ * 拆分终端(VSCode workbench.action.terminal.split,when terminalFocus):mac ⌘\(附加 ⌃⇧5),Windows / Linux Ctrl+Shift+5。
+ * 终端获焦时压过同键的拆分编辑器(带 when 的绑定先判);在 commandsToSkipShell 默认列表里 → 胜出即让出。
+ * BDD: src/__tests__/terminal-split/
+ */
+export const TERMINAL_SPLIT_COMMAND_ID = 'workbench.action.terminal.split';
+export const TERMINAL_SPLIT_WHEN = 'terminalFocus' as const;
+
+export function terminalSplitDefaultHotkeys(platform: Platform): {
+  readonly hotkey: string;
+  readonly secondaryHotkeys?: readonly string[];
+} {
+  return platform === 'mac' ? { hotkey: 'mod+\\', secondaryHotkeys: ['ctrl+shift+5'] } : { hotkey: 'ctrl+shift+5' };
+}
+
 /** 终端滚动动作(终端面板句柄 scroll 执行:scrollToTop / scrollToBottom / scrollPages(±1) / scrollLines(±1))。 */
 export type TerminalScrollAction = 'top' | 'bottom' | 'pageUp' | 'pageDown' | 'lineUp' | 'lineDown';
 
@@ -205,6 +220,7 @@ const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> =
   ...WORKBENCH_RECENT_EDITOR_COMMANDS.map((c) => [c.id, { metaOnly: false }] as const),
   [TERMINAL_TOGGLE_COMMAND.id, { metaOnly: false }],
   [TERMINAL_NEW_COMMAND.id, { metaOnly: false }],
+  [TERMINAL_SPLIT_COMMAND_ID, { metaOnly: false }],
   [SHOW_COMMANDS_COMMAND.id, { metaOnly: false }],
   [TERMINAL_FOCUS_NEXT_COMMAND_ID, { metaOnly: false }],
   [TERMINAL_FOCUS_PREVIOUS_COMMAND_ID, { metaOnly: false }],
@@ -239,6 +255,7 @@ function terminalDefaults(platform: Platform): readonly DefaultCommand[] {
     ...WORKBENCH_RECENT_EDITOR_COMMANDS,
     TERMINAL_TOGGLE_COMMAND,
     TERMINAL_NEW_COMMAND,
+    { id: TERMINAL_SPLIT_COMMAND_ID, ...terminalSplitDefaultHotkeys(platform), when: TERMINAL_SPLIT_WHEN },
     SHOW_COMMANDS_COMMAND,
     FOCUS_NEXT_PART_COMMAND,
     FOCUS_PREVIOUS_PART_COMMAND,

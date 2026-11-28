@@ -12,6 +12,7 @@ import { getCommandDocument } from '@/shell/dock/popout-documents';
 import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
 import { toggleTerminal } from '@/shell/dock/toggle-terminal';
 import { terminalFocusCycleCommandSpecs } from '@/shell/dock/terminal-focus-cycle';
+import { splitActiveTerminal } from '@/shell/dock/terminal-split';
 import { clearTerminalPanel, openTerminalSearch, scrollTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import {
@@ -20,10 +21,13 @@ import {
   TERMINAL_SCROLL_COMMANDS,
   TERMINAL_SCROLL_WHEN,
   TERMINAL_SEARCH_COMMAND,
+  TERMINAL_SPLIT_COMMAND_ID,
+  TERMINAL_SPLIT_WHEN,
   TERMINAL_TOGGLE_COMMAND,
   TERMINAL_ZOOM_COMMAND,
   terminalClearDefaultHotkey,
   terminalScrollDefaultHotkeys,
+  terminalSplitDefaultHotkeys,
 } from '@/panels/Terminal/terminal-hotkeys';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
@@ -120,6 +124,18 @@ export default class TerminalPlugin extends Plugin {
       secondaryHotkeys: TERMINAL_NEW_COMMAND.secondaryHotkeys,
       // 可维护性 M1:终端创建流程抽到 createUserTerminal(与 Dock header 新建入口共用)。
       fn: () => createUserTerminal().then(() => undefined),
+    });
+    // VSCode workbench.action.terminal.split(mac ⌘\ / 附加 ⌃⇧5,Windows / Linux Ctrl+Shift+5;键只在终端获焦时分发,终端外 ⌘\
+    // 照常拆分编辑器;命令面板 / 菜单执行不受限):在当前终端右侧拆出新终端,cwd 继承父终端。BDD: src/__tests__/terminal-split/
+    this.addCommand({
+      id: TERMINAL_SPLIT_COMMAND_ID,
+      title: 'Split Terminal',
+      titleKey: 'commands.terminal.split.title',
+      category: 'Terminal',
+      categoryKey: 'commands.terminal.category',
+      ...terminalSplitDefaultHotkeys(platform),
+      when: TERMINAL_SPLIT_WHEN,
+      fn: () => splitActiveTerminal().then(() => undefined),
     });
     // VSCode workbench.action.terminal.toggleTerminal(各平台 ⌃`):焦点不在终端 → 最近使用的终端(没有则新建);在终端 → 回到编辑器。
     // BDD: src/__tests__/terminal-toggle/

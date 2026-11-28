@@ -36,7 +36,6 @@ import {
   matchRowKey,
   openSearchMatch,
   openSearchMatchToSide,
-  rerunSearch,
   useSearchStore,
   type SearchRowKey,
 } from './search-store';
@@ -123,14 +122,8 @@ export function SearchPanel() {
     el.select();
   }, [s.focusRequest]);
 
-  // 工作区切换:旧结果作废,按当前查询重搜。
+  // 工作区切换后的重搜在 search-store 里订阅 workspace.root(面板没打开时也作废旧结果)。
   const root = useWorkspaceStore((w) => w.root);
-  const rootRef = useRef(root);
-  useEffect(() => {
-    if (rootRef.current === root) return;
-    rootRef.current = root;
-    rerunSearch();
-  }, [root]);
 
   // 结果文件行的 git 装饰(VSCode searchResultsView fileDecorations = search.decorations.colors / badges,默认都开);
   // 与资源管理器 / 编辑器 tab 共用窗口级数据源,无结果或两项都关时不查询。BDD: src/__tests__/editor-search-git-decorations/

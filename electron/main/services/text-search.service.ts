@@ -7,13 +7,16 @@ import { z } from 'zod';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
 import { trySend, type SendTarget } from '../lib/try-send';
+import { ROOT_MAX } from '../../shared/window-create-schema';
 import {
   buildSearchRegExp,
   SEARCH_CHANNELS,
+  SEARCH_START_STALE,
   SEARCH_GLOB_MAX,
   SEARCH_ID_MAX,
   SEARCH_PATTERN_MAX,
   type SearchQuery,
+  type SearchStartResult,
 } from '../../shared/workspace-search';
 
 /** worker 线程的最小形状(node:worker_threads Worker 满足)。 */
@@ -89,6 +92,8 @@ const searchId = () => z.string().min(1).max(SEARCH_ID_MAX);
 export const searchStartInputSchema = z
   .object({
     searchId: searchId(),
+    /** renderer 当前的工作区根(只与登记根比对,不作搜索根)。 */
+    root: z.string().min(1).max(ROOT_MAX),
     query: z
       .object({
         pattern: z.string().min(1).max(SEARCH_PATTERN_MAX),
@@ -107,21 +112,27 @@ export const searchStartInputSchema = z
 export const searchCancelInputSchema = z.object({ searchId: searchId() }).strict();
 
 /**
- * search:start:根取自**发送窗口**的工作区根(renderer 不传根,只能搜自己窗口打开的文件夹);无工作区 → BAD_ROOT;
- * 非法正则 → BAD_INPUT(renderer 已先拦,这里兜底,不起 worker)。
+ * search:start:根取自**发送窗口**的工作区登记(只能搜自己窗口打开的文件夹);入参 root 只用于比对 —— 未登记 / 与登记根
+ * 不符(换根时搜索视图的 effect 早于 App 的 window:notify-root 跑到这里)→ STALE,不起 worker(否则搜的是上一个文件夹,
+ * 或从「未打开文件夹」首次打开时一直报工作区根目录错误);非法正则 → BAD_INPUT(renderer 已先拦,这里兜底,不起 worker)。
  */
 export function makeSearchStartHandler(
   service: TextSearchService,
   getRoot: (windowId: number) => string | null,
 ) {
-  return (input: z.infer<typeof searchStartInputSchema>, win: { readonly id: number }, target: SearchTarget): void => {
+  return (
+    input: z.infer<typeof searchStartInputSchema>,
+    win: { readonly id: number },
+    target: SearchTarget,
+  ): SearchStartResult => {
     const root = getRoot(win.id);
-    if (root === null) throw codedError(ERROR_CODES.BAD_ROOT, 'no workspace folder is open in this window');
+    if (root === null || root !== input.root) return SEARCH_START_STALE;
     try {
       buildSearchRegExp(input.query);
     } catch (err) {
       throw codedError(ERROR_CODES.BAD_INPUT, `invalid regular expression: ${(err as Error).message}`);
     }
     service.start(target, input.searchId, input.query, root);
+    return null;
   };
 }

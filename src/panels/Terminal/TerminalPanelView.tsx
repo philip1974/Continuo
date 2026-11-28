@@ -17,6 +17,7 @@ import { clearTerminalRename, useTerminalRenameRequest } from './terminal-rename
 import { useT } from '@/i18n';
 import type { OriginHint } from '../../../electron/shared/origin-hint';
 import { terminalInputAriaLabel, terminalPanelTitle } from '@/shell/dock/terminal-panel-id';
+import { splitTerminalPanel } from '@/shell/dock/terminal-split';
 
 export interface TerminalPanelViewParams {
   sessionId: string;
@@ -145,6 +146,9 @@ function TerminalPanelContent({
     focus();
   }, [focus]);
 
+  // 右键「拆分终端」:拆分本终端(不是窗口的活动终端)。
+  const splitHere = useCallback(() => void splitTerminalPanel(api.id), [api.id]);
+
   // 对外句柄:focus 供 DockShell 在 exit-maximize 后拉回 xterm 焦点(topic-22:
   // 同一 panel 已 active 时 onDidActiveChange 不会再触发);openSearch 供
   // terminal.search.toggle command 打开搜索条;clear 供 terminal.clear command 清屏。
@@ -219,7 +223,7 @@ function TerminalPanelContent({
       // @container/terminal:搜索条按面板宽度收窄(TerminalSearchBar 容器查询)。
       className="@container/terminal relative h-full w-full bg-canvas"
     >
-      <TerminalContextMenu actions={contextMenuActions}>
+      <TerminalContextMenu actions={contextMenuActions} onSplit={splitHere}>
         <div className="h-full w-full bg-canvas px-2 py-1">
           <div
             ref={containerRef}

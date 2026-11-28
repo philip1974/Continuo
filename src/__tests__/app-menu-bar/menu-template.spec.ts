@@ -190,6 +190,7 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
     ]);
     expect(commandsOf(submenu(top, 'menu.terminal.label'))).toEqual([
       'terminal.new',
+      'workbench.action.terminal.split',
       'workbench.action.terminal.toggleTerminal',
     ]);
     expect(commandsOf(submenu(top, 'menu.help.label'))).toEqual([

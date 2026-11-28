@@ -227,6 +227,7 @@ export function appMenuTemplate(
 
   const terminalSubmenu: Item[] = [
     command('terminal.new', 'menu.terminal.new_terminal'),
+    command('workbench.action.terminal.split', 'menu.terminal.split_terminal'),
     command('workbench.action.terminal.toggleTerminal', 'menu.terminal.toggle_terminal'),
   ];
 

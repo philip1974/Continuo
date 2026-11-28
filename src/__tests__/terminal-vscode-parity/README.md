@@ -40,7 +40,7 @@
 6. **dock 激活 tab 的关闭按钮常显**(与编辑器 tab 一致),非激活 tab 仍悬停时显示(关闭按钮不可聚焦,键盘走 Delete)。
 7. **dock 拖拽落点高亮等 dockview 字面色变量桥接到 `--md-*` token**,两主题各自取值。
 8. **dock 溢出下拉按钮不与被截断的 tab 文字视觉粘连**:按钮有不透明底与分隔线。
-9. **终端右键菜单**:复制(有选区才可用)/ 粘贴 / 全选 / 清除(= terminal.clear);Shift+F10 / 菜单键同样打开。
+9. **终端右键菜单**:拆分终端(带键位,见 `terminal-split`)/ 复制(有选区才可用)/ 粘贴 / 全选 / 清除(= terminal.clear);Shift+F10 / 菜单键同样打开。
 10. **mac 行内编辑键**(VSCode `registerSendSequenceKeybinding` 的 mac 默认绑定):⌘← 发 `^A`(行首)、⌘→ 发 `^E`(行尾)、
     ⌘⌫ 发 `^U`(删到行首);⌥← / ⌥→ 发 `ESC b` / `ESC f`(按单词移动 —— xterm 6 已去掉把 ⌥← 改写成 `ESC b` 的 mac 特例,
     默认发 `ESC[1;3D`,zsh / bash 默认键表不认,会打出 `;3D`)。只在 mac、恰好该修饰键时生效,经 `term.input` 走 onData

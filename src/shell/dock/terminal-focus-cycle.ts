@@ -69,6 +69,11 @@ function currentTerminal(api: DockviewApi, doc: Document, candidates: readonly I
   return mostRecentPanelInDocument(api, doc, isTerminalPanel);
 }
 
+/** doc 所在窗口的当前终端(焦点所在 → 活动 → 最近使用;拆分终端的父终端,见 terminal-split)。没有终端 → undefined。 */
+export function currentTerminalInWindow(api: DockviewApi, doc: Document): IDockviewPanel | undefined {
+  return currentTerminal(api, doc, groupsInWindow(api, doc).flatMap((g) => g.panels.filter(isTerminalPanel)));
+}
+
 /** 终端窗格:窗口里正显示终端的组(有最大化组时只有它可见)的活动终端。 */
 function terminalPanes(api: DockviewApi, doc: Document): IDockviewPanel[] {
   const out: IDockviewPanel[] = [];

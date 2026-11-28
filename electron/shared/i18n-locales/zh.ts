@@ -100,6 +100,7 @@ export const zh: Record<TranslationKey, string> = {
   'menu.go.previous_editor': '上一个编辑器',
   'menu.terminal.label': '终端',
   'menu.terminal.new_terminal': '新建终端',
+  'menu.terminal.split_terminal': '拆分终端',
   'menu.terminal.toggle_terminal': '切换终端',
   'menu.help.label': '帮助',
   'menu.help.show_all_commands': '显示所有命令',
@@ -218,6 +219,7 @@ export const zh: Record<TranslationKey, string> = {
 
   // commands.*
   'commands.terminal.new.title': '新建终端',
+  'commands.terminal.split.title': '拆分终端',
   'commands.terminal.toggle.title': '切换终端',
   'commands.terminal.zoom.title': '切换终端缩放',
   'commands.terminal.search.title': '在终端中查找',

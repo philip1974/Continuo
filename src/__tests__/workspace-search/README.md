@@ -34,7 +34,10 @@
    语义同 VSCode:`./` 开头相对工作区根,否则在任意层级匹配(`src` ≡ `**/src` 与 `**/src/**`,`*.ts` ≡ `**/*.ts`);
    支持 `*` `**` `?` `{a,b}` `[...]`;路径分隔符统一按 `/`、大小写不敏感。包含为空 = 全部;排除优先于包含。
 4. **main 端搜索**(`search-engine.spec.ts` / `search-ipc.spec.ts`):
-   - 范围:只搜**发送窗口**的工作区根(main 按发送方窗口取根,renderer 不传根);无工作区 → 错误。
+   - 范围:只搜**发送窗口**的工作区根(main 按发送方窗口的登记取根)。renderer 带上它当前的根,只用于比对:未登记 / 与登记
+     根不符(换根时搜索早于 `window:notify-root` 到达,或从「未打开文件夹」首次打开)→ `SEARCH_START_STALE`,不搜 —— 否则会搜
+     上一个文件夹,或一直报「工作区根目录错误」。renderer 收到 STALE 隔 `SEARCH_STALE_RETRY_MS` 用同一 searchId 重发(至多
+     `SEARCH_STALE_RETRY_MAX` 次,用尽 → 工作区根目录错误),期间状态「正在搜索…」(与 git:status 的 STALE 同一约定)。
    - 文件枚举复用 fs:list-dir 的 walker(不跟随符号链接、深度上限 `LIST_DIR_MAX_DEPTH`),排除表与 Quick Open 同一来源
      (`WORKSPACE_SCAN_EXCLUDE`:`.git` / `node_modules` / `dist` / `out` / `build` / `.next` …);符号链接、非普通文件
      (FIFO / 设备)、> 1 MiB(`SEARCH_MAX_FILE_BYTES`,按磁盘字节)、含 NUL 的文件(二进制)跳过。编码(`search-bom-encoding.spec.ts`;
@@ -72,6 +75,9 @@
      「未找到结果」/ 截断提示「结果过多,只显示了一部分。请缩小搜索范围」/ 文件数上限提示 / 「已跳过 N 个超过 1 MiB 的文件
      (在编辑器中打开后可搜索)」(三语单复数)/ 失败原因(本地化)。文件数上限与跳过大文件的提示在「未找到结果」时同样显示。
      未打开工作区 → 提示先打开文件夹,不发起搜索。
+   - 换工作区(⌘O 切文件夹 / 打开最近 / 关闭文件夹;VSCode `SearchView.onDidChangeFolderLocation` → 按新位置重搜):已搜过
+     (含「请先打开工作区」提示)→ 旧结果与 setRoot 同步作废(下一帧就不显示上一个文件夹的结果,面板没打开时同样作废),按当前
+     查询对新根重搜;关闭文件夹 → 提示先打开工作区。还没搜过 → 不搜(见 8)。
    - 设计系统:design `Input` / `IconButton`,语义 token;亮暗主题、窄宽(输入与开关在窄面板内换行不溢出)。
 6. **已打开编辑器的内存内容**(`search-open-editors.spec.tsx`,`search-engine.spec.ts` 同口径一节;VSCode
    `searchService.getLocalResults`):工作区根下已打开的文本编辑器(图片标签除外)按编辑器 store 里的当前内容匹配 —— 含未保存

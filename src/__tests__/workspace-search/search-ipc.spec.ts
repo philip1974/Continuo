@@ -15,8 +15,10 @@ import {
   SEARCH_GLOB_MAX,
   SEARCH_ID_MAX,
   SEARCH_PATTERN_MAX,
+  SEARCH_START_STALE,
   type SearchQuery,
 } from '../../../electron/shared/workspace-search';
+import { ROOT_MAX } from '../../../electron/shared/window-create-schema';
 import { MAX_SEARCH_QUERY_LEN } from '@/lib/search-query';
 
 const query: SearchQuery = { pattern: 'foo', isRegex: false, matchCase: false, wholeWord: false, include: '', exclude: '' };
@@ -115,28 +117,33 @@ describe('搜索服务', () => {
 
 describe('search:start 处理', () => {
   const win = { id: 7 };
-  it('根取自发送窗口(renderer 不传根);无工作区 → BAD_ROOT', () => {
+  it('根取自发送窗口的登记;renderer 带的根只用于比对:未登记 / 不符(换根后登记未到)→ STALE,不起 worker', () => {
     const service = { start: vi.fn(), cancel: vi.fn(), cancelAll: vi.fn() };
     const roots = new Map([[7, '/w']]);
     const handler = makeSearchStartHandler(service, (id) => roots.get(id) ?? null);
     const target = { id: 70, send: vi.fn() };
-    handler({ searchId: 's', query }, win, target);
+    expect(handler({ searchId: 's', root: '/w', query }, win, target)).toBeNull();
     expect(service.start).toHaveBeenCalledWith(target, 's', query, '/w');
-    expect(() => handler({ searchId: 's', query }, { id: 8 }, target)).toThrow(expect.objectContaining({ code: 'BAD_ROOT' }));
+    service.start.mockClear();
+    expect(handler({ searchId: 's', root: '/w2', query }, win, target)).toEqual(SEARCH_START_STALE);
+    expect(handler({ searchId: 's', root: '/w', query }, { id: 8 }, target)).toEqual(SEARCH_START_STALE);
+    expect(service.start).not.toHaveBeenCalled();
   });
   it('非法正则 → BAD_INPUT,不起 worker', () => {
     const service = { start: vi.fn(), cancel: vi.fn(), cancelAll: vi.fn() };
     const handler = makeSearchStartHandler(service, () => '/w');
-    expect(() => handler({ searchId: 's', query: { ...query, pattern: 'a(', isRegex: true } }, win, { id: 1, send: vi.fn() })).toThrow(
+    expect(() => handler({ searchId: 's', root: '/w', query: { ...query, pattern: 'a(', isRegex: true } }, win, { id: 1, send: vi.fn() })).toThrow(
       expect.objectContaining({ code: 'BAD_INPUT' }),
     );
     expect(service.start).not.toHaveBeenCalled();
   });
   it('schema:.strict()、空查询拒绝、长度上限(pattern 与 renderer 截断同一上限)', () => {
     expect(SEARCH_PATTERN_MAX).toBe(MAX_SEARCH_QUERY_LEN);
-    const ok = { searchId: 's', query };
+    const ok = { searchId: 's', root: '/w', query };
     expect(searchStartInputSchema.safeParse(ok).success).toBe(true);
-    expect(searchStartInputSchema.safeParse({ ...ok, root: '/etc' }).success).toBe(false);
+    expect(searchStartInputSchema.safeParse({ searchId: 's', query }).success).toBe(false);
+    expect(searchStartInputSchema.safeParse({ ...ok, root: '' }).success).toBe(false);
+    expect(searchStartInputSchema.safeParse({ ...ok, root: 'x'.repeat(ROOT_MAX + 1) }).success).toBe(false);
     expect(searchStartInputSchema.safeParse({ ...ok, query: { ...query, root: '/' } }).success).toBe(false);
     expect(searchStartInputSchema.safeParse({ ...ok, query: { ...query, pattern: '' } }).success).toBe(false);
     expect(searchStartInputSchema.safeParse({ ...ok, query: { ...query, pattern: 'x'.repeat(SEARCH_PATTERN_MAX + 1) } }).success).toBe(false);

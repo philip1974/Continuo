@@ -1,6 +1,6 @@
 /// <reference types="electron-vite/node" />
 // 在文件中查找(workspace-search)的 IPC 接线:search:start / search:cancel 走 safeHandle 管线(frame 信任 + zod),
-// 根取自发送窗口;worker 线程经 electron-vite `?nodeWorker` 创建(独立 chunk)。webContents 离开(关闭 / 重载 / 崩溃)→
+// 根取自发送窗口(入参 root 只与登记根比对,不符 → STALE);worker 线程经 electron-vite `?nodeWorker` 创建(独立 chunk)。webContents 离开(关闭 / 重载 / 崩溃)→
 // 取消其在途搜索。逻辑在 services/text-search.service(可单测),这里只接真实 Electron / worker。
 // BDD: src/__tests__/workspace-search/
 
@@ -25,7 +25,7 @@ export function registerSearchIpc(): void {
   safeHandleWithCtx(SEARCH_CHANNELS.START, searchStartInputSchema, (input, { event }) => {
     const win = senderWindowOrThrow(event, ERROR_CODES.NO_WINDOW);
     attachGoneHook(event.sender);
-    start(input, win, event.sender);
+    return start(input, win, event.sender);
   });
   safeHandleWithCtx(SEARCH_CHANNELS.CANCEL, searchCancelInputSchema, (input, { event }) => {
     service.cancel(event.sender.id, input.searchId);

@@ -3,7 +3,11 @@
 // BDD: src/__tests__/workspace-search/
 
 export const SEARCH_CHANNELS = {
-  /** renderer → main(invoke):发起搜索;同一 webContents 的在途搜索被取消。 */
+  /**
+   * renderer → main(invoke,入参带 `root` = renderer 当前的工作区根):发起搜索;同一 webContents 的在途搜索被取消。
+   * root 与本窗口登记的根不符(换根后 window:notify-root 尚未到达 / 从「未打开文件夹」首次打开)→ SEARCH_START_STALE,
+   * 不搜(renderer 稍后重试)。搜索只用 main 登记的根,入参只用于比对,renderer 不能借此指定任意目录。
+   */
   START: 'search:start',
   /** renderer → main(invoke):取消该 searchId(已结束 / 不是当前搜索 → no-op)。 */
   CANCEL: 'search:cancel',
@@ -34,6 +38,11 @@ export const SEARCH_PATTERN_MAX = 1024;
 /** searchId / glob 输入的长度上限(IPC schema 与 renderer 共用)。 */
 export const SEARCH_ID_MAX = 64;
 export const SEARCH_GLOB_MAX = 1024;
+
+/** search:start 期望的根与本窗口登记的根不符:不搜,renderer 稍后重试(与 git:status 的 GIT_STATUS_STALE 同一约定)。 */
+export const SEARCH_START_STALE = { stale: true } as const;
+/** search:start 的返回:null = 已开始(结果经 search:event 推送);STALE = 根未就绪。 */
+export type SearchStartResult = typeof SEARCH_START_STALE | null;
 
 export interface SearchQuery {
   readonly pattern: string;

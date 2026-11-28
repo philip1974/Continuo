@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// BDD: terminal-vscode-parity / 9 终端右键菜单(复制 / 粘贴 / 全选 / 清除),Shift+F10 / 菜单键可打开
+// BDD: terminal-vscode-parity / 9 终端右键菜单(拆分终端 / 复制 / 粘贴 / 全选 / 清除;拆分见 terminal-split),Shift+F10 / 菜单键可打开
 import { readFileSync } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -19,9 +19,9 @@ function actions(over: Partial<TerminalContextMenuActions> = {}): TerminalContex
   };
 }
 
-function open(a: TerminalContextMenuActions) {
+function open(a: TerminalContextMenuActions, onSplit: () => void = vi.fn()) {
   render(
-    <TerminalContextMenu actions={a}>
+    <TerminalContextMenu actions={a} onSplit={onSplit}>
       <div data-testid="term">xterm</div>
     </TerminalContextMenu>,
   );
@@ -35,10 +35,10 @@ afterEach(() => {
 });
 
 describe('终端右键菜单', () => {
-  it('四项:复制 / 粘贴 / 全选 / 清除终端;无选区时复制不可用', () => {
+  it('五项:拆分终端 / 复制 / 粘贴 / 全选 / 清除终端;无选区时复制不可用', () => {
     open(actions());
     const items = screen.getAllByRole('menuitem').map((el) => el.textContent);
-    expect(items).toEqual(['复制', '粘贴', '全选', '清除终端']);
+    expect(items).toEqual(['拆分终端', '复制', '粘贴', '全选', '清除终端']);
     expect((screen.getByRole('menuitem', { name: '复制' }) as HTMLButtonElement).disabled).toBe(true);
   });
   it('有选区时复制可用,选中执行对应动作', () => {
@@ -57,6 +57,12 @@ describe('终端右键菜单', () => {
     open(a);
     act(() => fireEvent.click(screen.getByRole('menuitem', { name: label })));
     expect(a[key]).toHaveBeenCalledTimes(1);
+  });
+  it('「拆分终端」→ onSplit(关闭菜单后焦点交给新终端,不回本终端:jsdom 不触发 onCloseAutoFocus,见 e2e terminal-split)', () => {
+    const onSplit = vi.fn();
+    open(actions(), onSplit);
+    act(() => fireEvent.click(screen.getByRole('menuitem', { name: '拆分终端' })));
+    expect(onSplit).toHaveBeenCalledTimes(1);
   });
   it('三语文案齐全', async () => {
     const { en } = await import('../../../electron/shared/i18n-locales/en');

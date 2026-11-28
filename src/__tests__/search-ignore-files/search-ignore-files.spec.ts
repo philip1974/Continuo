@@ -167,6 +167,7 @@ describe('在文件中查找', () => {
   it('search:start 入参接受两个开关(strict schema)', () => {
     const r = searchStartInputSchema.safeParse({
       searchId: 's1',
+      root: '/w',
       query: query({ disregardIgnoreFiles: true, disregardExcludeSettings: true }),
     });
     expect(r.success).toBe(true);
