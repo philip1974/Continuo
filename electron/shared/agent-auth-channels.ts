@@ -43,24 +43,31 @@ export interface AgentAuthRequestDetails {
   readonly cwd?: string;
   readonly program?: string;
   readonly agentLabel?: string;
+  /** 被 main 截到 AGENT_AUTH_DETAIL_MAX 的字段(弹窗据此标示「已截断」;授权的是完整的值)。 */
+  readonly truncated?: readonly AgentAuthDetailKey[];
 }
 
 export const AGENT_AUTH_DETAIL_KEYS = ['callerSessionId', 'command', 'cwd', 'program', 'agentLabel'] as const;
+export type AgentAuthDetailKey = (typeof AGENT_AUTH_DETAIL_KEYS)[number];
 
 /** details 每个字段的长度上限(main 发送前截断,ingress 守卫按它校验)。 */
 export const AGENT_AUTH_DETAIL_MAX = 4096;
 
-/** main 发送前整理 details:只留非空字符串字段,超长截断;全空 → undefined。 */
+/** main 发送前整理 details:只留非空字符串字段,超长截断(记进 truncated);全空 → undefined。 */
 export function clipAgentAuthDetails(
-  details: Partial<Record<(typeof AGENT_AUTH_DETAIL_KEYS)[number], unknown>> | undefined,
+  details: Partial<Record<AgentAuthDetailKey, unknown>> | undefined,
 ): AgentAuthRequestDetails | undefined {
   if (!details) return undefined;
   const out: Record<string, string> = {};
+  const truncated: AgentAuthDetailKey[] = [];
   for (const key of AGENT_AUTH_DETAIL_KEYS) {
     const v = details[key];
-    if (typeof v === 'string' && v.length > 0) out[key] = v.slice(0, AGENT_AUTH_DETAIL_MAX);
+    if (typeof v !== 'string' || v.length === 0) continue;
+    out[key] = v.slice(0, AGENT_AUTH_DETAIL_MAX);
+    if (v.length > AGENT_AUTH_DETAIL_MAX) truncated.push(key);
   }
-  return Object.keys(out).length > 0 ? (out as AgentAuthRequestDetails) : undefined;
+  if (Object.keys(out).length === 0) return undefined;
+  return { ...(out as AgentAuthRequestDetails), ...(truncated.length > 0 ? { truncated } : {}) };
 }
 
 export interface AgentAuthRequestPayload {
@@ -141,6 +148,16 @@ export function isAgentAuthRequestPayload(
 function isAgentAuthDetails(v: unknown): v is AgentAuthRequestDetails {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
   for (const [key, value] of Object.entries(v)) {
+    if (key === 'truncated') {
+      if (
+        !Array.isArray(value) ||
+        value.length > AGENT_AUTH_DETAIL_KEYS.length ||
+        !value.every((k) => (AGENT_AUTH_DETAIL_KEYS as readonly unknown[]).includes(k))
+      ) {
+        return false;
+      }
+      continue;
+    }
     if (!(AGENT_AUTH_DETAIL_KEYS as readonly string[]).includes(key)) return false;
     if (typeof value !== 'string' || value.length > AGENT_AUTH_DETAIL_MAX) return false;
   }

@@ -24,4 +24,5 @@ test('面板类型 samples 含核心 panel ids', async ({ window }) => {
   expect(samplesText).toContain('output');
   expect(samplesText).toContain('settings');
   expect(samplesText).toContain('debug');
+  expect(samplesText).toContain('conflict-diff');
 });

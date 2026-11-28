@@ -109,12 +109,14 @@ describe('topic51 Phase3 Op1/Op2 · debug decorations', () => {
   });
 
   // VSCode:执行行黄底(editor.stackFrameHighlightBackground)+ glyph margin 黄色箭头;光标在执行行上时当前行背景不盖住它。
-  it('执行行在断点 gutter 显示箭头(与断点红点可同在一行),清除后箭头消失', () => {
+  // 同一行断点 + 执行行:组合标记(箭头里嵌红点,VSCode codicon-debug-breakpoint.codicon-debug-stackframe),不是箭头叠在红点上把它盖住。
+  it('执行行在断点 gutter 显示箭头(与断点同一行时为组合标记),清除后箭头消失', () => {
     const { view } = createView([debugDecorationsExtension()]);
     setDebugDecorations(view, { breakpointLines: [2], execLine: 2 });
     const cell = view.dom.querySelector('.cm-breakpoint-gutter .cm-debug-exec-marker')?.parentElement;
     expect(cell).toBeTruthy();
-    expect(cell!.querySelector('.cm-debug-breakpoint-marker')).toBeTruthy();
+    expect(cell!.querySelector('.cm-debug-exec-on-breakpoint')).toBeTruthy();
+    expect(cell!.querySelector('.cm-debug-breakpoint-marker')).toBeNull();
     setDebugDecorations(view, { breakpointLines: [2], execLine: null });
     expect(view.dom.querySelector('.cm-debug-exec-marker')).toBeNull();
     expect(view.dom.querySelector('.cm-debug-breakpoint-marker')).toBeTruthy();

@@ -432,6 +432,8 @@ export const ko: Record<TranslationKey, string> = {
   'panels.debug.console.log_aria': '디버그 콘솔 출력',
   'panels.debug.console.input_aria': '식 평가',
   'panels.debug.console.input_placeholder': '식 평가(Enter)',
+  'panels.debug.console.clear': '콘솔 지우기',
+  'panels.debug.console.expand_aria': '평가 결과',
 
   // settings tabs / items
   'settings.terminal.tab_title': '터미널',
@@ -533,6 +535,9 @@ export const ko: Record<TranslationKey, string> = {
   'editor.format.json_syntax_error': '서식을 지정할 수 없습니다. 이 JSON 문서에 구문 오류가 있어 문서를 변경하지 않았습니다.',
   'editor.rename.no_result': '기호 이름 바꾸기: 결과가 없습니다.',
   'editor.definition.none': '정의를 찾을 수 없음',
+  'editor.debug_gutter.breakpoint': '중단점',
+  'editor.debug_gutter.exec': '현재 실행 줄',
+  'editor.debug_gutter.exec_on_breakpoint': '중단점, 현재 실행 줄',
   'editor.definition.none_for': '“{name}”에 대한 정의를 찾을 수 없음',
   'editor.ts_server.crashed': 'JS/TS 언어 서비스가 충돌했습니다.',
   'editor.ts_server.crashed_fatal': 'JS/TS 언어 서비스가 지난 5분 동안 5번 충돌했습니다. 창을 다시 로드하거나 다른 폴더를 열 때까지 다시 시작되지 않습니다.',
@@ -893,7 +898,8 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.body_external': '외부 에이전트가 MCP를 통해 다음을 요청합니다: {action}.',
   'permissions.agent.caller_terminal': '요청 터미널: {value}',
   'permissions.agent.detail_agent_label': '에이전트 레이블: {value}',
-  'permissions.agent.detail_command': '자동 실행 명령: {value}',
+  'permissions.agent.detail_command_label': '자동 실행 명령:',
+  'permissions.agent.detail_command_truncated': '잘림: 처음 {max}자만 표시되며 실제 명령은 더 깁니다.',
   'permissions.agent.detail_program': '프로그램: {value}',
   'permissions.agent.detail_cwd': '작업 디렉터리: {value}',
   'permissions.agent.hint': '권한을 부여하면 MCP 토큰을 가진 에이전트가 터미널을 생성 / 종료 / 쓰기 / 읽기 할 수 있습니다. 토큰은 이번 실행 동안만 유효하며 Continuo 종료 시 무효화됩니다.',

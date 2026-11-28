@@ -91,19 +91,42 @@ function newPanelOptions(api: DockviewApi, type: string): Parameters<DockviewApi
   };
 }
 
+/** 内容 DOM 里含 el 的 dock 面板(el 为 null / body / 不在任何面板里 → undefined)。 */
+export function dockPanelContaining(
+  api: Pick<DockviewApi, 'panels'>,
+  el: Element | null,
+): IDockviewPanel | undefined {
+  if (el === null || el === el.ownerDocument.body) return undefined;
+  return api.panels.find((p) => p.view.content.element.contains(el));
+}
+
 /**
  * 显示某类面板但不动焦点、不换活动组(调试停下时自动打开调试视图,VSCode openDebug=openOnDebugBreak 打开视图而不聚焦):
  * 已有 → 在其所在组切到它(不激活该组);没有 → 在侧栏 / 主窗落点新建,激活还给原活动面板。
+ * `keepFocusedVisible`:不得盖住焦点所在的面板(agent 引起的停下:用户正在那里打字)—— 要切到 / 新建进的组正是焦点所在面板
+ * 的组 → 不做。
  */
-export function revealPanelOfTypeWithoutFocus(type: string): void {
+export function revealPanelOfTypeWithoutFocus(type: string, opts?: { readonly keepFocusedVisible?: boolean }): void {
   runWhenDockLayoutReady((api) => {
+    const focused = opts?.keepFocusedVisible === true ? dockPanelContaining(api, document.activeElement) : undefined;
     const existing = api.panels.find((p) => p.view.contentComponent === type);
     if (existing) {
-      if (existing.group.activePanel !== existing) existing.group.model.openPanel(existing, { skipSetGroupActive: true });
+      if (existing.group.activePanel === existing) return;
+      if (focused !== undefined && focused.group === existing.group) return;
+      existing.group.model.openPanel(existing, { skipSetGroupActive: true });
       return;
     }
     const options = newPanelOptions(api, type);
     if (!options) return;
+    const position = options.position;
+    if (
+      focused !== undefined &&
+      position !== undefined &&
+      'referenceGroup' in position &&
+      position.referenceGroup === focused.group
+    ) {
+      return;
+    }
     try {
       addPanelKeepingActive(api, options);
     } catch (err) {

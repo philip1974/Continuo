@@ -10,11 +10,15 @@
 // U+FFFD「\uFFFD」(不直接删:让用户看得出这里有东西,且两个只差不可见字符的名字显示出来不相同);超长从中间截断
 //(保留首尾:路径的根与叶子都看得到)。只改显示,不改参与授权判定的值。
 // 显示用 <UntrustedText>:等宽 <code>(语义 token),与系统文案区分开;长串可在任意位置折行。
+// 要执行的命令不能中间截断(危险片段可藏进省略号):用 <UntrustedBlock> 完整显示 —— 限高、可滚动(可 Tab 到、方向键滚动)、
+// 任意位置折行的等宽块,换行保留为真实换行(多行命令逐行可见),其余控制 / 格式字符同样以「\uFFFD」示出。
 
 /** 工具名、agent 标签、插件 id 这类短标识在弹窗里的显示上限。 */
 export const UNTRUSTED_LABEL_MAX_CHARS = 80;
 /** 路径在弹窗里的显示上限(中间截断,首尾各留一半)。 */
 export const UNTRUSTED_PATH_MAX_CHARS = 160;
+
+import { ScrollArea } from '@/design';
 
 const ELLIPSIS = '…';
 const REPLACEMENT = '\uFFFD';
@@ -34,6 +38,32 @@ export function visibleUntrustedText(text: string, maxChars: number = UNTRUSTED_
   const head = Math.ceil(keep / 2);
   const tail = keep - head;
   return chars.slice(0, head).join('') + ELLIPSIS + (tail > 0 ? chars.slice(-tail).join('') : '');
+}
+
+const BLOCK_LINE_BREAKS = /\r\n|[\n\v\f\r\u0085\u2028\u2029]/g;
+const BLOCK_INVISIBLE = /[^\P{Cc}\t\n]|\p{Cf}/gu;
+
+/** 完整显示用的可见化:不截断;换行类统一成 \n、保留 tab,其余控制 / 格式字符各换成「\uFFFD」。 */
+export function visibleUntrustedBlockText(text: string): string {
+  return text.replace(BLOCK_LINE_BREAKS, '\n').replace(BLOCK_INVISIBLE, REPLACEMENT);
+}
+
+/**
+ * 对方可控的长文本完整显示(授权弹窗里要执行的命令):限高、可滚动、可折行的等宽块。label = 读屏名称(区域可 Tab 到,
+ * 方向键滚动;内容即全文)。
+ */
+export function UntrustedBlock({ text, label }: { readonly text: string; readonly label: string }) {
+  return (
+    <ScrollArea
+      role="region"
+      aria-label={label}
+      tabIndex={0}
+      className="mt-1 max-h-32 overflow-auto rounded border border-line bg-panel-soft px-2 py-1 outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
+    >
+      {/* [overflow-wrap:anywhere]:韩文界面 :lang(ko) 的未分层 word-break:keep-all 压过 break-all,长串仍须折行 */}
+      <code className="block whitespace-pre-wrap break-all [overflow-wrap:anywhere] font-mono text-fg">{visibleUntrustedBlockText(text)}</code>
+    </ScrollArea>
+  );
 }
 
 /**

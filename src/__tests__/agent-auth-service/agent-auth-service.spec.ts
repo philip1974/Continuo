@@ -227,7 +227,12 @@ describe('agent-auth-service: requestAgentAuth', () => {
       details: { callerSessionId: 'term-fake', command: 'x'.repeat(AGENT_AUTH_DETAIL_MAX + 50), cwd: '' },
     });
     const payload = firstAuthPayload(win);
-    expect(payload.details).toEqual({ callerSessionId: 'term-caller', command: 'x'.repeat(AGENT_AUTH_DETAIL_MAX) });
+    // 被截的字段记进 truncated(弹窗据此标示「已截断」)
+    expect(payload.details).toEqual({
+      callerSessionId: 'term-caller',
+      command: 'x'.repeat(AGENT_AUTH_DETAIL_MAX),
+      truncated: ['command'],
+    });
     expect(isAgentAuthRequestPayload(payload)).toBe(true);
     resolveAgentAuthRequest(payload.requestId, 'session');
     await expect(p).resolves.toBe('session');

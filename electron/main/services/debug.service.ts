@@ -225,7 +225,7 @@ export interface WaitForStopOutput {
 
 // 形态定义在 shared(与 renderer 的 debug.store 共用),这里转出供 main 侧既有 import 使用。
 export type { DebugScope, DebugStackFrame, DebugVariable } from '../../shared/debug-view-channels';
-import type { DebugScope, DebugStackFrame, DebugVariable } from '../../shared/debug-view-channels';
+import { canSetBreakpointsIn, type DebugScope, type DebugStackFrame, type DebugVariable } from '../../shared/debug-view-channels';
 import { sleep, waitAtMost } from '../../shared/wait-at-most';
 import { truncateUtf8, utf8ByteLength } from '../../shared/utf8-byte-length';
 
@@ -1070,8 +1070,10 @@ export class DebugService {
     }
     // 用户在编辑器 gutter 设的断点(窗口级)在程序起跑前下发(起跑推迟到 wait_for_stop / continue,见下)。
     // 单个下发失败不影响 launch(与 agent 设断点互不阻断)。
+    // 只下发能设断点的文件(canSetBreakpointsIn:VSCode allowBreakpointsEverywhere=false;万一列表里有别的文件也不发给 adapter)。
     for (const bp of [...(this.userBreakpoints.get(ctx.ownerWindowId) ?? [])]) {
       if (cancelled.aborted) break;
+      if (!canSetBreakpointsIn(bp.file)) continue;
       await this.setBreakpoints(id, bp).catch(() => undefined);
     }
     // initialize 期间被取消:会话已被拆(或正在拆),这里不能再把 session_id 交给调用方。
@@ -1270,6 +1272,10 @@ export class DebugService {
       .byOwner(ownerWindowId)
       .filter((session) => session.state === 'active' && session.runtimeState !== 'terminated');
     if (input.enabled) {
+      // VSCode debug.allowBreakpointsEverywhere 默认 false:只有调试器支持的语言能设断点(gutter 同一判定,见 canSetBreakpointsIn)。
+      if (!canSetBreakpointsIn(file)) {
+        throw codedError(ERROR_CODES.BAD_INPUT, 'breakpoints are not supported in this file type');
+      }
       if (!list.some((bp) => bp.file === file && bp.line === input.line)) {
         if (list.length >= DEBUG_USER_BREAKPOINTS_MAX) {
           throw codedError(ERROR_CODES.BAD_INPUT, `too many breakpoints (max ${DEBUG_USER_BREAKPOINTS_MAX})`);

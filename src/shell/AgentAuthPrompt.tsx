@@ -14,6 +14,7 @@ import {
 import { notify } from '@/notifications/notify';
 import { useT, t as translate, type TranslationKey } from '@/i18n';
 import {
+  AGENT_AUTH_DETAIL_MAX,
   AGENT_AUTH_PLUGIN_METHOD_PREFIX,
   isAgentAuthCancelledPayload,
   isAgentAuthRequestPayload,
@@ -26,7 +27,7 @@ import {
   type PromptGrantGuard,
 } from '@/lib/use-prompt-grant-guard';
 import { PromptGrantHint } from '@/lib/prompt-grant-hint';
-import { UNTRUSTED_PATH_MAX_CHARS, UntrustedText } from '@/lib/untrusted-text';
+import { UNTRUSTED_PATH_MAX_CHARS, UntrustedBlock, UntrustedText } from '@/lib/untrusted-text';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { terminalPanelTitle, terminalTitleInputOf } from '@/shell/dock/terminal-panel-id';
 import {
@@ -210,10 +211,23 @@ function AgentAuthPromptBody({
       </li>
     );
   }
+  // 要自动运行的命令:完整显示(不中间截断 —— 危险片段不能藏进省略号);main 截到上限时明确标示「已截断」。
+  const command = details?.command;
+  const commandLine = command ? (
+    <li>
+      {t('permissions.agent.detail_command_label')}
+      <UntrustedBlock text={command} label={t('permissions.agent.detail_command_label')} />
+      {details?.truncated?.includes('command') ? (
+        <span className="mt-1 block text-warning">
+          {t('permissions.agent.detail_command_truncated', { max: AGENT_AUTH_DETAIL_MAX })}
+        </span>
+      ) : null}
+    </li>
+  ) : null;
   const detailLines = [
     callerTitle !== null ? detailLine('permissions.agent.caller_terminal', callerTitle) : null,
     detailLine('permissions.agent.detail_agent_label', details?.agentLabel),
-    detailLine('permissions.agent.detail_command', details?.command, UNTRUSTED_PATH_MAX_CHARS),
+    commandLine,
     detailLine('permissions.agent.detail_program', details?.program, UNTRUSTED_PATH_MAX_CHARS),
     detailLine('permissions.agent.detail_cwd', details?.cwd, UNTRUSTED_PATH_MAX_CHARS),
   ].filter((line) => line !== null);

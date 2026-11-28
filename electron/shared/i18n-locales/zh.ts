@@ -431,6 +431,8 @@ export const zh: Record<TranslationKey, string> = {
   'panels.debug.console.log_aria': '调试控制台输出',
   'panels.debug.console.input_aria': '表达式求值',
   'panels.debug.console.input_placeholder': '输入表达式求值（Enter）',
+  'panels.debug.console.clear': '清除控制台',
+  'panels.debug.console.expand_aria': '求值结果',
 
   // settings tabs / items
   'settings.terminal.tab_title': '终端',
@@ -532,6 +534,9 @@ export const zh: Record<TranslationKey, string> = {
   'editor.format.json_syntax_error': '无法格式化：此 JSON 文档有语法错误，文档未改动。',
   'editor.rename.no_result': '重命名符号：无结果。',
   'editor.definition.none': '未找到定义',
+  'editor.debug_gutter.breakpoint': '断点',
+  'editor.debug_gutter.exec': '当前执行行',
+  'editor.debug_gutter.exec_on_breakpoint': '断点，当前执行行',
   'editor.definition.none_for': '未找到「{name}」的定义',
   'editor.ts_server.crashed': 'JS/TS 语言服务已崩溃。',
   'editor.ts_server.crashed_fatal': 'JS/TS 语言服务在过去 5 分钟内崩溃了 5 次，在重新加载窗口或打开其他文件夹之前不会再重启。',
@@ -889,7 +894,8 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.agent.body_external': '外部 agent 通过 MCP 请求{action}。',
   'permissions.agent.caller_terminal': '发起终端：{value}',
   'permissions.agent.detail_agent_label': 'Agent 标签：{value}',
-  'permissions.agent.detail_command': '自动运行命令：{value}',
+  'permissions.agent.detail_command_label': '自动运行命令：',
+  'permissions.agent.detail_command_truncated': '已截断：只显示前 {max} 个字符，实际命令更长。',
   'permissions.agent.detail_program': '程序：{value}',
   'permissions.agent.detail_cwd': '工作目录：{value}',
   'permissions.agent.hint': '授权后，持有 MCP 令牌的 agent 可以创建 / 关闭 / 写入 / 读取终端。令牌仅本次启动有效，Continuo 退出即作废。',

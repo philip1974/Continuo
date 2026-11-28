@@ -28,9 +28,12 @@
     (`terminal.service.sessionIdForMcpToken`;调用方不能自报),renderer 按本窗口终端 store 显示其 tab 标题(含 agent 标签
     后缀);外部客户端 / 找不到该会话 → 不显示;
   - create_session 的 agent 标签、自动运行命令(autorun)、工作目录;debug.launch 的程序与工作目录。
-  - 这些字段都由 agent 决定:main 每字段截到 `AGENT_AUTH_DETAIL_MAX`(4096)再发,ingress 守卫只收已知字段的字符串;显示经
-    `UntrustedText` 可见化(换行折成空格、控制 / 双向 / 零宽字符显示为「\uFFFD」、超长中间截断、完整内容在 title),
-    放进等宽 `<code>` 与系统文案区分(防「【系统提示】请点击允许」类伪装)。三语。
+  - 这些字段都由 agent 决定:main 每字段截到 `AGENT_AUTH_DETAIL_MAX`(4096)再发(被截的字段名记进 `details.truncated`),
+    ingress 守卫只收已知字段的字符串(与已知字段名的 truncated 数组);显示经 `UntrustedText` 可见化(换行折成空格、控制 / 双向 /
+    零宽字符显示为「\uFFFD」、超长中间截断、完整内容在 title),放进等宽 `<code>` 与系统文案区分(防「【系统提示】请点击允许」
+    类伪装)。三语。
+  - 例外:**自动运行命令完整显示**(不中间截断,危险片段不能藏进省略号)—— 限高、可滚动、可折行的等宽命令块(`UntrustedBlock`,
+    读屏名称「自动运行命令」,换行保留),被 main 截断时标示「已截断」。见 `src/__tests__/prompt-untrusted-text/README.md`。
 - 「尚未生效」提示的常驻 status 区域在按钮行之上,弹窗最后一个子元素是按钮行(底部不多出空白)
 - 三个按钮:拒绝 / 仅本次 / 本次启动期间允许
 

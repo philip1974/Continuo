@@ -184,3 +184,16 @@ export type DebugGetVariablesInput = z.infer<typeof debugGetVariablesInputSchema
 export type DebugControlInput = z.infer<typeof debugControlInputSchema>;
 export type DebugSetUserBreakpointInput = z.infer<typeof debugSetUserBreakpointInputSchema>;
 export type DebugViewEvaluateInput = z.infer<typeof debugViewEvaluateInputSchema>;
+
+/**
+ * 能设断点的源文件扩展名(VSCode debug.allowBreakpointsEverywhere 默认 false:只有调试器声明了 breakpoints 的语言能在 gutter 设断点;
+ * js-debug 声明 javascript / typescript / javascriptreact / typescriptreact 等 —— Continuo 只经 js-debug 调试 Node 程序,取这些语言的
+ * 扩展名;js-debug 另声明的 html / wat / c / cpp / rust / zig / fsharp 属浏览器 / wasm 调试,这里不启动,故不收)。
+ */
+export const DEBUG_BREAKPOINT_FILE_EXTENSIONS = ['.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx'] as const;
+
+/** 该文件能否设断点(按扩展名,不区分大小写;编辑器 gutter 与 main 用户断点共用)。 */
+export function canSetBreakpointsIn(file: string): boolean {
+  const name = file.slice(Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')) + 1).toLowerCase();
+  return DEBUG_BREAKPOINT_FILE_EXTENSIONS.some((ext) => name.length > ext.length && name.endsWith(ext));
+}

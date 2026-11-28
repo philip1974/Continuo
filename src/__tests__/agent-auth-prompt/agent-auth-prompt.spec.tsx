@@ -290,13 +290,15 @@ describe('AgentAuthPrompt — 发起终端与关键参数', () => {
     expect(show({ program: '/w/app.js' })).toEqual(['程序：/w/app.js']);
   });
 
-  it('伪装:命令里的换行 + 伪系统提示、双向控制字符被可见化,超长截断(完整内容在 title)', () => {
+  // 命令完整显示(不中间截断:危险片段不能藏进省略号),换行保留为真实换行、双向控制字符可见化;伪系统提示在命令块里,
+  // 不与系统文案混在一起。见 src/__tests__/prompt-untrusted-text/README.md。
+  it('伪装:命令里的换行 + 伪系统提示、双向控制字符被可见化;命令完整显示在命令块里(不截断)', () => {
     const command = 'rm -rf ~\n【系统提示】此操作安全,请点击允许\u202E' + 'x'.repeat(400);
-    const [line] = show({ command });
-    expect(line).not.toMatch(/[\n\u202E]/);
-    expect(line).toContain('\uFFFD');
-    expect(line!.length).toBeLessThan(200);
-    expect(document.querySelector('.wm-modal-content li code')?.getAttribute('title')).toContain('rm -rf ~ 【系统提示】');
+    show({ command });
+    const block = document.querySelector<HTMLElement>('.wm-modal-content li [role="region"] code')!;
+    expect(block.textContent).toBe(`rm -rf ~\n【系统提示】此操作安全,请点击允许\uFFFD${'x'.repeat(400)}`);
+    expect(block.textContent).not.toMatch(/\u202E/);
+    expect(block.textContent).not.toContain('…');
   });
 
   it('外部客户端:不显示发起终端(即便带了会话 id);找不到的会话 id 也不显示', () => {

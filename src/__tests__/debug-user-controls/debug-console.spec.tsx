@@ -8,7 +8,11 @@ import { DEBUG_VIEW_OUTPUT_ENTRIES_MAX } from '../../../electron/shared/debug-vi
 const h = vi.hoisted(() => ({
   events: [] as Array<(event: unknown) => void>,
   subscribeData: { sessions: [] as unknown[], userBreakpoints: [] as unknown[] },
-  evaluate: vi.fn(async () => ({ ok: true as const, data: { result: '3', truncated: false } })),
+  evaluate: vi.fn(async (_input: unknown): Promise<unknown> => ({ ok: true as const, data: { result: '3', truncated: false } })),
+  getVariables: vi.fn(async (_input: unknown): Promise<unknown> => ({
+    ok: true as const,
+    data: { variables: [{ name: 'a', value: '1' }, { name: 'b', value: '"x"' }] },
+  })),
 }));
 
 vi.mock('../../lib/co-api', () => ({
@@ -23,7 +27,7 @@ vi.mock('../../lib/co-api', () => ({
         ok: true,
         data: { frames: [{ id: 7, name: 'main', source_path: '/repo/a.js', line: 3 }], scopes: [] },
       })),
-      getVariables: vi.fn(),
+      getVariables: h.getVariables,
       control: vi.fn(),
       evaluate: h.evaluate,
     },
@@ -36,7 +40,7 @@ vi.mock('@/plugins/co-app', () => ({
   },
 }));
 
-import { DebugPanel } from '../../panels/Debug/DebugPanel';
+import { DebugPanel, resetDebugConsoleHistoryForTest } from '../../panels/Debug/DebugPanel';
 import { resetDebugStoreForTest, startDebugStoreSync, useDebugStore } from '../../stores/debug.store';
 import { setLocale } from '../../i18n';
 import { flushMicrotasks } from '../_helpers/async';
@@ -45,6 +49,7 @@ const emit = (event: DebugViewEvent | Record<string, unknown>) => act(() => h.ev
 
 afterEach(() => {
   cleanup();
+  resetDebugConsoleHistoryForTest();
   resetDebugStoreForTest();
   h.events = [];
   h.subscribeData = { sessions: [], userBreakpoints: [] };
@@ -140,5 +145,89 @@ describe('调试控制台', () => {
     expect(useDebugStore.getState().sessions.get('s1')!.console!.map((l) => l.text)).toEqual(['old\n']);
     emit({ type: 'user-breakpoints-changed', breakpoints: [{ file: '/repo/b.js', line: 9 }] });
     expect(useDebugStore.getState().userBreakpoints).toEqual([{ file: '/repo/b.js', line: 9 }]);
+  });
+});
+
+describe('调试控制台 REPL(VSCode Debug Console)', () => {
+  async function submit(input: HTMLElement, text: string): Promise<void> {
+    fireEvent.change(input, { target: { value: text } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: 'Enter' });
+      await flushMicrotasks();
+    });
+  }
+
+  it('↑ / ↓ 翻输入历史:↑ 上一条(到最早一条停住),↓ 下一条,过了最新一条清空;连续重复只记一次', async () => {
+    startDebugStoreSync();
+    emit({ type: 'started', sessionId: 's1' });
+    openConsole();
+    const input = screen.getByRole('textbox', { name: 'Evaluate expression' }) as HTMLInputElement;
+    await submit(input, 'a');
+    await submit(input, 'b');
+    await submit(input, 'b');
+    const key = (k: string) => fireEvent.keyDown(input, { key: k });
+    key('ArrowUp');
+    expect(input.value).toBe('b');
+    key('ArrowUp');
+    expect(input.value).toBe('a');
+    key('ArrowUp');
+    expect(input.value).toBe('a');
+    key('ArrowDown');
+    expect(input.value).toBe('b');
+    key('ArrowDown');
+    expect(input.value).toBe('');
+  });
+
+  it('对象结果可展开(variablesReference,子变量懒加载);继续运行后不再可展开', async () => {
+    h.evaluate.mockResolvedValueOnce({ ok: true, data: { result: 'Object', variables_reference: 42 } });
+    startDebugStoreSync();
+    emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'breakpoint' });
+    await act(flushMicrotasks);
+    openConsole();
+    await submit(screen.getByRole('textbox', { name: 'Evaluate expression' }), 'obj');
+    const node = screen.getByRole('treeitem', { name: 'Object' });
+    expect(node.getAttribute('aria-expanded')).toBe('false');
+    expect(h.getVariables).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(node);
+      await flushMicrotasks();
+    });
+    expect(h.getVariables).toHaveBeenCalledWith({ sessionId: 's1', variablesReference: 42 });
+    expect(screen.getByRole('treeitem', { name: 'a: 1' })).toBeTruthy();
+    emit({ type: 'continued', sessionId: 's1' });
+    expect(screen.queryByRole('treeitem')).toBeNull();
+    expect(screen.getByRole('log').textContent).toContain('Object');
+  });
+
+  it('「清除控制台」按钮清空当前会话的控制台;mac 上焦点在控制台时 ⌘K 同样清除,且不冒泡给全局(终端 ⌘K)', async () => {
+    const platform = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
+    startDebugStoreSync();
+    emit({ type: 'started', sessionId: 's1' });
+    emit({ type: 'output', sessionId: 's1', entries: [{ seq: 0, category: 'stdout', output: 'hello\n' }] });
+    openConsole();
+    const clear = screen.getByRole('button', { name: 'Clear Console' });
+    expect(clear.getAttribute('title')).toBe('Clear Console (⌘K)');
+    fireEvent.click(clear);
+    expect(useDebugStore.getState().sessions.get('s1')!.console).toEqual([]);
+    expect(screen.getByRole('log').textContent).toContain('No output');
+
+    emit({ type: 'output', sessionId: 's1', entries: [{ seq: 1, category: 'stdout', output: 'again\n' }] });
+    const outer = vi.fn();
+    document.addEventListener('keydown', outer);
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Evaluate expression' }), { key: 'k', metaKey: true });
+    document.removeEventListener('keydown', outer);
+    expect(useDebugStore.getState().sessions.get('s1')!.console).toEqual([]);
+    expect(outer).not.toHaveBeenCalled();
+    platform.mockRestore();
+  });
+
+  it('会话结束后保留的控制台也可清除', () => {
+    startDebugStoreSync();
+    emit({ type: 'started', sessionId: 's1' });
+    emit({ type: 'output', sessionId: 's1', entries: [{ seq: 0, category: 'stdout', output: 'done\n' }] });
+    emit({ type: 'terminated', sessionId: 's1' });
+    openConsole();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Console' }));
+    expect(useDebugStore.getState().endedConsole!.lines).toEqual([]);
   });
 });

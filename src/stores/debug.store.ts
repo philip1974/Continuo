@@ -41,6 +41,12 @@ export interface DebugConsoleLine {
   readonly id: number;
   readonly category: string;
   readonly text: string;
+  /**
+   * 求值结果是对象(DAP evaluate 回 variablesReference > 0):可在控制台展开(VSCode REPL 同),子变量经 loadVariables 懒加载。
+   * reference 只在求值时的那一停有效(stopSeq);继续运行 / 下一停后不再可展开。
+   */
+  readonly variablesReference?: number;
+  readonly stopSeq?: number;
 }
 
 /** 刚结束的会话留下的控制台内容(VSCode:会话结束后调试控制台保留输出,直到下一个会话开始)。 */
@@ -81,7 +87,16 @@ type DebugState = {
   /**
    * 经 stopped 事件实时到达的最新一停(停下时自动打开 / 定位用,见 debug-auto-reveal;subscribe 快照恢复的停点不算)。
    */
-  lastLiveStop: { readonly sessionId: string; readonly stopSeq: number; readonly reason: string } | null;
+  lastLiveStop: {
+    readonly sessionId: string;
+    readonly stopSeq: number;
+    readonly reason: string;
+    /**
+     * 这一停由用户自己的调试操作引起(本窗口调试工具栏 / F5 F6 F10 F11 ⇧F11 发出 继续 / 暂停 / 单步 后到达的第一停);
+     * 否则(agent 经 MCP 驱动、程序自己撞上断点 …)为 false。停下时自动定位据此决定是否把焦点交给编辑器(见 debug-auto-reveal)。
+     */
+    readonly byUser: boolean;
+  } | null;
   ingestEvent: (event: DebugViewEvent | DebugUserBreakpointsEvent) => Promise<void>;
   /** 调试工具栏 / 按键:对会话发 继续 / 暂停 / 单步 / 停止;失败提示,不抛。 */
   control: (sessionId: string, action: DebugControlAction) => Promise<void>;
@@ -89,6 +104,8 @@ type DebugState = {
   setBreakpointAt: (file: string, line: number, enabled: boolean) => Promise<void>;
   /** 调试控制台求值:输入与结果都追加到该会话的控制台;停住时在首帧求值。 */
   evaluate: (sessionId: string, expression: string) => Promise<void>;
+  /** 清除控制台(VSCode「清除控制台」):sessionId = 该会话的控制台;null = 刚结束的会话留下的控制台。 */
+  clearConsole: (sessionId: string | null) => void;
   loadVariables: (
     sessionId: string,
     variablesReference: number,
@@ -116,13 +133,19 @@ function emptySession(id: string): DebugSessionShadow {
 
 let nextConsoleLineId = 1;
 
+/**
+ * 用户在本窗口发出了 继续 / 暂停 / 单步、还没等到下一停的会话:其下一停记为用户引起(lastLiveStop.byUser)。发出前登记
+ *(stopped 事件可能先于 control 的 IPC 应答到达),发送失败 / 会话结束时撤销。runtime only。
+ */
+const userDrivenSessions = new Set<string>();
+
 /** 追加控制台行并按上限保留最近的(截掉时记 consoleTruncated)。 */
 function appendConsole(
   session: DebugSessionShadow,
-  lines: readonly { readonly category: string; readonly text: string }[],
+  lines: readonly Omit<DebugConsoleLine, 'id'>[],
 ): DebugSessionShadow {
   if (lines.length === 0) return session;
-  const added = lines.map((line) => ({ id: nextConsoleLineId++, category: line.category, text: line.text }));
+  const added = lines.map((line) => ({ ...line, id: nextConsoleLineId++ }));
   const all = [...(session.console ?? []), ...added];
   const overflow = all.length - DEBUG_VIEW_OUTPUT_ENTRIES_MAX;
   return {
@@ -515,7 +538,12 @@ export const useDebugStore = create<DebugState>((set, get) => ({
           sessions,
           activeSessionId: updateActiveSession(sessions),
           stoppedOrder: nextOrder,
-          lastLiveStop: { sessionId: event.sessionId, stopSeq: event.stopSeq, reason: event.reason },
+          lastLiveStop: {
+            sessionId: event.sessionId,
+            stopSeq: event.stopSeq,
+            reason: event.reason,
+            byUser: userDrivenSessions.delete(event.sessionId),
+          },
         };
       });
       await pullStackAndScopes(event.sessionId, event.stopSeq);
@@ -545,6 +573,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     }
 
     if (event.type === 'terminated') {
+      userDrivenSessions.delete(event.sessionId);
       set((state) => {
         const ended = state.sessions.get(event.sessionId);
         if (!ended) return state;
@@ -569,10 +598,16 @@ export const useDebugStore = create<DebugState>((set, get) => ({
   },
 
   control: async (sessionId, action) => {
+    const resumes = action !== 'stop';
+    if (resumes) userDrivenSessions.add(sessionId);
     try {
       const result = await coApi.debug.control({ sessionId, action });
-      if (!result.ok) notifyFailure(result);
+      if (!result.ok) {
+        if (resumes) userDrivenSessions.delete(sessionId);
+        notifyFailure(result);
+      }
     } catch (err) {
+      if (resumes) userDrivenSessions.delete(sessionId);
       notifyThrownError(err);
     }
   },
@@ -587,17 +622,19 @@ export const useDebugStore = create<DebugState>((set, get) => ({
   },
 
   evaluate: async (sessionId, expression) => {
-    const appendLine = (category: string, text: string) =>
+    const appendLine = (line: Omit<DebugConsoleLine, 'id'>) =>
       set((state) => {
         const current = state.sessions.get(sessionId);
         if (!current) return state;
         const sessions = new Map(state.sessions);
-        sessions.set(sessionId, appendConsole(current, [{ category, text }]));
+        sessions.set(sessionId, appendConsole(current, [line]));
         return { sessions };
       });
-    appendLine('input', expression);
+    appendLine({ category: 'input', text: expression });
     // 停住时在首帧求值(VSCode REPL 在当前聚焦的帧求值;面板不能切帧,即首帧),运行中全局求值。
-    const frameId = get().sessions.get(sessionId)?.frames[0]?.id;
+    const before = get().sessions.get(sessionId);
+    const frameId = before?.frames[0]?.id;
+    const stopSeq = before?.stopped?.stopSeq;
     try {
       const result = await coApi.debug.evaluate({
         sessionId,
@@ -605,15 +642,36 @@ export const useDebugStore = create<DebugState>((set, get) => ({
         ...(frameId !== undefined ? { frameId } : {}),
       });
       if (result.ok) {
-        const value = asRecord(result.data).result;
-        appendLine('result', typeof value === 'string' ? value : '');
+        const data = asRecord(result.data);
+        const ref = data.variables_reference;
+        // 对象结果可展开:仅当求值发起时停住、且结果回来时仍是同一停(reference 只在这一停有效)。
+        const expandable =
+          typeof ref === 'number' && Number.isInteger(ref) && ref > 0 && stopSeq !== undefined && isCurrentStop(sessionId, stopSeq);
+        appendLine({
+          category: 'result',
+          text: typeof data.result === 'string' ? data.result : '',
+          ...(expandable ? { variablesReference: ref, stopSeq } : {}),
+        });
       } else {
-        appendLine('error', result.message ?? result.code);
+        appendLine({ category: 'error', text: result.message ?? result.code });
       }
     } catch (err) {
-      appendLine('error', err instanceof Error ? err.message : String(err));
+      appendLine({ category: 'error', text: err instanceof Error ? err.message : String(err) });
     }
   },
+
+  clearConsole: (sessionId) =>
+    set((state) => {
+      if (sessionId === null) {
+        return state.endedConsole === null ? state : { endedConsole: { ...state.endedConsole, lines: [] } };
+      }
+      const current = state.sessions.get(sessionId);
+      if (!current) return state;
+      const { consoleTruncated: _truncated, ...rest } = current;
+      const sessions = new Map(state.sessions);
+      sessions.set(sessionId, { ...rest, console: [] });
+      return { sessions };
+    }),
 
   loadVariables: async (sessionId, variablesReference) => {
     const session = get().sessions.get(sessionId);
@@ -791,6 +849,7 @@ export function startDebugStoreSync(): void {
 }
 
 export function resetDebugStoreForTest(): void {
+  userDrivenSessions.clear();
   unsubscribeDebugEvents?.();
   unsubscribeDebugEvents = null;
   debugSyncGuard.begin(); // 作废在途的 subscribe 快照

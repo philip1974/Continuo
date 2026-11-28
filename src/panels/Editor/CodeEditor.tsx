@@ -385,7 +385,7 @@ export function CodeEditor({
       guidesCompartment.current.of(editorGuides(appliedGuidesRef.current)),
       debugDecorationsExtension(),
       // 点断点 gutter 切换断点(VSCode 点行号左侧;BDD: src/__tests__/debug-user-controls/)
-      breakpointGutterToggle(),
+      breakpointGutterToggle(() => fileNameRef.current),
       // 选区变化 → 后退 / 前进的导航记录(BDD: src/__tests__/editor-navigation-history/)
       navigationHistoryExtension(tabId, groupId),
       // 资源管理器拖来的文件只打开(⇧ 放下插入路径 / Markdown 链接);Markdown 源码视图粘贴 / 拖入图片存成文件再插相对路径。

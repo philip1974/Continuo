@@ -446,6 +446,8 @@ export const en = {
   'panels.debug.console.log_aria': 'Debug console output',
   'panels.debug.console.input_aria': 'Evaluate expression',
   'panels.debug.console.input_placeholder': 'Evaluate an expression (Enter)',
+  'panels.debug.console.clear': 'Clear Console',
+  'panels.debug.console.expand_aria': 'Evaluation result',
 
   // settings tabs / items (15)
   'settings.terminal.tab_title': 'Terminal',
@@ -547,6 +549,9 @@ export const en = {
   'editor.format.json_syntax_error': 'Cannot format: this JSON document has syntax errors. The document was not changed.',
   'editor.rename.no_result': 'Rename Symbol: No result.',
   'editor.definition.none': 'No definition found',
+  'editor.debug_gutter.breakpoint': 'Breakpoint',
+  'editor.debug_gutter.exec': 'Current execution line',
+  'editor.debug_gutter.exec_on_breakpoint': 'Breakpoint, current execution line',
   'editor.definition.none_for': 'No definition found for “{name}”',
   'editor.ts_server.crashed': 'The JS/TS language service crashed.',
   'editor.ts_server.crashed_fatal': 'The JS/TS language service crashed 5 times in the last 5 minutes. It will not be restarted until the window is reloaded or another folder is opened.',
@@ -919,7 +924,8 @@ export const en = {
   'permissions.agent.body_external': 'External agent requests via MCP to {action}.',
   'permissions.agent.caller_terminal': 'From terminal: {value}',
   'permissions.agent.detail_agent_label': 'Agent label: {value}',
-  'permissions.agent.detail_command': 'Command to run: {value}',
+  'permissions.agent.detail_command_label': 'Command to run:',
+  'permissions.agent.detail_command_truncated': 'Truncated: only the first {max} characters are shown; the actual command is longer.',
   'permissions.agent.detail_program': 'Program: {value}',
   'permissions.agent.detail_cwd': 'Working directory: {value}',
   'permissions.agent.hint': 'Once granted, agents holding the MCP token can create / close / write / read terminals. The token is valid only for this launch and is invalidated when Continuo exits.',

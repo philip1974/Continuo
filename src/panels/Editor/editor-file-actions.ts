@@ -97,6 +97,12 @@ export interface OpenFileOptions {
    * 新建的 tab 记为用户选定的编码。已开着同一文件 → 只切换(不重读)。
    */
   readonly encoding?: TextEncodingId;
+  /**
+   * `false` = 后台打开(不是用户选择):在目标组(须同时给 groupId)里显示该文件,但不换活动编辑器组、不激活 dock 面板、
+   * 不计入用户激活代际(不让用户同时发起的打开变成后台)。调试停下时 agent 引起的停止位置改投另一个编辑器组用
+   *(BDD: src/__tests__/debug-user-controls/)。
+   */
+  readonly requestFocus?: false;
 }
 
 /**
@@ -122,7 +128,10 @@ export async function openFileByPath(
 
 /** 预览设置关闭 → 以预览方式打开按缺省(常驻)处理。 */
 function previewOpt(opts: OpenFileOptions | undefined): OpenFileOptions | undefined {
-  const group = opts?.groupId === undefined ? undefined : { groupId: opts.groupId };
+  const group =
+    opts?.groupId === undefined
+      ? undefined
+      : { groupId: opts.groupId, ...(opts.requestFocus === false ? { requestFocus: false as const } : {}) };
   if (opts?.preview === undefined) return group;
   if (opts.preview && !isEditorPreviewEnabled()) return group;
   return { ...group, preview: opts.preview };
@@ -196,7 +205,8 @@ async function openTabWith(
   // 用户激活代际(见 editor.store beginUserActivation):快速连续打开时读盘耗时不同的请求乱序完成,读盘期间
   // 用户也可能在 tab 栏切到别的 tab(store.switchTab)。读完后代际已被更晚的用户选择(另一次打开 / 切换)
   // 超越 → 仅后台加入 tab,不抢激活/焦点(参考 hydrateEditorTabs 迟到恢复的 activate:false)。
-  const my = beginUserActivation();
+  const background = preview?.requestFocus === false;
+  const my = background ? null : beginUserActivation();
 
   let r;
   try {
@@ -210,7 +220,7 @@ async function openTabWith(
   // (尤其 Windows 不同大小写路径 C:\Repo\a.md / c:\repo\a.md)时,两个调用都在读前看不到
   // existing,读后各自 createTab → 同一磁盘文件出现两个 tab,分别保存互相覆盖(重现 X10
   // pathEquals 想防的数据丢失)。读后、建 tab 前再用 pathEquals 复检 store,已存在则只切换。
-  const latest = my === getUserActivationGen();
+  const latest = my === null || my === getUserActivationGen();
   const raced = findExisting(store.getState().tabs);
   if (raced) {
     if (latest) store.getState().switchTab(raced.id, where());

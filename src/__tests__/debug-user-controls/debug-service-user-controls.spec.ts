@@ -206,6 +206,30 @@ describe('窗口级用户断点(编辑器 gutter)', () => {
     expect(client.requests.at(-1)).toMatchObject({ command: 'setBreakpoints', args: { breakpoints: [{ line: 8 }] } });
   });
 
+  it('只有 JS / TS 文件能设(VSCode allowBreakpointsEverywhere=false):别的文件 BAD_INPUT、不记、不推;删除照常', async () => {
+    const { service, windowEvents } = setup();
+    await expect(service.setUserBreakpoint(7, { file: '/repo/README.md', line: 1, enabled: true })).rejects.toMatchObject({
+      code: 'BAD_INPUT',
+    });
+    expect(service.userBreakpointSnapshot(7)).toEqual([]);
+    expect(windowEvents).toEqual([]);
+    await expect(service.setUserBreakpoint(7, { file: '/repo/README.md', line: 1, enabled: false })).resolves.toBeUndefined();
+    await service.setUserBreakpoint(7, { file: '/repo/lib.mts', line: 2, enabled: true });
+    expect(service.userBreakpointSnapshot(7)).toEqual([{ file: '/repo/lib.mts', line: 2 }]);
+  });
+
+  it('launch 只下发能设断点的文件的用户断点(列表里万一有别的文件也不发给 adapter)', async () => {
+    const { service, launch } = setup();
+    await service.setUserBreakpoint(7, { file: '/repo/app.js', line: 3, enabled: true });
+    (service as unknown as { userBreakpoints: Map<number, unknown[]> }).userBreakpoints
+      .get(7)!
+      .push({ file: '/repo/notes.md', line: 1 });
+    const { client } = await launch(7);
+    const sets = client.requests.filter((r) => r.command === 'setBreakpoints');
+    expect(sets).toHaveLength(1);
+    expect(sets[0]!.args).toMatchObject({ source: { path: '/repo/app.js' } });
+  });
+
   it('关窗(killByOwner)清掉该窗口的用户断点', async () => {
     const { service } = setup();
     await service.setUserBreakpoint(7, { file: '/repo/app.js', line: 3, enabled: true });

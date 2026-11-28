@@ -12,6 +12,7 @@ import { resetDebugStoreForTest, useDebugStore, type DebugSessionShadow } from '
 import { debugDecorationsExtension } from '../../panels/Editor/decorations/debug-decorations';
 import { startDebugDecorationSync } from '../../panels/Editor/decorations/debug-decoration-sync';
 import { breakpointGutterToggle, toggleBreakpointInView } from '../../panels/Editor/decorations/breakpoint-gutter-toggle';
+import { setLocale } from '../../i18n';
 
 const views: EditorView[] = [];
 let stopSync: (() => void) | null = null;
@@ -36,7 +37,7 @@ function createView(filePath: string): EditorView {
   const view = new EditorView({
     state: EditorState.create({
       doc: 'one\ntwo\nthree\nfour\n',
-      extensions: [debugDecorationsExtension(), breakpointGutterToggle()],
+      extensions: [debugDecorationsExtension(), breakpointGutterToggle(() => filePath)],
     }),
     parent,
   });
@@ -91,9 +92,51 @@ describe('断点 gutter 切换', () => {
     expect(h.setUserBreakpoint).toHaveBeenLastCalledWith({ file: '/repo/app.js', line: 2, enabled: true });
   });
 
-  it('Markdown 文件不切换', () => {
-    const view = createView('/repo/README.md');
-    toggleBreakpointInView(view, 1);
+  it('只有 JS / TS 文件(js mjs cjs jsx ts mts cts tsx)gutter 显示手形指针、点击切换;Markdown / JSON / CSS 等不显示、不切换', () => {
+    for (const file of ['/repo/a.js', '/repo/a.MJS', '/repo/a.cjs', '/repo/a.jsx', '/repo/a.ts', '/repo/a.mts', '/repo/a.cts', '/repo/a.tsx']) {
+      const view = createView(file);
+      expect(view.dom.classList.contains('cm-breakpoints-allowed')).toBe(true);
+      toggleBreakpointInView(view, 1);
+      expect(h.setUserBreakpoint).toHaveBeenLastCalledWith({ file, line: 1, enabled: true });
+    }
+    h.setUserBreakpoint.mockClear();
+    for (const file of ['/repo/README.md', '/repo/package.json', '/repo/style.css', '/repo/index.html', '/repo/main.py', '/repo/.js']) {
+      const view = createView(file);
+      expect(view.dom.classList.contains('cm-breakpoints-allowed')).toBe(false);
+      toggleBreakpointInView(view, 1);
+      view.dom
+        .querySelector('.cm-breakpoint-gutter')!
+        .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientY: 0 }));
+    }
     expect(h.setUserBreakpoint).not.toHaveBeenCalled();
+  });
+
+  it('停在有断点的行:组合标记(箭头里嵌红点,红点不被盖住),读屏标签说明两者;其它行各自单独标记', () => {
+    setLocale('en');
+    stopSync = startDebugDecorationSync();
+    const view = createView('/repo/app.js');
+    useDebugStore.setState({
+      sessions: new Map([
+        [
+          's1',
+          {
+            ...session([
+              { file: '/repo/app.js', line: 2, verified: true },
+              { file: '/repo/app.js', line: 4, verified: true },
+            ]),
+            stopped: { reason: 'breakpoint', stopSeq: 1, file: '/repo/app.js', line: 2 },
+            lastStoppedOrder: 1,
+          },
+        ],
+      ]),
+      activeSessionId: 's1',
+    });
+    const combined = view.dom.querySelectorAll('.cm-debug-exec-on-breakpoint');
+    expect(combined).toHaveLength(1);
+    expect(combined[0]!.getAttribute('aria-label')).toBe('Breakpoint, current execution line');
+    // 第 2 行只有组合标记(没有单独的红点被箭头叠住),第 4 行是单独的红点
+    expect(markers(view)).toBe(1);
+    expect(view.dom.querySelector('.cm-debug-breakpoint-marker')!.getAttribute('aria-label')).toBe('Breakpoint');
+    expect(view.dom.querySelectorAll('.cm-debug-exec-marker')).toHaveLength(1);
   });
 });

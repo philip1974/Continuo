@@ -433,6 +433,7 @@
 
 ## [debug-user-controls · 用户接管调试会话 / 调试控制台 / 停下时自动定位](./debug-user-controls/README.md)
 
+- [`background-open.spec.ts`](./debug-user-controls/background-open.spec.ts)
 - [`breakpoint-gutter.spec.tsx`](./debug-user-controls/breakpoint-gutter.spec.tsx)
 - [`debug-auto-reveal.spec.ts`](./debug-user-controls/debug-auto-reveal.spec.ts)
 - [`debug-console.spec.tsx`](./debug-user-controls/debug-console.spec.tsx)

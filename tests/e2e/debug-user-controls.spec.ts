@@ -166,3 +166,103 @@ test('gutter 断点 + agent 启动 → 停下自动定位(不抢焦点)→ F10 /
     .toEqual([]);
   await expect(win.getByRole('log')).not.toContainText('after');
 });
+
+const LOOP_PROGRAM = [
+  'function add(a, b) {',
+  '  const sum = a + b;',
+  '  return sum;',
+  '}',
+  'add(2, 3);',
+  'const end = Date.now() + 60000;',
+  'let n = 0;',
+  'while (Date.now() < end) n++;',
+  '',
+].join('\n');
+
+const PAUSE = /^(暂停|Pause|일시 중지)/;
+const CONTINUE = /^(继续|Continue|계속)/;
+const focusInfo = (win: Page) =>
+  win.evaluate(() => {
+    const el = document.activeElement;
+    if (el === null || el === document.body) return 'body';
+    if (el.closest('.xterm')) return 'terminal';
+    const cm = el.closest('.cm-editor');
+    return cm ? `editor:${cm.querySelector('.cm-line')?.textContent ?? ''}` : (el.tagName ?? '');
+  });
+
+test('agent 停下不盖住用户正在打字的编辑器 / 终端;用户自己暂停 → 焦点进停止位置编辑器', async () => {
+  test.skip(!existsSync(ADAPTER), 'js-debug adapter not fetched (node scripts/fetch-debug-adapter.mjs)');
+  test.setTimeout(120_000);
+  const base = process.env.CONTINUO_E2E_TMPDIR ?? tmpdir();
+  const ud = mkdtempSync(path.join(base, 'dbg-ud-'));
+  const ws = mkdtempSync(path.join(base, 'dbg-ws-'));
+  dirs.push(ud, ws);
+  writeFileSync(path.join(ws, 'app.js'), LOOP_PROGRAM);
+  writeFileSync(path.join(ws, 'lib.js'), '// lib');
+  seedExplorerJson(ud, { root: ws });
+  const app = await launchContinuo(ud);
+  apps.push(app);
+  const win = await app.firstWindow();
+  await win.waitForLoadState('domcontentloaded');
+  await expect.poll(() => win.evaluate(() => globalThis.__continuoTest !== undefined), { timeout: 15_000 }).toBe(true);
+  const cdp = await win.context().newCDPSession(win);
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+
+  // app.js 第 2 行设断点,然后在 lib.js 里打字(app.js 被换下)
+  await openTreeItem(win, 'app.js');
+  const line2 = win.locator('.cm-line').nth(1);
+  await expect(line2).toHaveText('  const sum = a + b;');
+  const gutter = await win.locator('.cm-breakpoint-gutter').first().boundingBox();
+  const lineBox = await line2.boundingBox();
+  await win.mouse.click(gutter!.x + gutter!.width / 2, lineBox!.y + lineBox!.height / 2);
+  await expect(win.locator('.cm-debug-breakpoint-marker')).toHaveCount(1);
+  await openTreeItem(win, 'lib.js');
+  await expect(win.locator('.cm-line').first()).toHaveText('// lib');
+  await win.locator('.cm-content').first().click();
+  await win.keyboard.press('End');
+  await win.keyboard.type(' a');
+  await expect(win.locator('.cm-line').first()).toHaveText('// lib a');
+
+  const mcp = new McpClient(path.join(ud, 'mcp.sock'));
+  clients.push(mcp);
+  await mcp.init();
+  const launched = mcp.call<{ session_id: string }>('debug.launch', { program: path.join(ws, 'app.js') });
+  const grant = win.getByRole('button', { name: GRANT_SESSION });
+  await expect(grant).toBeVisible({ timeout: 15_000 });
+  await win.waitForTimeout(600);
+  await grant.click();
+  const { session_id } = await launched;
+  await win.locator('.cm-content').first().click();
+  await win.keyboard.press('End');
+
+  // (a) agent 让程序撞上断点:lib.js 不被换下,焦点留在 lib.js,继续打字进 lib.js
+  expect((await mcp.call<{ reason: string }>('debug.wait_for_stop', { session_id, timeout_ms: 30_000 })).reason).toBe(
+    'breakpoint',
+  );
+  await expect(win.getByRole('button', { name: CONTINUE }).first()).toBeVisible({ timeout: 15_000 });
+  await win.waitForTimeout(500);
+  expect(await focusInfo(win)).toBe('editor:// lib a');
+  await win.keyboard.type('b');
+  await expect(win.locator('.cm-line').first()).toHaveText('// lib ab');
+
+  // (b) ⌘T 终端(与编辑器同一 dock 组)获焦;agent 单步停下:编辑器不盖住终端,焦点留在终端
+  await win.keyboard.press('ControlOrMeta+t');
+  await expect.poll(() => focusInfo(win), { timeout: 15_000 }).toBe('terminal');
+  await mcp.call('debug.step_over', { session_id });
+  await mcp.call('debug.wait_for_stop', { session_id, timeout_ms: 30_000 });
+  await win.waitForTimeout(500);
+  expect(await focusInfo(win)).toBe('terminal');
+  await expect(win.locator('.xterm').first()).toBeVisible();
+
+  // (c) 用户自己操作:工具栏「继续」→ 程序进入循环;「暂停」→ 停下,焦点进停止位置(app.js)的编辑器
+  await win.getByRole('button', { name: CONTINUE }).first().click();
+  const pause = win.getByRole('button', { name: PAUSE }).first();
+  await expect(pause).toBeEnabled({ timeout: 15_000 });
+  await win.waitForTimeout(300);
+  await pause.click();
+  await expect.poll(() => focusInfo(win), { timeout: 15_000 }).toBe('editor:function add(a, b) {');
+  await expect(win.locator('.cm-debug-exec-line')).toHaveCount(1);
+
+  await win.keyboard.press('Shift+F5');
+  await expect(win.locator('.cm-debug-exec-line')).toHaveCount(0, { timeout: 15_000 });
+});

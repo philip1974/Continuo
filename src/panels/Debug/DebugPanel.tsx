@@ -41,6 +41,7 @@ import { basename, dirname, isAbsolutePath } from '@/lib/path-cross';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { announce } from '@/lib/announce';
 import { getAnnouncingDocument } from '@/shell/dock/popout-documents';
+import { detectPlatform, formatHotkey } from '@/plugins/command-palette/format-hotkey';
 
 const EMPTY_VARIABLES: readonly [] = [];
 const EMPTY_CONSOLE: readonly DebugConsoleLine[] = [];
@@ -144,6 +145,7 @@ export function DebugPanel() {
               sessionId={session?.id ?? null}
               lines={session ? (session.console ?? EMPTY_CONSOLE) : endedConsole!.lines}
               truncated={session ? session.consoleTruncated === true : false}
+              stopSeq={session?.stopped?.stopSeq}
             />
           ) : session ? (
             <ScrollArea>
@@ -247,35 +249,110 @@ const CONSOLE_LINE_CLASS: Readonly<Record<string, string>> = {
   input: 'text-fg-muted',
 };
 
+/** 控制台输入历史(VSCode REPL 历史:↑ 上一条 / ↓ 下一条;本次启动内各会话共用,最近 CONSOLE_HISTORY_MAX 条,连续重复只记一次)。 */
+const CONSOLE_HISTORY_MAX = 100;
+const consoleHistory: string[] = [];
+
+/** 测试用:清空控制台输入历史。 */
+export function resetDebugConsoleHistoryForTest(): void {
+  consoleHistory.length = 0;
+}
+
+function rememberConsoleInput(text: string): void {
+  if (consoleHistory[consoleHistory.length - 1] === text) return;
+  consoleHistory.push(text);
+  if (consoleHistory.length > CONSOLE_HISTORY_MAX) consoleHistory.splice(0, consoleHistory.length - CONSOLE_HISTORY_MAX);
+}
+
+/** 「清除控制台」的默认键:VSCode workbench.debug.panel.action.clearReplAction 只在 mac 绑 ⌘K(when 焦点在调试控制台),其它平台无默认键。 */
+const CONSOLE_CLEAR_HOTKEY = 'mod+k';
+
+function isConsoleClearKey(e: KeyboardEvent<HTMLElement>): boolean {
+  return (
+    detectPlatform() === 'mac' &&
+    e.metaKey &&
+    !e.ctrlKey &&
+    !e.altKey &&
+    !e.shiftKey &&
+    e.key.toLowerCase() === 'k' &&
+    !e.nativeEvent.isComposing
+  );
+}
+
 /**
  * 调试控制台(VSCode Debug Console / REPL):程序输出(DAP output 事件,stdout / stderr / console 分色,ANSI 已去除,只保留最近的
- * DEBUG_VIEW_OUTPUT_ENTRIES_MAX 行)+ 底部求值输入(Enter 求值;停住时在首帧求值)。新输出到达时若已在底部则跟随滚动。
+ * DEBUG_VIEW_OUTPUT_ENTRIES_MAX 行)+ 底部求值输入(Enter 求值;停住时在首帧求值;↑ / ↓ 翻输入历史)。对象结果可展开(子变量懒加载,
+ * 只在求值时那一停内)。工具栏「清除控制台」(mac ⌘K,焦点在控制台里时;就地处理并拦下,不落到终端的 ⌘K 清屏)。
+ * 新输出到达时若已在底部则跟随滚动。
  */
 function ConsoleSection({
   sessionId,
   lines,
   truncated,
+  stopSeq,
 }: {
   readonly sessionId: string | null;
   readonly lines: readonly DebugConsoleLine[];
   readonly truncated: boolean;
+  readonly stopSeq: number | undefined;
 }) {
   const t = useT();
   const evaluate = useDebugStore((s) => s.evaluate);
+  const clearConsole = useDebugStore((s) => s.clearConsole);
   const [expression, setExpression] = useState('');
+  // 历史游标:consoleHistory.length = 不在历史里(正在输入新内容)。
+  const historyIndexRef = useRef(consoleHistory.length);
   const logRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   useEffect(() => {
     const el = logRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
   }, [lines]);
+  const clearLabel = t('panels.debug.console.clear');
+  const clearHotkey = detectPlatform() === 'mac' ? formatHotkey(CONSOLE_CLEAR_HOTKEY, 'mac') : undefined;
+  const clear = () => {
+    stickRef.current = true;
+    clearConsole(sessionId);
+  };
+  // VSCode navigateHistory:↑ = 上一条(已在最早一条则停在它),↓ = 下一条(过了最新一条则清空);读屏播报取出的内容。
+  const navigateHistory = (previous: boolean): boolean => {
+    if (consoleHistory.length === 0) return false;
+    const index = Math.min(historyIndexRef.current, consoleHistory.length);
+    const next = previous ? Math.max(index - 1, 0) : Math.min(index + 1, consoleHistory.length);
+    historyIndexRef.current = next;
+    const value = consoleHistory[next] ?? '';
+    setExpression(value);
+    if (value !== '') announce(value, { doc: getAnnouncingDocument() });
+    return true;
+  };
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-2"
+      onKeyDown={(e) => {
+        if (!isConsoleClearKey(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        clear();
+      }}
+    >
+      <div className="flex shrink-0 items-center justify-end">
+        <IconButton
+          size="sm"
+          aria-label={clearLabel}
+          title={withHotkey(clearLabel, clearHotkey)}
+          disabled={lines.length === 0 && !truncated}
+          onClick={clear}
+          data-debug-console-action="clear"
+        >
+          <ClearConsoleIcon />
+        </IconButton>
+      </div>
       <ScrollArea
         ref={logRef}
         role="log"
         aria-label={t('panels.debug.console.log_aria')}
-        className="min-h-0 flex-1 rounded border border-line bg-panel-soft p-2 font-mono text-xs"
+        tabIndex={0}
+        className="min-h-0 flex-1 rounded border border-line bg-panel-soft p-2 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
         onScroll={(e) => {
           const el = e.currentTarget;
           stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
@@ -285,15 +362,33 @@ function ConsoleSection({
         {lines.length === 0 ? (
           <div className="text-fg-dim">{t('panels.debug.console.empty')}</div>
         ) : (
-          lines.map((line) => (
-            <div
-              key={line.id}
-              data-category={line.category}
-              className={`min-w-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere] ${CONSOLE_LINE_CLASS[line.category] ?? 'text-fg'}`}
-            >
-              {line.category === 'input' ? `› ${line.text}` : line.text.replace(/\n$/, '')}
-            </div>
-          ))
+          lines.map((line) =>
+            sessionId !== null &&
+            line.variablesReference !== undefined &&
+            line.stopSeq !== undefined &&
+            line.stopSeq === stopSeq ? (
+              <div key={line.id} data-category={line.category} role="tree" aria-label={t('panels.debug.console.expand_aria')}>
+                <VariableTreeFocusProvider>
+                  <VariableNode
+                    sessionId={sessionId}
+                    variable={{ name: '', value: line.text, variables_reference: line.variablesReference }}
+                    level={1}
+                    nodeKey={`console-${line.id}`}
+                    first
+                    hideName
+                  />
+                </VariableTreeFocusProvider>
+              </div>
+            ) : (
+              <div
+                key={line.id}
+                data-category={line.category}
+                className={`min-w-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere] ${CONSOLE_LINE_CLASS[line.category] ?? 'text-fg'}`}
+              >
+                {line.category === 'input' ? `› ${line.text}` : line.text.replace(/\n$/, '')}
+              </div>
+            ),
+          )
         )}
       </ScrollArea>
       {sessionId !== null && (
@@ -305,17 +400,42 @@ function ConsoleSection({
           aria-label={t('panels.debug.console.input_aria')}
           onChange={(e) => setExpression(e.currentTarget.value)}
           onKeyDown={(e) => {
-            if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+            if (e.nativeEvent.isComposing) return;
+            if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+              if (navigateHistory(e.key === 'ArrowUp')) e.preventDefault();
+              return;
+            }
+            if (e.key !== 'Enter') return;
             const text = expression.trim();
             if (text === '') return;
             e.preventDefault();
             setExpression('');
+            rememberConsoleInput(text);
+            historyIndexRef.current = consoleHistory.length;
             stickRef.current = true;
             void evaluate(sessionId, text);
           }}
         />
       )}
     </div>
+  );
+}
+
+/** 「清除控制台」图标(仿 VSCode codicon clear-all:三条横线 + 斜杠)。 */
+function ClearConsoleIcon() {
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M4 7h11M4 12h8M4 17h5M14 20l6-8" />
+    </svg>
   );
 }
 
@@ -753,12 +873,15 @@ function VariableNode({
   level,
   nodeKey,
   first,
+  hideName = false,
 }: {
   readonly sessionId: string;
   readonly variable: DebugVariable;
   readonly level: number;
   readonly nodeKey: string;
   readonly first: boolean;
+  /** 只显示值(调试控制台的求值结果:没有变量名)。 */
+  readonly hideName?: boolean;
 }) {
   const t = useT();
   const { focus, props: focusProps } = useTreeItemFocus(nodeKey, first);
@@ -805,7 +928,7 @@ function VariableNode({
       aria-expanded={expandable ? expanded : undefined}
       // APG:展开中、子节点还没加载到 → aria-busy
       aria-busy={expanded && !childrenLoaded ? true : undefined}
-      aria-label={`${variable.name}: ${variable.value}`}
+      aria-label={hideName ? variable.value : `${variable.name}: ${variable.value}`}
       {...focusProps}
       className="rounded outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
       onKeyDown={onKeyDown}
@@ -815,16 +938,20 @@ function VariableNode({
       }}
     >
       <div
-        className="grid cursor-default grid-cols-[0.75rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-1.5 rounded text-xs hover:bg-hover"
+        className={`grid cursor-default items-center gap-x-1.5 rounded text-xs hover:bg-hover ${
+          hideName ? 'grid-cols-[0.75rem_minmax(0,1fr)]' : 'grid-cols-[0.75rem_minmax(0,1fr)_minmax(0,1fr)]'
+        }`}
         style={{ paddingLeft: indentOf(level) }}
       >
         <span className="text-2xs text-fg-dim" aria-hidden="true">
           {expandable ? (expanded ? '▾' : '▸') : ''}
         </span>
-        <span className="truncate text-fg" title={variable.name}>
-          {variable.name}
-        </span>
-        <span className="truncate text-fg-muted" title={variable.value}>
+        {!hideName && (
+          <span className="truncate text-fg" title={variable.name}>
+            {variable.name}
+          </span>
+        )}
+        <span className={`truncate ${hideName ? 'text-fg' : 'text-fg-muted'}`} title={variable.value}>
           {variable.value}
         </span>
       </div>
