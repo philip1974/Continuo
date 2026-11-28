@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CLOSE_ID,
   KEEP_WAITING_ID,
+  KILL_GONE_TIMEOUT_MS,
   REOPEN_ID,
   buildCrashDialog,
   popoutsOpenedBy,
@@ -205,6 +206,41 @@ describe('窗口无响应', () => {
     expect(win.webContents.reload).toHaveBeenCalledTimes(1);
     await flushMicrotasks(); // 杀进程引发的 render-process-gone
     expect(dialogs()).toHaveLength(1);
+  });
+
+  it('「重新打开」→ 等杀进程引发的 render-process-gone 到达后才 reload(同 tick reload 会被退出中的旧进程吞掉)', async () => {
+    const { win, deps, answer, dialogs } = setup();
+    win.webContents.forcefullyCrashRenderer.mockImplementation(() => {}); // gone 稍后才到
+    win.emit('unresponsive');
+    await answer(REOPEN_ID);
+    expect(win.webContents.forcefullyCrashRenderer).toHaveBeenCalledTimes(1);
+    expect(win.webContents.reload).not.toHaveBeenCalled();
+    expect(deps.destroyPopouts).not.toHaveBeenCalled();
+    crash(win, 'killed', 9);
+    expect(deps.destroyPopouts).toHaveBeenCalledTimes(1);
+    expect(win.webContents.reload).toHaveBeenCalledTimes(1);
+    expect(dialogs()).toHaveLength(1); // 不弹崩溃框
+    // 之后真正的崩溃照常弹框
+    crash(win);
+    expect(dialogs()).toHaveLength(2);
+  });
+
+  it('杀掉 renderer 后迟迟收不到 render-process-gone → 超时兜底照样恢复,且只恢复一次', async () => {
+    vi.useFakeTimers();
+    try {
+      const { win, deps, answer } = setup();
+      win.webContents.forcefullyCrashRenderer.mockImplementation(() => {});
+      win.emit('unresponsive');
+      await answer(CLOSE_ID);
+      vi.advanceTimersByTime(KILL_GONE_TIMEOUT_MS - 1);
+      expect(deps.close).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(deps.close).toHaveBeenCalledTimes(1);
+      crash(win, 'killed', 9); // 迟到的 gone:按普通崩溃处理(窗口已在关闭由 isClosing 拦;这里只验不重复恢复)
+      expect(deps.close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('「关闭」→ 杀掉 renderer 后关窗', async () => {

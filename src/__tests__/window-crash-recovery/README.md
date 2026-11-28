@@ -17,12 +17,15 @@
 
 - 弹「窗口没有响应」+「重新打开」「关闭」「保持等待」(Esc = 保持等待)
 - 恢复响应(`responsive`)→ 关掉仍开着的框(AbortSignal),不做任何处理
-- 「重新打开」/「关闭」→ `forcefullyCrashRenderer()`(随后的崩溃事件不再弹崩溃框)→ 销毁 popout → reload / 关窗
+- 「重新打开」/「关闭」→ `forcefullyCrashRenderer()`,记下选择;等杀进程引发的 `render-process-gone` 到达(不弹崩溃框)后
+  才销毁 popout → reload / 关窗(同 tick reload 会被退出中的旧进程吞掉,窗口停在崩溃空白态);
+  3 秒内没等到该事件 → 超时照样恢复,且只恢复一次;之后真正的崩溃照常弹崩溃框
 - 「保持等待」→ 什么都不做;同一段无响应期间不重复弹框;开着 DevTools 时不弹(断点停住也会报无响应)
 
 ## 端到端(`tests/e2e/window-crash-recovery.spec.ts`)
 
 - 改脏 a.ts → `forcefullyCrashRenderer()` → 崩溃框列出 a.ts;选「重新打开」→ 窗口重新加载并恢复工作区
 - 主窗 emit `unresponsive` → 弹无响应框;emit `responsive` → 框被关掉,窗口不受影响
+- 主窗 emit `unresponsive` → 选「重新打开」→ 窗口不再是崩溃态且工作区树恢复;选「关闭」→ 主窗关掉
 - 终端在窄宽度下产生带光标上移的输出、窗口变宽后崩溃 → 重新打开后回放结果与崩溃前一致(见 `terminal-replay-dimensions`)
 - 调试适配器被杀的端到端见 `tests/e2e/debug-user-controls.spec.ts`(`debug-adapter-crash`)

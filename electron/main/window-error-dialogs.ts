@@ -5,6 +5,9 @@
 // 刻意差异:
 //   - 重新打开 = 在同一窗口里 reload(VSCode 销毁窗口再按工作区开新窗;这里 reload 后 renderer 按本窗 windowSeq 段恢复布局);
 //   - 崩溃前有未保存的 tab → 框里列出这些文件并说明改动已丢失(只提示;VSCode 有热退出备份,这里没有);
+//   - 无响应框选重新打开 / 关闭:先 forcefullyCrashRenderer,等杀进程引发的 render-process-gone 到达后再走与崩溃框
+//     同一条恢复路径(同 tick 立即 reload 会被正在退出的旧进程吞掉,窗口停在崩溃空白态);超时没等到 gone 也照样恢复
+//     (VSCode 直接 destroy 窗口再开新窗,没有这段时序);
 //   - 恢复响应(responsive)时用 AbortSignal 关掉仍开着的「无响应」框(VSCode 留着框,用户点了才处理);
 //   - 无 VSCode 的「不恢复编辑器」复选框。
 // dockview popout 子窗与主窗同一渲染进程、内容由主窗 renderer 驱动:主窗崩溃后它们只剩空壳 → 重新打开 / 关闭时一并销毁
@@ -35,6 +38,8 @@ export interface WindowErrorDialogOptions {
 export const REOPEN_ID = 0;
 export const CLOSE_ID = 1;
 export const KEEP_WAITING_ID = 2;
+/** 无响应框选了重新打开 / 关闭、杀掉 renderer 后最多等 render-process-gone 这么久,超时照样恢复。 */
+export const KILL_GONE_TIMEOUT_MS = 3000;
 
 export function buildCrashDialog(
   info: RenderProcessGoneInfo,
@@ -110,8 +115,11 @@ export interface WindowErrorDeps {
 /** 给主窗挂崩溃 / 无响应处理。须在清理脏态的 render-process-gone 监听(wireWindowCloseFlush)之前调用。 */
 export function wireWindowErrorDialogs(win: WindowErrorTarget, deps: WindowErrorDeps): void {
   let crashDialogOpen = false;
-  /** 「无响应」框选了重新打开 / 关闭后主动杀掉 renderer:随之而来的 render-process-gone 不再弹崩溃框。 */
-  let expectingKill = false;
+  /**
+   * 「无响应」框选了重新打开 / 关闭后主动杀掉 renderer:记下选择,随之而来的 render-process-gone 不再弹崩溃框,
+   * 而是按这个选择恢复(或超时兜底)。
+   */
+  let pendingKill: { readonly response: number; readonly timer: ReturnType<typeof setTimeout> } | null = null;
   let unresponsive: AbortController | null = null;
 
   const recover = (response: number): void => {
@@ -128,8 +136,11 @@ export function wireWindowErrorDialogs(win: WindowErrorTarget, deps: WindowError
     const lost = deps.dirtySnapshot();
     unresponsive?.abort();
     unresponsive = null;
-    if (expectingKill) {
-      expectingKill = false;
+    if (pendingKill) {
+      const { response, timer } = pendingKill;
+      pendingKill = null;
+      clearTimeout(timer);
+      recover(response);
       return;
     }
     const info = details ?? { reason: 'unknown' };
@@ -149,7 +160,7 @@ export function wireWindowErrorDialogs(win: WindowErrorTarget, deps: WindowError
   });
 
   win.on('unresponsive', () => {
-    if (unresponsive || crashDialogOpen || deps.isClosing() || win.isDestroyed()) return;
+    if (unresponsive || pendingKill || crashDialogOpen || deps.isClosing() || win.isDestroyed()) return;
     if (win.webContents.isDestroyed() || win.webContents.isDevToolsOpened()) return;
     const controller = new AbortController();
     unresponsive = controller;
@@ -162,12 +173,19 @@ export function wireWindowErrorDialogs(win: WindowErrorTarget, deps: WindowError
       .then(({ response }) => {
         if (unresponsive === controller) unresponsive = null;
         if (controller.signal.aborted || response === KEEP_WAITING_ID || win.isDestroyed()) return;
-        // Electron 文档:恢复无响应的 renderer = forcefullyCrashRenderer 后立即 reload(新进程)。
-        if (!win.webContents.isDestroyed()) {
-          expectingKill = true;
-          win.webContents.forcefullyCrashRenderer();
+        if (pendingKill) return;
+        if (win.webContents.isDestroyed()) {
+          recover(response);
+          return;
         }
-        recover(response);
+        // 杀掉卡死的 renderer,等 render-process-gone 再恢复(见文件头);超时没等到也恢复。
+        const timer = setTimeout(() => {
+          if (pendingKill?.timer !== timer) return;
+          pendingKill = null;
+          recover(response);
+        }, KILL_GONE_TIMEOUT_MS);
+        pendingKill = { response, timer };
+        win.webContents.forcefullyCrashRenderer();
       });
   });
 

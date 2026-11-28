@@ -140,6 +140,56 @@ test('窗口无响应 → 弹「窗口没有响应」;恢复响应时框被关�
   await expect(window.locator('text=src').first()).toBeVisible();
 });
 
+/** 经 main 在(可能已重载的)主窗 renderer 里查工作区树是否显示 src(Playwright 的 Page 在崩溃后保持 crashed 状态)。 */
+const workspaceTreeRestored = (app: ElectronApplication) =>
+  app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+    if (!win) return false;
+    return win.webContents
+      .executeJavaScript(`[...document.querySelectorAll('[role=treeitem]')].some((e) => e.textContent.includes('src'))`)
+      .catch(() => false);
+  });
+
+test('窗口无响应 → 选「重新打开」→ 杀掉卡死的 renderer 后重新加载,不停在崩溃空白态、工作区树恢复', async ({
+  electronApp,
+  window,
+}) => {
+  test.setTimeout(60_000);
+  await expect(window.locator('text=src').first()).toBeVisible({ timeout: 15_000 });
+  await stubDialog(electronApp, 0); // 0 = 重新打开
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]!.emit('unresponsive');
+  });
+  await expect.poll(async () => (await calls(electronApp)).length, { timeout: 10_000 }).toBe(1);
+  // 杀进程引发的 render-process-gone 不弹崩溃框(页面已崩溃,不能用 page.waitForTimeout)
+  await new Promise((r) => setTimeout(r, 1_000));
+  expect(await calls(electronApp)).toHaveLength(1);
+  await expect.poll(() => mainWindowState(electronApp), { timeout: 15_000 }).toEqual({ count: 1, crashed: false });
+  await expect.poll(() => workspaceTreeRestored(electronApp), { timeout: 15_000 }).toBe(true);
+});
+
+test('窗口无响应 → 选「关闭」→ 主窗关掉,不弹崩溃框', async ({ electronApp, window }) => {
+  await expect(window.locator('text=src').first()).toBeVisible({ timeout: 15_000 });
+  await stubDialog(electronApp, 1); // 1 = 关闭
+  // 主窗关掉后应用照常留着(macOS)或退出;记下关窗事件而非轮询窗口数(非 macOS 下应用会退出)。
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0]!;
+    const g = globalThis as unknown as { __winClosed?: boolean };
+    g.__winClosed = false;
+    win.once('closed', () => {
+      g.__winClosed = true;
+    });
+    win.emit('unresponsive');
+  });
+  await expect
+    .poll(() => electronApp.evaluate(() => (globalThis as unknown as { __winClosed?: boolean }).__winClosed).catch(() => true), {
+      timeout: 15_000,
+    })
+    .toBe(true);
+  const shown = await electronApp.evaluate(() => (globalThis as unknown as { __winErrCalls?: DialogCall[] }).__winErrCalls ?? []).catch(() => null);
+  if (shown) expect(shown).toHaveLength(1);
+});
+
 // 崩溃恢复后终端历史按录制时的尺寸回放(BDD: src/__tests__/terminal-replay-dimensions/):窄窗口里产生的、带光标上移的输出,
 // 窗口变宽后由 xterm 重排;崩溃 → 重新打开后回放的结果须与崩溃前屏幕一致(按当前宽度直接回放时光标上移会落到别的行)。
 test('崩溃恢复后终端历史按录制尺寸回放,与崩溃前屏幕一致', async ({ electronApp, window }) => {
