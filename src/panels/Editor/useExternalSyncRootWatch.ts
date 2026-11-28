@@ -21,7 +21,8 @@
 // fs:dir-changed 送达 useExternalFileSync),不再可见 / 关闭即释放。不可见期间的变化没有事件:再次可见时按 stat
 // (mtime + size)与上次所见比对,变了就复查一次(经本地 watch-restored,与 watcher 恢复同一出口);窗口获焦时同样比对可见的
 // 这类文件(VSCode TextFileEditorTracker 获焦时重载可见编辑器,「文件事件不总可靠」)。图片 tab 不经 fs:read-file 读取,
-// main 不接受其 watch,只靠 stat 比对。BDD: src/__tests__/external-sync-outside-workspace/
+// main 不接受其 watch,只靠 stat 比对。main 只接受本窗口读过 / 写过(另存为)的文件;watch 失败(被拒、目录数已满等)的在
+// 获焦 / 重新可见时再申请一次。tab 换路径(另存为 / 改名)= 可见集合变化,自然释放旧路径、申请新路径。BDD: src/__tests__/external-sync-outside-workspace/
 
 import { useEffect, useMemo, useRef } from 'react';
 import { coApi } from '@/lib/co-api';
@@ -101,7 +102,8 @@ function useOutsideWorkspaceFileWatch(root: string | null): void {
   const visibleKey = useEditorStore((s) => visibleOutsideKey(s, root));
   const visible = useMemo(() => splitKey(visibleKey), [visibleKey]);
   const watched = useMemo(() => new Set([...visible].filter((p) => !isImagePreviewPath(p))), [visible]);
-  useFsWatcher(watched, noop, undefined, FILE_WATCH_API);
+  // 获焦 / 重新可见时对先前被拒 / 失败(未装上)的再申请一次;否则要等可见集合本身变化才重试。
+  const retryUninstalled = useFsWatcher(watched, noop, undefined, FILE_WATCH_API);
 
   // 每个打开的工作区外文件上次所见的 stat 指纹(打开时记基线;关闭即删)。
   const sigsRef = useRef(new Map<string, string>());
@@ -141,9 +143,18 @@ function useOutsideWorkspaceFileWatch(root: string | null): void {
 
   useEffect(() => {
     const onFocus = (): void => {
+      if (visibleRef.current.size === 0) return;
       for (const p of visibleRef.current) recheck(p);
+      retryUninstalled();
+    };
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'visible') retryUninstalled();
     };
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [recheck]);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [recheck, retryUninstalled]);
 }

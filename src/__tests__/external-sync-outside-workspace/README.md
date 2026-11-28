@@ -10,12 +10,15 @@
 
 - **可见** = 各编辑器组的活动 tab。可见的工作区外文件(无标题文件、图片除外)经 `fs:watch-file` 让 main 监视其父目录;
   切走 / 关闭 tab 即 `fs:unwatch-file` 释放。工作区内的文件不走这条路(工作区根 watcher 覆盖)。
-- main 只接受**本窗口经 `fs:read-file` 读过的文件**(main 自己记账),路径须是规范的绝对路径(含 `..` 等拒绝);对父目录装
+- main 只接受**本窗口经 `fs:read-file` 读过、或经 `fs:write-file` 写成功的文件**(main 自己记账;后者是另存为到工作区外的
+  新路径 —— 写成功同样证明本窗口拥有该路径。`fs:write-file` 只由编辑器写盘调用,插件写文件走 `plugin-fs:write-file`,借不到登记),路径须是规范的绝对路径(含 `..` 等拒绝);对父目录装
   **非递归** watcher(工作区 watcher 在 macOS / Windows 是递归的,对 `~/Downloads`、`/` 这类父目录不可控),同目录多个文件共用
   一个(引用计数),按窗口记账(关窗 / renderer reload 释放);同时最多 `MAX_FILE_WATCHERS`(32)个目录,超出拒绝(不驱逐已有的)。
   变化照常经 `fs:dir-changed` 广播(带文件名),由外部同步按原规则处理(自动重读 / 冲突处理不变)。
 - 不可见期间没有 watcher:打开时记下文件的 stat 指纹(mtime + size),再次可见时比对,变了就复查一次(干净 tab 重读、脏 tab 只查
   是否还在);窗口获焦时对可见的这类文件同样比对(图片 tab 只靠这条)。未变不读盘。
+- watch 被拒 / 失败(未登记、目录数已满等)的可见文件:窗口获焦或页面重新可见时再申请一次(已装上的不重复申请);tab 换路径
+  (另存为 / 改名)即释放旧路径、申请新路径。
 
 ## Modules
 
@@ -24,13 +27,13 @@
 | `src/panels/Editor/useExternalSyncRootWatch.ts` | 可见工作区外文件的 watch 集合、stat 基线、再次可见 / 获焦比对 |
 | `src/panels/Explorer/hooks/useFsWatcher.ts` | watcher 安装 / 竞态 / 失效重装(可换 IPC:`fs:watch` 或 `fs:watch-file`) |
 | `electron/main/ipc/fs.ipc.ts` | `fs:watch-file` / `fs:unwatch-file`:已读文件校验、父目录非递归 watcher 池、上限、按窗口释放 |
-| `electron/main/services/window-editor-documents.service.ts` | 每窗口经 `fs:read-file` 读过的文件登记 |
+| `electron/main/services/window-editor-documents.service.ts` | 每窗口经 `fs:read-file` 读过 / `fs:write-file` 写过的文件登记 |
 
 ## Specs
 
 | File | 覆盖 |
 |---|---|
-| `watch-file-main.spec.ts` | 只接受本窗口读过的规范路径;非递归父目录 watcher + 带文件名广播;同目录引用计数;reload / 关窗释放;数量上限 |
-| `outside-workspace-watch.spec.tsx` | 工作区外 / 无文件夹时外部修改自动重读;工作区内 / 无标题 / 图片不 watch;不可见不 watch、切回补读、未变不读;获焦比对 |
+| `watch-file-main.spec.ts` | 只接受本窗口读过 / 写成功(另存为)的规范路径,写失败 / 别的窗口写的不算;非递归父目录 watcher + 带文件名广播;同目录引用计数;reload / 关窗释放;数量上限 |
+| `outside-workspace-watch.spec.tsx` | 工作区外 / 无文件夹时外部修改自动重读;工作区内 / 无标题 / 图片不 watch;不可见不 watch、切回补读、未变不读;获焦比对;watch 失败后获焦 / 重新可见重试 |
 
 e2e:`tests/e2e/external-sync-outside-workspace.spec.ts`(真实 watcher:工作区外日志被追加约 1s 内显示;无文件夹同样;切回后内容已更新)。

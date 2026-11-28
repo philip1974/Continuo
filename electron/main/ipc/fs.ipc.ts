@@ -296,6 +296,20 @@ export const recordingReadFileHandler = async (
 };
 export const guardedWriteFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
   guardPluginOpenedPath(input.path, () => writeFileHandler(input));
+// fs:write-file 注册的入口:写成功同样证明发送窗口拥有该路径(编辑器保存 / 另存为),与读取一样登记 —— 另存为到工作区外的新路径
+// 从未经 fs:read-file 读过,不登记则 fs:watch-file 拒绝、外部修改不再同步。fs:write-file 只由编辑器写盘调用(editor-file-deps);
+// 插件写文件走 plugin-fs:write-file(见 plugin-fs.service),不经这里,借不到登记。发送方无窗口(null)不登记。
+export const recordingWriteFileHandler = async (
+  input: WriteFileInput,
+  senderWindowId: number | null,
+): Promise<FsFileStat | undefined> => {
+  const stat = await guardedWriteFileHandler(input);
+  if (senderWindowId !== null) {
+    recordEditorDocument(senderWindowId, input.path);
+    recordEditorFile(senderWindowId, input.path);
+  }
+  return stat;
+};
 // writeBinary 契约仍为 void(Dropzone 不需要回声识别),不把 stat 带过 IPC。
 // 安全:调用方是外部文件拖入 Explorer(新建 / 放入语义,同名静默覆盖)与撤销删除的原位重建(调用方先确认位置空闲)。不复用编辑器保存的
 // atomicWriteFile —— 它对 leaf 符号链接写穿到目标:恶意仓库放 `README.md -> ~/.ssh/authorized_keys`,
@@ -567,7 +581,7 @@ const attachWatchWcGoneHook = makeWcGoneHook((wcId) => {
 // 与工作区 watcher 走同一条 DIR_CHANGED 广播,renderer 外部同步按目录 + 文件名命中 tab)。按目录引用计数(同目录两个可见文件
 // 共用一个 watcher),按窗口记账(关窗 / reload 释放)。独立于工作区 watcher 池:那边在 macOS / Windows 是递归 watcher,
 // 对 ~/Downloads、/ 之类的父目录递归监视代价不可控。
-// 安全:只接受本窗口经 fs:read-file 读过的文件(main 记账,见 window-editor-documents.service),renderer 不能借此 watch 任意目录;
+// 安全:只接受本窗口经 fs:read-file 读过 / 经 fs:write-file 写过的文件(main 记账,见 window-editor-documents.service),renderer 不能借此 watch 任意目录;
 // 路径须是规范的绝对路径(不含 `..` / 多余分隔符)。数量上限 MAX_FILE_WATCHERS:超出拒绝(fail-closed,不 LRU 驱逐别人的 watcher)。
 // BDD: src/__tests__/external-sync-outside-workspace/
 export const MAX_FILE_WATCHERS = 32;
@@ -645,7 +659,9 @@ export function registerFsIpc(): void {
   safeHandleWithCtx(FS_CHANNELS.READ_IMAGE, readImageInputSchema, (input, { event }) =>
     guardedReadImageHandler(input, senderWindowOrThrow(event, ERROR_CODES.FS_DENIED).id),
   );
-  safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, guardedWriteFileHandler);
+  safeHandleWithCtx(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, (input, { event }) =>
+    recordingWriteFileHandler(input, BrowserWindow.fromWebContents(event.sender)?.id ?? null),
+  );
   safeHandle(FS_CHANNELS.WRITE_BINARY, writeBinaryInputSchema, writeBinaryHandler);
   safeHandle(FS_CHANNELS.READ_FOR_UNDO, statInputSchema, readForUndoHandler);
   // 工作区与「打开过的文档」取自 IPC 发送方窗口(main 记账,renderer 不自报)。

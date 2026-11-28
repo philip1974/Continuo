@@ -32,7 +32,10 @@ function installFs() {
     const f = disk.get(p);
     return f ? { ok: true, data: { mtimeMs: f.mtimeMs, size: f.data.length, ino: 1 } } : { ok: false, code: 'FS_NOT_FOUND' };
   });
+  /** main 拒绝 watch 的路径(如另存为的新路径尚未登记)。 */
+  const denied = new Set<string>();
   const watchFile = vi.fn(async (p: string) => {
+    if (denied.has(p)) return { ok: false, code: 'FS_DENIED' };
     watched.set(p, (watched.get(p) ?? 0) + 1);
     return { ok: true };
   });
@@ -70,7 +73,7 @@ function installFs() {
     const covered = [...watched.keys()].some((w) => dirOf(w) === dirOf(p));
     if (covered) for (const cb of subs) cb(dirOf(p), [p.slice(p.lastIndexOf('/') + 1)]);
   };
-  return { disk, watched, readFile, stat, watchFile, unwatchFile, write, seed: (p: string, d: string) => disk.set(p, { data: d, mtimeMs: ++clock }) };
+  return { disk, watched, denied, readFile, stat, watchFile, unwatchFile, write, seed: (p: string, d: string) => disk.set(p, { data: d, mtimeMs: ++clock }) };
 }
 
 const content = (id: string) => useEditorStore.getState().tabs.find((t) => t.id === id)?.content;
@@ -190,5 +193,37 @@ describe('工作区外文件的外部修改同步', () => {
     });
     await flushMicrotasks(8);
     expect(content('/out/a.log')).toBe('A-missed');
+  });
+
+  it.each([
+    ['窗口获焦', () => window.dispatchEvent(new Event('focus'))],
+    ['页面重新可见', () => document.dispatchEvent(new Event('visibilitychange'))],
+  ] as const)('watch 被拒 / 失败后,%s时再申请一次;装上后外部修改照常同步;已装上的不重复申请', async (_name, trigger) => {
+    const fs = installFs();
+    fs.seed('/out/a.log', 'A0');
+    fs.denied.add('/out/a.log');
+    useEditorStore.setState({ tabs: [cleanTab('/out/a.log', 'A0')], activeTabId: '/out/a.log' });
+    mount();
+    await flushMicrotasks(6);
+    expect(fs.watched.has('/out/a.log')).toBe(false);
+    const calls = () => fs.watchFile.mock.calls.filter(([x]) => x === '/out/a.log').length;
+
+    fs.denied.delete('/out/a.log');
+    act(() => {
+      trigger();
+    });
+    await flushMicrotasks(8);
+    expect(fs.watched.get('/out/a.log')).toBe(1);
+    const afterRetry = calls();
+    act(() => {
+      trigger();
+    });
+    await flushMicrotasks(8);
+    expect(calls()).toBe(afterRetry);
+    expect(fs.watched.get('/out/a.log')).toBe(1);
+
+    fs.write('/out/a.log', 'A1');
+    await flushMicrotasks(8);
+    expect(content('/out/a.log')).toBe('A1');
   });
 });

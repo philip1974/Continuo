@@ -1,4 +1,4 @@
-// main 侧 fs:watch-file(工作区外可见文件的父目录 watcher):只接受本窗口经 fs:read-file 读过的文件;对父目录装**非递归**
+// main 侧 fs:watch-file(工作区外可见文件的父目录 watcher):只接受本窗口经 fs:read-file 读过 / 经 fs:write-file 写过(另存为)的文件;对父目录装**非递归**
 // watcher,同目录按引用计数共享;变化经 fs:dir-changed 广播(带文件名);unwatch / 关窗 / reload 释放;数量有上限(超出拒绝)。
 // 对齐 VSCode editorService.handleVisibleEditorsChange(可见的工作区外资源单独 fileService.watch)。
 
@@ -57,7 +57,15 @@ vi.mock('../../../electron/main/ipc/fs/read-file', () => ({
 }));
 vi.mock('../../../electron/main/ipc/fs/atomic-write', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../electron/main/ipc/fs/atomic-write')>();
-  return { ...actual, resolveSymlinkTarget: async (p: string) => p };
+  return {
+    ...actual,
+    resolveSymlinkTarget: async (p: string) => p,
+    // 编辑器写盘(fs:write-file):路径含 /fail/ 的写失败,其余成功
+    atomicWriteFile: vi.fn(async (p: string) => {
+      if (p.includes('/fail/')) throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+      return { mtimeMs: 1, size: 1, ino: 1 };
+    }),
+  };
 });
 
 import { MAX_FILE_WATCHERS, registerFsIpc, releaseFsWatchersForWindow } from '../../../electron/main/ipc/fs.ipc';
@@ -124,6 +132,22 @@ describe('fs:watch-file · 工作区外已打开文件的父目录 watcher', () 
     await open(a.event, '/tmp/x/../y.log');
     expect(await invoke(FS_CHANNELS.WATCH_FILE, a.event, { path: '/tmp/x/../y.log' })).toMatchObject({ ok: false, code: 'FS_DENIED' });
     expect(m.watchers).toHaveLength(0);
+  });
+
+  it('另存为:本窗口经 fs:write-file 写成功的新路径(从未读过)同样接受;写失败 / 别的窗口写的不接受', async () => {
+    const a = makeSender(1);
+    const b = makeSender(2);
+    expect((await invoke(FS_CHANNELS.WRITE_FILE, a.event, { path: '/saved/new.log', content: 'x' })).ok).toBe(true);
+    expect((await invoke(FS_CHANNELS.WATCH_FILE, a.event, { path: '/saved/new.log' })).ok).toBe(true);
+    expect(watchersOf('/saved')).toHaveLength(1);
+
+    expect((await invoke(FS_CHANNELS.WRITE_FILE, a.event, { path: '/fail/new.log', content: 'x' })).ok).toBe(false);
+    expect(await invoke(FS_CHANNELS.WATCH_FILE, a.event, { path: '/fail/new.log' })).toMatchObject({ ok: false, code: 'FS_DENIED' });
+
+    expect((await invoke(FS_CHANNELS.WRITE_FILE, b.event, { path: '/other/b.log', content: 'x' })).ok).toBe(true);
+    expect(await invoke(FS_CHANNELS.WATCH_FILE, a.event, { path: '/other/b.log' })).toMatchObject({ ok: false, code: 'FS_DENIED' });
+    expect(watchersOf('/fail')).toHaveLength(0);
+    expect(watchersOf('/other')).toHaveLength(0);
   });
 
   it('同目录两个文件共用一个 watcher,两个都 unwatch 才关闭', async () => {

@@ -4,7 +4,7 @@
 // 窗口关闭清空(window.ipc 的 closed 钩子);每窗口有上限,超出按登记先后淘汰最早的(防无界增长)。
 // BDD: src/__tests__/editor-image-preview/
 //
-// 另记「经 fs:read-file 打开过的全部文件」(不限 Markdown):fs:watch-file 只对这些文件的父目录装 watcher(工作区外可见文件的
+// 另记「经 fs:read-file 打开过 / 经 fs:write-file 写过(另存为)的全部文件」(不限 Markdown):fs:watch-file 只对这些文件的父目录装 watcher(工作区外可见文件的
 // 外部修改同步)—— renderer 随便报一个路径不能让 main 去 watch 任意目录。BDD: src/__tests__/external-sync-outside-workspace/
 
 /** 每窗口最多登记的文档数(远超同时打开的 Markdown tab 数)。 */
@@ -43,7 +43,7 @@ export function recordEditorDocument(windowId: number, path: string): void {
   remember(docsByWindow, windowId, path, EDITOR_DOCUMENTS_PER_WINDOW_MAX);
 }
 
-/** 登记 windowId 经编辑器读取通道读过的文件(任何类型)。重复登记刷新为最新。 */
+/** 登记 windowId 经编辑器读取 / 写盘通道读过 / 写过的文件(任何类型)。重复登记刷新为最新。 */
 export function recordEditorFile(windowId: number, path: string): void {
   remember(filesByWindow, windowId, path, EDITOR_FILES_PER_WINDOW_MAX);
 }

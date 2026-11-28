@@ -46,13 +46,16 @@ function bumpGen(watchGen: Map<string, number>, p: string): number {
  * onChange 走 invalidation→listDir 白做 IPC + 读盘(性能审计 #2)。不影响其它 onDirChanged 订阅者。
  *
  * api(可选):装 / 拆 watcher 的 IPC,缺省 fs:watch / fs:unwatch。fs:watch-lost 只认已装的 path,与之无关的不受影响。
+ *
+ * 返回 retryUninstalled(引用稳定):对仍期望、但没装上(安装失败 / 被拒)且不在 watch-lost 退避中的 path 再申请一次 ——
+ * 失败后 expandedPaths 不变时 diff 不会重试,调用方在合适时机(如窗口获焦)调用。
  */
 export function useFsWatcher(
   expandedPaths: ReadonlySet<string>,
   onChange: (path: string) => void,
   root?: string,
   api: FsWatchApi = DIR_WATCH_API,
-): void {
+): () => void {
   const prevPathsRef = useRef<Set<string>>(new Set());
   // race(R37):每个 path 的 watch 尝试代际。watchDir 失败撤销记账(R14)若无代际校验:旧 expand /a
   // 在途时 collapse 再 re-expand /a,第二次 watch 成功后,第一次迟到的 ok:false/reject 会无条件
@@ -210,6 +213,14 @@ export function useFsWatcher(
     };
   }, [installWatch]);
 
+  const retryUninstalled = useCallback((): void => {
+    if (cancelledRef.current) return;
+    for (const p of expandedRef.current) {
+      if (prevPathsRef.current.has(p) || lostTimersRef.current.has(p)) continue;
+      installWatch(p);
+    }
+  }, [installWatch]);
+
   // 卸载时全 unwatch(防 watcher 泄漏)
   useEffect(() => {
     cancelledRef.current = false; // race(R109):(重)挂载复位,StrictMode 双挂 / HMR 不误判已卸载
@@ -222,4 +233,6 @@ export function useFsWatcher(
       prevPathsRef.current = new Set();
     };
   }, []);
+
+  return retryUninstalled;
 }
