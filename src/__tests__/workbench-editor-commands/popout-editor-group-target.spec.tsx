@@ -195,7 +195,7 @@ describe('编辑器组类命令作用于触发窗口的编辑器组(活动编辑
     editorGroupsInBothWindows();
     const mainClose = vi.fn();
     const childClose = vi.fn();
-    const noop = { save: vi.fn(async () => {}), saveAs: vi.fn(async () => {}), closeActiveTab: () => false, saveTabForSaveAll: async () => false, confirmRevertLosingUndo: async () => true };
+    const noop = { save: vi.fn(async () => {}), saveAs: vi.fn(async () => {}), closeActiveTab: () => false, saveTabForSaveAll: async () => false, confirmRevertLosingUndo: async () => true, confirmCloseDocs: async () => true };
     disposers.push({ dispose: registerEditorPanelActions({ ...noop, closeTabs: mainClose }, 'editor') });
     disposers.push({ dispose: registerEditorPanelActions({ ...noop, closeTabs: childClose }, 'editor:2') });
     inMain(() => closeActiveGroupEditors('all'));
@@ -209,7 +209,7 @@ describe('编辑器组类命令作用于触发窗口的编辑器组(活动编辑
     editorGroupsInBothWindows();
     const mainSave = vi.fn(async () => {});
     const childSave = vi.fn(async () => {});
-    const rest = { saveAs: vi.fn(async () => {}), closeActiveTab: () => false, closeTabs: vi.fn(), saveTabForSaveAll: async () => false, confirmRevertLosingUndo: async () => true };
+    const rest = { saveAs: vi.fn(async () => {}), closeActiveTab: () => false, closeTabs: vi.fn(), saveTabForSaveAll: async () => false, confirmRevertLosingUndo: async () => true, confirmCloseDocs: async () => true };
     disposers.push({ dispose: registerEditorPanelActions({ ...rest, save: mainSave }, 'editor') });
     disposers.push({ dispose: registerEditorPanelActions({ ...rest, save: childSave }, 'editor:2') });
     await inMain(() => saveActiveEditor());

@@ -18,6 +18,7 @@ import {
   isTabMilkdownTooLarge,
   isTabMilkdownUnsafe,
   isTabOpenInOtherGroup,
+  isTabSticky,
   useEditorStore,
   usesMilkdownEngine,
   type EditorMode,
@@ -32,6 +33,8 @@ import { isInsideMenu } from '@/lib/menu-focus';
 import { SegmentedControl, type SegmentedControlOption } from '@/design';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { focusActiveEditor, requestEditorFocus } from './editor-focus-registry';
+import { getDockApi } from '@/shell/dock/dock-api-ref';
+import { activateDockPanel } from '@/shell/dock/wrap-panel-close';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
 import { ImageViewer } from './ImageViewer';
@@ -66,7 +69,7 @@ import type { NotifyAction } from '@/notifications/notify';
 import { basenameForChrome } from '@/lib/path-label';
 import { isModalOpenFor, winningCommandFor, withDefaultCommands } from '@/plugins/command-palette/useCommandHotkeys';
 import { coApp } from '@/plugins/co-app';
-import { editorCommandSpecs, openAdjacentEditor, registerEditorPanelActions, registerMarkdownModeAction, saveHotkeyLabel, SAVE_AS_COMMAND, SAVE_COMMAND, NEXT_EDITOR_COMMAND_ID, PREVIOUS_EDITOR_COMMAND_ID } from './editor-commands';
+import { editorCommandSpecs, openAdjacentEditor, registerEditorPanelActions, revealNextNonStickyEditor, registerMarkdownModeAction, saveHotkeyLabel, SAVE_AS_COMMAND, SAVE_COMMAND, NEXT_EDITOR_COMMAND_ID, PREVIOUS_EDITOR_COMMAND_ID } from './editor-commands';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
 /** 面板就地处理的命令(保存 / 另存为 / 下一个 / 上一个编辑器)。 */
@@ -226,8 +229,11 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       for (const id of ids) closeStoreTab(id, groupId);
       if (!refocus) return;
       const s = useEditorStore.getState();
-      // 组随最后一个 tab 关闭(closeEmptyGroups)→ 焦点交给新的活动组的编辑器。
+      // 组随最后一个 tab 关闭(closeEmptyGroups)→ 焦点交给新的活动组(最近使用的组)的编辑器。先激活它的 dock 面板:
+      // 否则随后 dock 移除本组时才把它设为活动面板,dockview 重挂其内容,刚给的焦点掉到 body。
       if (!editorGroupIdsOf(s).includes(groupId)) {
+        const next = getDockApi()?.getPanel(s.activeGroupId);
+        if (next) activateDockPanel(next);
         focusActiveEditor();
         return;
       }
@@ -317,11 +323,27 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     readonly autoIds: readonly string[];
   } | null>(null);
 
+  // 关闭编辑器组 / 全部关闭(跨组)前对要关闭的脏文档的确认(confirmCloseDocs):一个文件「保存 / 不保存 / 取消」,多个文件合并框
+  //「全部保存 / 不保存 / 取消」—— 与关闭脏 tab 同一套确认框文案。resolve 给出选择;框开着时再来一次 / 面板卸载 → 前一次按取消结算。
+  type DocsCloseChoice = 'save' | 'discard' | 'cancel';
+  const [docsCloseCandidate, setDocsCloseCandidate] = useState<{
+    readonly paths: readonly string[];
+    readonly resolve: (choice: DocsCloseChoice) => void;
+  } | null>(null);
+  const docsCloseCandidateRef = useRef(docsCloseCandidate);
+  docsCloseCandidateRef.current = docsCloseCandidate;
+  const settleDocsClose = (choice: DocsCloseChoice) => {
+    const c = docsCloseCandidateRef.current;
+    setDocsCloseCandidate(null);
+    c?.resolve(choice);
+  };
+  useEffect(() => () => docsCloseCandidateRef.current?.resolve('cancel'), []);
+
   // 自动保存:按活动 tab 的生效模式(默认 Markdown 停手 2 秒、代码不自动保存)。按 tabId 保存,切走/卸载时
   // flush pending,避免连续输入后立即切 tab 丢失整段编辑。
   // 关闭脏 tab 的「放弃修改?」确认框开着时暂停:否则停留超过 delay 会把待放弃的内容写盘。
   // !enabled 取消已排队的保存;取消确认后 enabled 恢复,仍脏照常重新排队。
-  const autoSavePaused = closeCandidate !== null || multiCloseCandidate !== null;
+  const autoSavePaused = closeCandidate !== null || multiCloseCandidate !== null || docsCloseCandidate !== null;
   useAutoSave(saveTab, {
     enabled: autoSave.mode !== 'off' && !autoSavePaused,
     delayMs: autoSave.mode === 'afterDelay' ? autoSave.delayMs : null,
@@ -688,6 +710,48 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     [advanceBatchClose, autoSavesOnClose, groupId],
   );
   const onTabCloseRequest = useCallback((tab: TabChrome) => onTabsCloseRequest([tab.id]), [onTabsCloseRequest]);
+
+  // 关闭编辑器组(dock tab ×、「关闭编辑器组」)/ 全部关闭(跨组)前确认将被关闭的文档 ids(调用方只传随之真正关闭的文档:仍在别处
+  // 打开的不传)。先回写未上抛的输入;关闭时自动保存的照常直接保存、不进框(同关闭 tab)。选「保存」→ 逐个保存,任一失败(按 code
+  // 提示 / 覆盖确认 / 另存为)→ false,不关闭;「不保存」→ true(关闭后可 ⌘Z 找回,见 recordClosedEditors);取消 → false。
+  // 全部处理完仍有脏的(保存期间又输入)→ false。BDD: src/__tests__/editor-groups/(close-dirty-group)
+  const confirmCloseDocs = useStableCallback(async (ids: readonly string[]): Promise<boolean> => {
+    flushEditorWriteBacks(ids);
+    const dirtyOf = () => {
+      const tabs = useEditorStore.getState().tabs;
+      return ids.flatMap((id) => {
+        const tab = findEditorFileTabById(tabs, id);
+        return tab?.dirty && !isImagePreviewPath(tab.filePath) ? [tab] : [];
+      });
+    };
+    const dirty = dirtyOf();
+    if (dirty.length === 0) return true;
+    const ask = dirty.filter((tab) => !autoSavesOnClose(tab.id));
+    let toSave = dirty.filter((tab) => !ask.includes(tab));
+    if (ask.length > 0) {
+      docsCloseCandidateRef.current?.resolve('cancel');
+      const choice = await new Promise<DocsCloseChoice>((resolve) =>
+        setDocsCloseCandidate({ paths: ask.map((tab) => tab.filePath), resolve }),
+      );
+      if (choice === 'cancel') return false;
+      if (choice === 'save') toSave = dirty;
+    }
+    for (const tab of toSave) {
+      if (!findEditorFileTabById(useEditorStore.getState().tabs, tab.id)) continue;
+      try {
+        const auto = !ask.includes(tab);
+        const r = await saveTab(tab.id, auto ? { recreateMissing: false } : undefined);
+        if (r.ok) continue;
+        if (r.code === EDITOR_DISK_CHANGED) setOverwriteCandidate({ id: tab.id, filePath: tab.filePath });
+        else onSaveFailed(tab, r);
+      } catch (err) {
+        notifyThrownError(err);
+      }
+      return false;
+    }
+    flushEditorWriteBacks(toSave.map((tab) => tab.id));
+    return toSave.every((tab) => !findEditorFileTabById(useEditorStore.getState().tabs, tab.id)?.dirty);
+  });
   const confirmDiscard = useCallback(() => {
     setCloseCandidate(null);
     if (closeCandidate) advanceBatchClose(closeCandidate.batch);
@@ -721,16 +785,23 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
             const s = useEditorStore.getState();
             const tab = findEditorFileTabById(s.tabs, groupActiveTabIdOf(s, groupId));
             if (!tab) return false;
+            // 固定的 tab:⌘W / 菜单「关闭编辑器」不关它,改打开最近使用的非固定编辑器(VSCode preventPinnedEditorClose 默认
+            // keyboardAndMouse);tab 右键「关闭」照常关(走 closeTabs)。BDD: src/__tests__/editor-tab-management/
+            if (isTabSticky(s, groupId, tab.id)) {
+              revealNextNonStickyEditor(groupId);
+              return true;
+            }
             onTabCloseRequest(tab);
             return true;
           },
           closeTabs: onTabsCloseRequest,
+          confirmCloseDocs,
           saveTabForSaveAll,
           confirmRevertLosingUndo,
         },
         groupId,
       ),
-    [handleSave, activePanelSaveAs, onTabCloseRequest, onTabsCloseRequest, saveTabForSaveAll, confirmRevertLosingUndo, groupId],
+    [handleSave, activePanelSaveAs, onTabCloseRequest, onTabsCloseRequest, saveTabForSaveAll, confirmRevertLosingUndo, confirmCloseDocs, groupId],
   );
 
   // 切模式;较大的 Markdown 切到编辑 / 预览:该 tab 记为已接受。渲染是同步长任务 → 先让「正在渲染」提示画出来(下一帧之后)
@@ -959,6 +1030,33 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         alternativeLabel={translate('dialog.unsaved_close.dont_save')}
         onAlternative={confirmMultiDiscard}
         onCancel={() => setMultiCloseCandidate(null)}
+      />
+      {/* 关闭编辑器组 / 全部关闭前的脏文档确认(confirmCloseDocs):单个文件同关闭脏 tab 的框,多个同合并框 */}
+      <ConfirmDialog
+        open={docsCloseCandidate !== null}
+        title={
+          docsCloseCandidate === null
+            ? ''
+            : docsCloseCandidate.paths.length === 1
+              ? translate('panels.editor.save_changes_title', { name: editorTabTitle(docsCloseCandidate.paths[0]!) })
+              : translate('dialog.unsaved_close.message', { count: docsCloseCandidate.paths.length })
+        }
+        description={
+          docsCloseCandidate !== null && docsCloseCandidate.paths.length > 1 ? (
+            <UnsavedFileList paths={docsCloseCandidate.paths} />
+          ) : (
+            translate('dialog.unsaved_close.detail')
+          )
+        }
+        confirmLabel={
+          docsCloseCandidate !== null && docsCloseCandidate.paths.length > 1
+            ? translate('dialog.unsaved_close.save_all')
+            : translate('common.save')
+        }
+        onConfirm={() => settleDocsClose('save')}
+        alternativeLabel={translate('dialog.unsaved_close.dont_save')}
+        onAlternative={() => settleDocsClose('discard')}
+        onCancel={() => settleDocsClose('cancel')}
       />
       <ConfirmDialog
         open={overwriteCandidate !== null}

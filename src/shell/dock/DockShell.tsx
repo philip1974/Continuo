@@ -35,7 +35,7 @@ import { debounce } from '@/lib/debounce';
 import { flushExplorerPersistence } from '@/lib/persist/explorer-persist';
 import { flushPendingAutoSave } from '@/panels/Editor/autosave-flush-registry';
 import { flushEditorWriteBacks } from '@/panels/Editor/editor-writeback-registry';
-import { saveHotkeyLabel } from '@/panels/Editor/editor-commands';
+import { editorGroupCloseGuard, saveHotkeyLabel } from '@/panels/Editor/editor-commands';
 import {
   getAutoSaveFailureVersion,
   subscribeAutoSaveFailures,
@@ -123,9 +123,15 @@ let lastSuccessfulLayoutPayload: string | null = null;
 // 每个 dock api 的布局版本(每次变更 +1)与「已落盘」的版本;二者相等 = 干净,可跳过快照重建。
 // 用版本号而非布尔标记:写盘 await 期间若又发生变更,版本已前进,写成功后只把**写盘前**的版本记为
 // 已落盘 —— 期间的变更仍是脏的,后续 debounce / 关窗 flush 会再写(布尔标记会把它一并标干净而丢失)。
-// 关闭守卫:终端有子进程时先确认(VSCode confirmOnKill),× / 中键 / Delete / ⌘W 等所有 api.close 入口共用。
+// 关闭守卫:终端有子进程时先确认(VSCode confirmOnKill);编辑器组里有只在本组打开的脏文档时先确认保存(editorGroupCloseGuard)。
+// × / 中键 / Delete / ⌘W 等所有 api.close 入口共用。
+function panelCloseGuard(panel: IDockviewPanel): boolean | Promise<boolean> {
+  if (panel.view.contentComponent === 'editor' && isEditorGroupId(panel.api.id)) return editorGroupCloseGuard(panel.api.id);
+  return terminalCloseGuard(panel);
+}
+
 function wrapPanelCloseGuarded(panel: IDockviewPanel): void {
-  wrapPanelClose(panel, terminalCloseGuard, cancelTerminalCloseGuard);
+  wrapPanelClose(panel, panelCloseGuard, cancelTerminalCloseGuard);
 }
 
 const layoutVersions = new WeakMap<DockviewApi, number>();

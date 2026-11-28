@@ -103,13 +103,13 @@ describe('单组', () => {
     expect(previewOf()).toBeUndefined();
   });
 
-  it('pinTab(双击 tab / 保留编辑器)→ 转常驻;对常驻 tab 是 no-op', () => {
+  it('keepTab(双击 tab / 保留编辑器)→ 转常驻;对常驻 tab 是 no-op', () => {
     open(A, { preview: true });
     open(B);
     const before = st().chromeVersion;
-    st().pinTab(B, 'editor');
+    st().keepTab(B, 'editor');
     expect(st().chromeVersion).toBe(before);
-    st().pinTab(A, 'editor');
+    st().keepTab(A, 'editor');
     expect(previewOf()).toBeUndefined();
     expect(st().chromeVersion).toBe(before + 1);
   });

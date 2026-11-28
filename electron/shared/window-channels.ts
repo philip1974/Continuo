@@ -186,6 +186,8 @@ export const MENU_COMMAND_IDS = [
   'workbench.action.focusFirstEditorGroup',
   'workbench.action.focusSecondEditorGroup',
   'workbench.action.focusThirdEditorGroup',
+  'workbench.action.focusFourthEditorGroup',
+  'workbench.action.focusFifthEditorGroup',
   'workbench.action.nextEditor',
   'workbench.action.previousEditor',
   // 终端

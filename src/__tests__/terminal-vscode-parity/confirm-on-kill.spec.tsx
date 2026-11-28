@@ -138,7 +138,9 @@ describe('wrapPanelClose 的关闭守卫(所有 api.close 入口共用)', () => 
   });
   it('DockShell 给每个面板挂终端关闭守卫,并渲染确认框宿主', () => {
     const src = readFileSync('src/shell/dock/DockShell.tsx', 'utf-8');
-    expect(src).toContain('wrapPanelClose(panel, terminalCloseGuard, cancelTerminalCloseGuard)');
+    // 守卫按面板类型分派:终端 → terminalCloseGuard;编辑器组 → editorGroupCloseGuard(src/__tests__/editor-groups/ close-dirty)
+    expect(src).toContain('wrapPanelClose(panel, panelCloseGuard, cancelTerminalCloseGuard)');
+    expect(src).toContain('return terminalCloseGuard(panel);');
     expect(src).toContain('onDidAddPanel(wrapPanelCloseGuarded)');
     expect(src).toContain('panels.forEach(wrapPanelCloseGuarded)');
     expect(src).toContain('<TerminalKillConfirmHost />');

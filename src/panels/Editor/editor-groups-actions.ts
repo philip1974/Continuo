@@ -1,18 +1,32 @@
-// 编辑器组的工作台动作(对齐 VSCode):拆分编辑器(workbench.action.splitEditor / splitEditorDown、tab 右键「向右拆分」)
-// 与聚焦第 N 个编辑器组(workbench.action.focusFirst/Second/ThirdEditorGroup)。组 = 一个 editor dock 面板,
-// 组的内容在 editor.store(BDD: src/__tests__/editor-groups/)。
+// 编辑器组的工作台动作(对齐 VSCode):拆分编辑器(workbench.action.splitEditor / splitEditorDown、tab 右键「向右拆分」)、
+// 聚焦第 N 个编辑器组(workbench.action.focusFirst…EighthEditorGroup)、移动编辑器(moveEditorToNext/Previous/First/LastGroup、
+// moveEditorLeft/RightInGroup)与合并组(joinTwoGroups / joinAllGroups)。组 = 一个 editor dock 面板,
+// 组的内容在 editor.store(BDD: src/__tests__/editor-groups/、src/__tests__/editor-tab-management/)。
 // 本模块不静态引入编辑引擎(EditorHeader / EditorPlugin 的命令都引用它)。
 
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { activateDockPanel } from '@/shell/dock/wrap-panel-close';
 import { focusPanelContent } from '@/shell/dock/panel-focus';
-import { mainEditorGroupOrder } from '@/shell/dock/editor-group-order';
+import { editorGroupsInWindowOf, mainEditorGroupOrder } from '@/shell/dock/editor-group-order';
 import { editorGroupInDocument } from '@/shell/dock/group-mru';
 import { getCommandDocument } from '@/shell/dock/popout-documents';
-import { editorGroupIdsOf, groupActiveTabIdOf, liveEditorViewOf, useEditorStore } from '@/stores/editor.store';
+import {
+  editorGroupIdsOf,
+  groupActiveTabIdOf,
+  groupTabsOf,
+  liveEditorViewOf,
+  useEditorStore,
+} from '@/stores/editor.store';
 import { tWithFallback } from '@/i18n/translate';
 import { nextEditorGroupId } from '../../../electron/shared/editor-group-id';
-import { saveCodeEditorViewState, snapshotCodeEditorView } from './editor-view-state-cache';
+import {
+  markdownScrollTopOf,
+  saveCodeEditorViewState,
+  saveMarkdownScrollTop,
+  snapshotCodeEditorView,
+  takeCodeEditorViewState,
+} from './editor-view-state-cache';
+import { flushEditorWriteBacks } from './editor-writeback-registry';
 import { requestEditorFocus } from './editor-focus-registry';
 
 /**
@@ -107,4 +121,90 @@ export function focusEditorGroup(index: number): void {
   const tabId = groupActiveTabIdOf(useEditorStore.getState(), id);
   if (tabId !== null) requestEditorFocus(tabId, id);
   else queueMicrotask(() => focusPanelContent(panel.api));
+}
+
+/** groupId 所在窗口的编辑器组(按空间顺序,同 dock 标题「编辑器 N」);dock 未就绪 → store 的组顺序。只含 store 里存在的组。 */
+export function editorGroupsInWindow(groupId: string): string[] {
+  const api = getDockApi();
+  const live = editorGroupIdsOf(useEditorStore.getState());
+  const order = api ? editorGroupsInWindowOf(api, groupId) : live;
+  const out = order.filter((id) => live.includes(id));
+  return out.includes(groupId) ? out : [groupId, ...out];
+}
+
+/** 在组 groupId 里激活 tabId 并聚焦其编辑器(该组成为活动组、其 dock 面板激活)。 */
+export function openEditorInGroup(groupId: string, tabId: string): void {
+  useEditorStore.getState().switchTab(tabId, { groupId });
+  const panel = getDockApi()?.getPanel(groupId);
+  if (panel) activateDockPanel(panel);
+  requestEditorFocus(tabId, groupId);
+}
+
+/**
+ * 把组 from 里的 tabId 移到组 to(跨组;store.moveTab):先回写编辑器里尚未上抛的输入(脏内容跟随),目标组还没有它时把源组的视图状态
+ *(光标 / 选区 / 滚动 / 折叠 / 撤销历史;隐藏 tab 取缓存里的)交给目标组(VSCode 移动编辑器带视图状态,同拆分)。返回是否移动了。
+ */
+function moveTabAcrossGroups(tabId: string, from: string, to: string): boolean {
+  flushEditorWriteBacks([tabId]);
+  const store = useEditorStore.getState();
+  if (!groupTabsOf(store, to).some((t) => t.id === tabId)) {
+    const live = liveEditorViewOf(tabId, from);
+    const entry = live ? snapshotCodeEditorView(live) : takeCodeEditorViewState(tabId, from);
+    if (entry) saveCodeEditorViewState(tabId, entry, to);
+    const scrollTop = markdownScrollTopOf(tabId, from);
+    if (scrollTop !== undefined) saveMarkdownScrollTop(tabId, scrollTop, to);
+  }
+  return store.moveTab(tabId, from, to);
+}
+
+export type MoveEditorTarget = 'next' | 'previous' | 'first' | 'last' | 'left' | 'right';
+
+/**
+ * 移动编辑器(VSCode moveActiveEditor):'left' / 'right' = 组内左移 / 右移一位(到头不动);'next' / 'previous' / 'first' / 'last' = 移到
+ * 所在窗口按空间顺序的下一个 / 上一个 / 第一个 / 最后一个组。没有下一个(上一个)组 → 向右(左)拆出新组再移过去;第一个 / 最后一个
+ * 就是本组 → 不动(VSCode 同)。跨组后目标组成为活动组、编辑器获焦。缺省 = 触发窗口的编辑器组的活动 tab。返回是否移动了。
+ */
+export function moveEditor(to: MoveEditorTarget, opts: { readonly groupId?: string; readonly tabId?: string } = {}): boolean {
+  const from = opts.groupId ?? commandEditorGroupId();
+  if (from === undefined) return false;
+  const store = useEditorStore.getState();
+  const tabId = opts.tabId ?? groupActiveTabIdOf(store, from);
+  if (tabId === null) return false;
+  const tabs = groupTabsOf(store, from);
+  const index = tabs.findIndex((t) => t.id === tabId);
+  if (index < 0) return false;
+  if (to === 'left' || to === 'right') return store.moveTab(tabId, from, from, index + (to === 'left' ? -1 : 1));
+  const order = editorGroupsInWindow(from);
+  const at = order.indexOf(from);
+  let target = to === 'next' ? order[at + 1] : to === 'previous' ? order[at - 1] : to === 'first' ? order[0] : order.at(-1);
+  if (target === undefined) {
+    if (!splitEditor(to === 'next' ? 'right' : 'left', { groupId: from, tabId: null, focus: false })) return false;
+    target = useEditorStore.getState().activeGroupId;
+  }
+  if (target === from || !moveTabAcrossGroups(tabId, from, target)) return false;
+  openEditorInGroup(target, tabId);
+  return true;
+}
+
+/**
+ * 合并组(VSCode joinTwoGroups / joinAllGroups):all = false → 把活动组并入相邻组(按空间顺序先找下一个,没有再找上一个;VSCode 依次
+ * 找右 / 下 / 左 / 上);all = true → 所在窗口的其它组都并入活动组。并入的编辑器按顺序追加到目标组末尾(固定的仍固定),目标组已有的
+ * 文件用目标组的那个;被并入的组变空后关闭。合并后目标组成为活动组,原活动编辑器在其中激活并获焦。
+ */
+export function joinEditorGroups(all: boolean): void {
+  const active = commandEditorGroupId();
+  if (active === undefined) return;
+  const order = editorGroupsInWindow(active);
+  const at = order.indexOf(active);
+  const target = all ? active : (order[at + 1] ?? order[at - 1]);
+  if (target === undefined) return;
+  const sources = all ? order.filter((id) => id !== active) : [active];
+  if (sources.length === 0) return;
+  const focusTab = groupActiveTabIdOf(useEditorStore.getState(), active);
+  for (const source of sources) {
+    for (const tab of groupTabsOf(useEditorStore.getState(), source)) moveTabAcrossGroups(tab.id, source, target);
+  }
+  const s = useEditorStore.getState();
+  const tabId = focusTab !== null && groupTabsOf(s, target).some((t) => t.id === focusTab) ? focusTab : groupActiveTabIdOf(s, target);
+  if (tabId !== null) openEditorInGroup(target, tabId);
 }

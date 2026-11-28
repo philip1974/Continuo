@@ -34,6 +34,7 @@ import {
   type EditorGroupLayout,
   type EditorTab,
   type EditorPreviewTabs,
+  type EditorStickyTabs,
   type EditorTabMru,
   useEditorStore,
 } from '@/stores/editor.store';
@@ -278,7 +279,29 @@ type EditorGroupSnapshot = {
   activePath: string | null;
   mruPaths?: string[];
   previewPath?: string;
+  stickyPaths?: string[];
 };
+
+/** 组里固定的 tab 的持久化形态(只含会被持久化的 tab;一个都没有 → null 不写)。BDD: src/__tests__/editor-tab-management/ */
+function collectStickyPaths(persisted: ReadonlyMap<string, string>, sticky: readonly string[] | undefined): string[] | null {
+  const out: string[] = [];
+  for (const id of sticky ?? []) {
+    const p = persisted.get(id);
+    if (p !== undefined) out.push(p);
+  }
+  return out.length === 0 ? null : out;
+}
+
+/** 单组时的 stickyPaths 字段(多组时各组自带)。 */
+export function collectEditorStickySnapshot(
+  tabs: readonly EditorTab[],
+  groups: readonly EditorGroup[],
+  stickyTabs: EditorStickyTabs,
+): { stickyPaths: string[] } | null {
+  if (groups.length > 1) return null;
+  const stickyPaths = collectStickyPaths(persistedTabPaths(tabs), stickyTabs.get(groups[0]?.id ?? ''));
+  return stickyPaths === null ? null : { stickyPaths };
+}
 
 /** 单组时的 previewPath 字段(多组时各组自带;插件打开的 tab 不持久化,同 openFilePaths)。BDD: src/__tests__/editor-preview-tab/ */
 export function collectEditorPreviewSnapshot(
@@ -302,7 +325,9 @@ export function collectEditorGroupsSnapshot(
   activeGroupId: string,
   tabMru: EditorTabMru = new Map(),
   previewTabs: EditorPreviewTabs = new Map(),
-): { groups: EditorGroupSnapshot[]; activeGroup: string } | null {
+  stickyTabs: EditorStickyTabs = new Map(),
+  groupMru: readonly string[] = [],
+): { groups: EditorGroupSnapshot[]; activeGroup: string; groupMru?: string[] } | null {
   if (groups.length <= 1) return null;
   const persisted = persistedTabPaths(tabs);
   const out = groups.map((g): EditorGroupSnapshot => {
@@ -315,15 +340,21 @@ export function collectEditorGroupsSnapshot(
     const mruPaths = collectMruPaths(persisted, g.tabIds, g.activeTabId, tabMru.get(g.id));
     const previewId = previewTabs.get(g.id);
     const previewPath = previewId === undefined ? undefined : persisted.get(previewId);
+    const stickyPaths = collectStickyPaths(persisted, stickyTabs.get(g.id));
     return {
       id: g.id,
       openFilePaths,
       activePath,
       ...(mruPaths === null ? null : { mruPaths }),
       ...(previewPath === undefined ? null : { previewPath }),
+      ...(stickyPaths === null ? null : { stickyPaths }),
     };
   });
-  return { groups: out, activeGroup: activeGroupId };
+  // 组 MRU:与默认顺序(活动组 + 其余按组顺序,恢复旧数据时同样按它)相同 → 不写,形态不变
+  const mru = groupMru.filter((id) => groups.some((g) => g.id === id));
+  const fallback = [activeGroupId, ...groups.map((g) => g.id).filter((id) => id !== activeGroupId)];
+  const sameAsDefault = mru.length === 0 || arraysEqual(mru, fallback.slice(0, mru.length));
+  return { groups: out, activeGroup: activeGroupId, ...(sameAsDefault ? null : { groupMru: mru }) };
 }
 
 const viewInt = (n: number, min: number): number =>
@@ -445,9 +476,18 @@ export function snapshotFromStores(
   );
   const viewStates = collectEditorViewStates(ed.tabs, editorGroupsOf(ed), liveEditorViewOf);
   const encodings = collectEditorEncodings(ed.tabs);
-  const groupsSnap = collectEditorGroupsSnapshot(ed.tabs, ed.groups, ed.activeGroupId, ed.tabMru, ed.previewTabs);
+  const groupsSnap = collectEditorGroupsSnapshot(
+    ed.tabs,
+    ed.groups,
+    ed.activeGroupId,
+    ed.tabMru,
+    ed.previewTabs,
+    ed.stickyTabs,
+    ed.groupMru,
+  );
   const mruSnap = collectEditorMruSnapshot(ed.tabs, ed.activeTabId, ed.groups, ed.tabMru);
   const previewSnap = collectEditorPreviewSnapshot(ed.tabs, ed.groups, ed.previewTabs);
+  const stickySnap = collectEditorStickySnapshot(ed.tabs, ed.groups, ed.stickyTabs);
   const root = normalizeWorkspaceRoot(w.root);
   const recentRoots = collectNormalizedWorkspaceRoots(w.recentRoots);
   const search = searchInputSnapshot();
@@ -472,6 +512,7 @@ export function snapshotFromStores(
       ...(encodings.length === 0 ? null : { encodings }),
       ...(mruSnap ?? null),
       ...(previewSnap ?? null),
+      ...(stickySnap ?? null),
       ...(groupsSnap ?? null),
     },
     ...(search === null ? null : { search }),
@@ -680,8 +721,10 @@ async function restoreEditorTabs(
       activeTabId: keepUserActive && g.id === activeGroup ? cur.activeTabId : g.activePath,
       ...(g.mruPaths === undefined ? null : { mru: g.mruPaths }),
       ...(g.previewPath === undefined ? null : { preview: g.previewPath }),
+      ...(g.stickyPaths === undefined ? null : { sticky: g.stickyPaths }),
     }));
     cur.restoreGroups(layout, activeGroup);
+    useEditorStore.getState().restoreGroupMru(entry.editor.groupMru);
     return;
   }
   // 重读最新 store(openTab 改了状态)
@@ -695,6 +738,8 @@ async function restoreEditorTabs(
   after.restoreTabMru(editorGroupIdsOf(after)[0]!, entry.editor.mruPaths);
   // 预览 tab(旧数据无该字段 → 全部常驻;读盘期间用户已有预览 tab → 不覆盖)。BDD: src/__tests__/editor-preview-tab/
   after.restorePreviewTab(editorGroupIdsOf(after)[0]!, entry.editor.previewPath);
+  // 固定的 tab(旧数据无该字段 → 无)。BDD: src/__tests__/editor-tab-management/
+  after.restoreStickyTabs(editorGroupIdsOf(after)[0]!, entry.editor.stickyPaths);
 }
 
 export function hasEditorTabWithId(
@@ -919,7 +964,9 @@ export async function initExplorerPersistence(
       s.activeGroupId !== prev.activeGroupId ||
       s.groups !== prev.groups ||
       s.tabMru !== prev.tabMru ||
-      s.previewTabs !== prev.previewTabs
+      s.previewTabs !== prev.previewTabs ||
+      s.stickyTabs !== prev.stickyTabs ||
+      s.groupMru !== prev.groupMru
     ) {
       markDirtyAndPersist();
     }

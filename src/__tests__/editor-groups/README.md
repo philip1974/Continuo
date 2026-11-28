@@ -10,7 +10,7 @@
 | `workbench.action.splitEditor`(⌘\ / Ctrl+\) | 在活动组右侧新建组,把当前编辑器复制过去(含视图状态),新组成为活动组并获焦 |
 | `workbench.action.splitEditorDown`(⌘K ⌘\,本实现无默认键) | 同上,向下 |
 | 编辑器 tab 右键「向右拆分」 | 以该 tab 的文件拆分 |
-| `workbench.action.focusFirst/Second/ThirdEditorGroup`(⌘1 / ⌘2 / ⌘3) | 聚焦第 N 个组(激活其面板、聚焦其活动编辑器);N 恰为「组数 + 1」时在最后一组右侧新建**空**组。只按**触发窗口自己的**编辑器组编号(多窗口时各窗口各自编号) |
+| `workbench.action.focusFirst…EighthEditorGroup`(⌘1 … ⌘8) | 聚焦第 N 个组(激活其面板、聚焦其活动编辑器);N 恰为「组数 + 1」时在最后一组右侧新建**空**组。只按**触发窗口自己的**编辑器组编号(多窗口时各窗口各自编号) |
 | `workbench.editor.closeEmptyGroups`(默认 true) | 关掉组内最后一个编辑器 → 关闭该组;最后一个组保留为空编辑区 |
 | 打开文件(Explorer / Quick Open / 链接) | 落到**活动组**(最近活动的组);文件已在别的组打开也在活动组再开一个编辑器 |
 | 同一文件多组打开 | 共享 text model:编辑实时同步、脏状态共享;关闭其中一个编辑器不提示保存(文档仍在别的组打开) |
@@ -27,10 +27,15 @@
   Explorer autoReveal、Quick Open 最近文件、SDK、关窗脏确认等读 `activeTabId` 的地方自动获得「活动编辑器组」语义。
   每个文档至少在一个组里;组里只放存在的文档。
 - 关闭组内 tab:只从该组移除;文档不在其它组时才从 `tabs` 移除。组因此变空且不是唯一的组 → 删除该组
-  (closeEmptyGroups),活动组落到相邻组。只剩一个组 → 回到单组模式(`tabs` 按该组顺序排列)。
+  (closeEmptyGroups),活动组落到**最近使用的组**(`groupMru`,VSCode mostRecentActiveGroups;无记录才落到左邻,见
+  `src/__tests__/editor-tab-management/`)。只剩一个组 → 回到单组模式(`tabs` 按该组顺序排列)。
 - 删除路径 / 改名 / 切 root 对每个组按同一规则重算其列表与活动 tab(脏 tab 保留、活动 tab 落到相邻项),变空的组同样关闭。
-- dock 面板(组)被用户关掉(dock tab ×)且不是唯一组:只在该组的干净文档关闭,**脏文档移到相邻组**(不丢未保存修改);
-  唯一组的面板被关 → 文档保留(与历史一致,下次打开文件时面板补建)。
+- dock 面板(组)被用户关掉(dock tab × / 中键 / ⌘W 关空组等所有 `api.close` 入口)且不是唯一组:**照 VSCode 先确认**只在该组
+  打开的脏文档(关闭守卫 `editorGroupCloseGuard`,确认框在该组面板里):一个文件「保存 / 不保存 / 取消」,多个文件合并一个框
+  「全部保存 / 不保存 / 取消」(与关闭脏 tab 同一套文案);取消 / 保存失败 → 组不关;保存 / 不保存 → 组关闭、其文档全部关闭
+  (「不保存」的修改在重新打开后可 ⌘Z 找回,同关闭脏 tab)。关闭时自动保存的文档直接保存、不进框。仍在别的组打开的文档不算
+  随之关闭、不确认。命令面板「关闭编辑器组」(closeEditorsAndGroup)同一确认。未经守卫的移除(防御)仍把脏文档移到最近使用的组。
+  唯一组的面板被关 → 文档保留(与历史一致,下次打开文件时面板补建)。popout 子窗关窗时面板回到主窗,不是关闭,不确认。
 
 ## 共享文档方案
 
@@ -79,7 +84,7 @@
 | DockShell 打开文件激活编辑器 | 激活 / 补建**活动组**的面板 |
 | ⌘W / ⌘S / 下一个·上一个编辑器 | 作用于活动 dock 面板所在组 / 活动组(EditorPanel 动作按组登记) |
 | Markdown 自动保存 | 每个组面板各自调度其活动文件;同一文档的保存按文档串行(saveChains),两组同时到点也只写一次盘 |
-| 终端里的 ⌘\ / ⌘1–3 | 让出给命令(focus*EditorGroup 同 VSCode commandsToSkipShell;拆分只在带 ⌘ 时让出,Ctrl+\ 仍是 shell 的 SIGQUIT) |
+| 终端里的 ⌘\ / ⌘1–8 | 让出给命令(focus*EditorGroup 同 VSCode commandsToSkipShell;拆分只在带 ⌘ 时让出,Ctrl+\ 仍是 shell 的 SIGQUIT) |
 | 组内批量关闭(右键关闭其他等) | 只关本组;仍在别组打开的脏文档不弹确认 |
 | 关窗脏确认 / 外部文件同步 | 按文档(全部组)—— 未改 |
 | F6 / 面板聚焦 | 每个组面板都有 `data-editor-panel-root`;e2e 定位多组时取活动组 |
@@ -94,7 +99,6 @@
 ## 未做
 
 - 拖文件 tab 到另一组 / 组边缘拆分(编辑器内层 TabNav 无跨组拖拽;dock 层仍可拖动整个组面板)。
-- 组间移动编辑器命令、合并组、组的 MRU 激活顺序(活动组关闭后落到相邻组而非最近使用)。
 - ⌘\ 拆分空组(无活动文件时为 no-op;⌘N 聚焦尚不存在的下一组仍会新建空组)。
 - 调试断点 / 执行行装饰按 `viewRefs`(每个文档指向最近登记的视图)同步:同一文件在两组打开时只有其中一个视图显示装饰。
 - 编辑器组全部在 popout 子窗时主窗 ⌘1 为 no-op(VSCode 主窗总有编辑器组;这里不为此在主窗补建空组)。
@@ -108,6 +112,7 @@
 | `editor-groups-persist.spec.ts` | 会话快照按组写出、旧格式读为单组、按组恢复 |
 | `editor-groups-panel.spec.tsx` | 两个组面板各自渲染自己的 tab;一处编辑另一处同步;组内关闭;tab 右键向右拆分 |
 | `editor-groups-milkdown-sync.spec.tsx` | 真实 Crepe:另一组的编辑增量套进本组 Milkdown —— 不重挂载、光标映射、撤销只撤本组输入、不回抛;预览同样增量套用 |
+| `editor-groups-close-dirty.spec.tsx` | 关闭含脏文件的组:无脏放行、单个 / 合并确认框、取消不关、不保存后脏文档随组关闭、保存后放行、别组仍打开的不确认 |
 | `editor-groups-commands.spec.ts` | ⌘\ 拆分 / 向下拆分 / ⌘1⌘2⌘3 聚焦、命令注册与默认键、dock ↔ 组同步 |
 | `editor-groups-order.spec.tsx` | 真实 dockview:空间顺序(左右 / 上下 / 叠放 / 浮动 / popout)、拖动换位后标题 / ⌘N / 重置布局 / 读屏组号跟位置走、重启恢复的 popout 子窗挂上与关闭后重新编号 |
 | `tests/e2e/editor-group-order.spec.ts` | 真实应用:dock tab 拖到最左后标题 / ⌘1 跟位置、重启保留;重启恢复的 popout 子窗关掉后编号不重名;多组读屏名称带组号 |

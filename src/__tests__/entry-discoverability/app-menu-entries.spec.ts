@@ -97,7 +97,13 @@ describe('文件 / 显示 / 转到菜单的高频命令(命令已注册,键位�
     const view = submenu(template(true), 'menu.view.label');
     expect(submenu(view, 'menu.view.editor_layout').map((m) => m.label)).toEqual(['menu.view.split_right', 'menu.view.split_down']);
     const go = submenu(template(true), 'menu.go.label');
-    expect(submenu(go, 'menu.go.switch_group').map((m) => m.label)).toEqual(['menu.go.group_1', 'menu.go.group_2', 'menu.go.group_3']);
+    expect(submenu(go, 'menu.go.switch_group').map((m) => m.label)).toEqual([
+      'menu.go.group_1',
+      'menu.go.group_2',
+      'menu.go.group_3',
+      'menu.go.group_4',
+      'menu.go.group_5',
+    ]);
   });
 
   it('三语标签照 VSCode 中文语言包', () => {

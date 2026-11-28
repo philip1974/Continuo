@@ -121,6 +121,27 @@
     opacity var(--wm-duration-fast) var(--wm-ease-default);
 }
 
+/* 固定 tab 的图钉(代替关闭按钮):始终可见,点击取消固定 */
+.wm-tab-nav-item__pin {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  margin-right: var(--wm-space-0_5);
+  border-radius: 4px;
+  color: var(--md-on-surface-variant);
+  transition:
+    background-color var(--wm-duration-fast) var(--wm-ease-default),
+    color var(--wm-duration-fast) var(--wm-ease-default);
+}
+
+.wm-tab-nav-item__pin:hover:not([aria-disabled="true"]) {
+  background-color: var(--md-state-hover);
+  color: var(--md-on-surface);
+}
+
 .wm-tab-nav-item:hover .wm-tab-nav-item__close,
 .wm-tab-nav-item:focus-visible .wm-tab-nav-item__close,
 .wm-tab-nav-item[data-active="true"] .wm-tab-nav-item__close {

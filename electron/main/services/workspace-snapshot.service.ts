@@ -44,8 +44,14 @@ function scopedMru(mru: readonly string[] | undefined, open: readonly string[]):
   return kept === undefined || kept.length < 2 ? null : { mruPaths: kept };
 }
 
+/** 剔除后的固定 tab(一个不剩不写)。 */
+function scopedSticky(sticky: readonly string[] | undefined, open: readonly string[]): { stickyPaths: string[] } | null {
+  const kept = sticky?.filter((p) => open.includes(p));
+  return kept === undefined || kept.length === 0 ? null : { stickyPaths: kept };
+}
+
 function scopeEditor(editor: SnapshotEditor, inside: (p: string) => boolean): SnapshotEditor {
-  const { openFilePaths, activePath, mruPaths, viewStates, encodings, groups, activeGroup, ...rest } = editor;
+  const { openFilePaths, activePath, mruPaths, viewStates, encodings, groups, activeGroup, groupMru, stickyPaths, ...rest } = editor;
   const open = openFilePaths.filter(inside);
   const views = viewStates?.filter((v) => inside(v.path));
   // 用户选定的编码(按文件)同视图状态剔除 root 外的
@@ -60,19 +66,29 @@ function scopeEditor(editor: SnapshotEditor, inside: (p: string) => boolean): Sn
         const gOpen = g.openFilePaths.filter(inside);
         const gMru = scopedMru(g.mruPaths, gOpen);
         const gActive = scopedActive(g.activePath, gOpen, g.mruPaths);
-        return { id: g.id, openFilePaths: gOpen, activePath: gActive, ...gMru };
+        return { id: g.id, openFilePaths: gOpen, activePath: gActive, ...gMru, ...scopedSticky(g.stickyPaths, gOpen) };
       })
       .filter((g) => g.openFilePaths.length > 0);
     const active = kept.find((g) => g.id === activeGroup) ?? kept[0];
     // 只剩一个组(或一个不剩)→ 单组形态(写出端只在多于一个组时写 groups)
     if (kept.length > 1) {
-      return { ...rest, openFilePaths: open, activePath: active!.activePath, ...viewsField, groups: kept, activeGroup: active!.id };
+      const mru = groupMru?.filter((id) => kept.some((g) => g.id === id));
+      return {
+        ...rest,
+        openFilePaths: open,
+        activePath: active!.activePath,
+        ...viewsField,
+        groups: kept,
+        activeGroup: active!.id,
+        ...(mru === undefined || mru.length === 0 ? null : { groupMru: mru }),
+      };
     }
     return {
       ...rest,
       openFilePaths: open,
       activePath: active?.activePath ?? null,
       ...(active?.mruPaths === undefined ? null : { mruPaths: active.mruPaths }),
+      ...(active?.stickyPaths === undefined ? null : { stickyPaths: active.stickyPaths }),
       ...viewsField,
     };
   }
@@ -81,6 +97,7 @@ function scopeEditor(editor: SnapshotEditor, inside: (p: string) => boolean): Sn
     openFilePaths: open,
     activePath: scopedActive(activePath, open, mruPaths),
     ...scopedMru(mruPaths, open),
+    ...scopedSticky(stickyPaths, open),
     ...viewsField,
   };
 }

@@ -58,9 +58,39 @@ export const WORKBENCH_FOCUS_EDITOR_GROUP_COMMANDS = [
   { id: 'workbench.action.focusFirstEditorGroup', hotkey: 'mod+1' },
   { id: 'workbench.action.focusSecondEditorGroup', hotkey: 'mod+2' },
   { id: 'workbench.action.focusThirdEditorGroup', hotkey: 'mod+3' },
+  { id: 'workbench.action.focusFourthEditorGroup', hotkey: 'mod+4' },
+  { id: 'workbench.action.focusFifthEditorGroup', hotkey: 'mod+5' },
+  { id: 'workbench.action.focusSixthEditorGroup', hotkey: 'mod+6' },
+  { id: 'workbench.action.focusSeventhEditorGroup', hotkey: 'mod+7' },
+  { id: 'workbench.action.focusEighthEditorGroup', hotkey: 'mod+8' },
 ] as const;
-/** 下一个 / 上一个编辑器(VSCode 同 id;各平台默认键不同,由 editor-commands 注册,此处只列 id)。 */
-const WORKBENCH_ADJACENT_EDITOR_COMMAND_IDS = ['workbench.action.nextEditor', 'workbench.action.previousEditor'] as const;
+/**
+ * 下一个 / 上一个编辑器(含组内版本)与组内最后一个编辑器(VSCode 同 id,都在 commandsToSkipShell 默认列表里;各平台默认键不同,由
+ * editor-commands 注册,此处只列 id)。BDD: src/__tests__/editor-tab-management/
+ */
+const WORKBENCH_ADJACENT_EDITOR_COMMAND_IDS = [
+  'workbench.action.nextEditor',
+  'workbench.action.previousEditor',
+  'workbench.action.nextEditorInGroup',
+  'workbench.action.previousEditorInGroup',
+  'workbench.action.lastEditorInGroup',
+] as const;
+/**
+ * 移动编辑器(mac ⌃⌘← / ⌃⌘→ / ⌃⌘1 / ⌃⌘9;Windows / Linux Ctrl+Alt+← / → 等):不在 commandsToSkipShell 默认列表 → 只有带 Meta 时让出
+ *(VSCode `event.metaKey` 跳过 shell);不带 Meta 的(Windows / Linux)由终端处理、交给 shell(见 TERMINAL_KEPT_COMMAND_IDS)。
+ */
+export const WORKBENCH_MOVE_EDITOR_COMMAND_IDS = [
+  'workbench.action.moveEditorToPreviousGroup',
+  'workbench.action.moveEditorToNextGroup',
+  'workbench.action.moveEditorToFirstGroup',
+  'workbench.action.moveEditorToLastGroup',
+  'workbench.action.moveEditorLeftInGroup',
+  'workbench.action.moveEditorRightInGroup',
+] as const;
+/** 按序号打开编辑器(mac ⌃1…⌃9、Windows / Linux Alt+1…Alt+9):不在 commandsToSkipShell 默认列表 → 终端获焦时交给 shell(VSCode 同)。 */
+export const WORKBENCH_OPEN_EDITOR_AT_INDEX_COMMAND_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(
+  (n) => `workbench.action.openEditorAtIndex${n}`,
+);
 // ⌃Tab / ⌃⇧Tab 按组内最近使用顺序切换编辑器(BDD: src/__tests__/editor-recent-cycle/):VSCode 终端里 ⌃Tab 同样切编辑器 →
 // 胜出即让出(不只 Meta)。与 editor-recent-cycle 的命令常量一致(规范守护)。
 export const WORKBENCH_RECENT_EDITOR_COMMANDS = [
@@ -227,6 +257,7 @@ const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> =
   [TERMINAL_FOCUS_NEXT_PANE_COMMAND_ID, { metaOnly: false }],
   [TERMINAL_FOCUS_PREVIOUS_PANE_COMMAND_ID, { metaOnly: false }],
   ...WORKBENCH_ADJACENT_EDITOR_COMMAND_IDS.map((id) => [id, { metaOnly: false }] as const),
+  ...WORKBENCH_MOVE_EDITOR_COMMAND_IDS.map((id) => [id, { metaOnly: true }] as const),
   // 放大 / 缩小 / 重置缩放(⌘= / ⌘- / ⌘0):不在 commandsToSkipShell 默认列表 → 只有带 Meta 时让出(VSCode 同;Win/Linux 的
   // Ctrl+= / Ctrl+- 照常进 shell)。BDD: src/__tests__/window-zoom/
   ...WINDOW_ZOOM_COMMAND_IDS.map((id) => [id, { metaOnly: true }] as const),
@@ -336,6 +367,10 @@ export const TERMINAL_KEPT_COMMAND_IDS: ReadonlySet<string> = new Set([
   'editor.action.toggleWordWrap',
   // 切换窗口(mac ⌃W):⌃W 是 shell 的删前一个词;VSCode commandsToSkipShell 默认列表不含 switchWindow(BDD: src/__tests__/switch-window/)
   'workbench.action.switchWindow',
+  // 按序号打开编辑器(⌃1…⌃9 / Alt+1…Alt+9;Alt+数字是 readline 的数字参数)、不带 Meta 的移动编辑器键(Windows / Linux Ctrl+Alt+← 等)
+  // BDD: src/__tests__/editor-tab-management/
+  ...WORKBENCH_OPEN_EDITOR_AT_INDEX_COMMAND_IDS,
+  ...WORKBENCH_MOVE_EDITOR_COMMAND_IDS,
 ]);
 
 /** 按键胜出的是终端自己处理的命令(见 TERMINAL_KEPT_COMMAND_IDS):交给 xterm,不冒泡到全局分发。 */

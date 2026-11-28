@@ -45,7 +45,7 @@ describe('预览 tab 的显示', () => {
     expect(tabEl('a.ts')).toBeTruthy();
     expect(tabEl(PREVIEW_B)).toBeTruthy();
     expect(screen.queryByRole('tab', { name: 'b.ts' })).toBeNull();
-    act(() => useEditorStore.getState().pinTab(B));
+    act(() => useEditorStore.getState().keepTab(B));
     expect(tabEl('b.ts')).toBeTruthy();
     expect(screen.queryByRole('tab', { name: PREVIEW_B })).toBeNull();
   });

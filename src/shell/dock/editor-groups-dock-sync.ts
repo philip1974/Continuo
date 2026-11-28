@@ -1,16 +1,32 @@
 // 编辑器组 ↔ dock 面板的双向同步(组 id = editor 面板 id;BDD: src/__tests__/editor-groups/):
 // - store 里组被关闭(组内最后一个 tab 关掉 / 删除文件致空 / 恢复时丢弃)→ 关闭对应 dock 面板;
-// - dock 面板被关掉(dock tab × / 组整体关闭;移动到别的组 / popout 不算)→ 移除该组(其干净文档关闭、脏文档移到相邻组;
-//   唯一的组不移除,与历史一致);
+// - dock 面板被关掉(dock tab × / 组整体关闭;移动到别的组 / popout 不算)→ 移除该组:关闭守卫(editor-group-close)已对
+//   只在该组的脏文档确认过保存 / 不保存 → 全部关闭;未经确认的关闭(守卫不在的路径)仍保守处理:干净文档关闭、脏文档移到最近
+//   使用的组。唯一的组不移除,与历史一致;
 // - dock 激活某个编辑器组面板 → 它成为活动编辑器组(打开文件落在这里)。
 // 启动恢复结束后 reconcileEditorGroupsWithDock 对齐两边(没有面板的组并入有面板的组,没有文档的多余组面板关闭)。
 
 import type { DockviewApi, IDockviewPanel } from 'dockview-react';
-import { editorGroupIdsOf, editorGroupsOf, groupPreviewTabIdOf, groupTabMruOf, useEditorStore } from '@/stores/editor.store';
+import {
+  editorGroupIdsOf,
+  editorGroupsOf,
+  groupPreviewTabIdOf,
+  groupStickyTabsOf,
+  groupTabMruOf,
+  useEditorStore,
+} from '@/stores/editor.store';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 import { getDockApi, runWhenDockLayoutReady, subscribeDockApi } from './dock-api-ref';
 
 const EDITOR_PANEL_TYPE = 'editor';
+
+// 关闭守卫已确认(保存 / 不保存)的组:面板移除时其文档全部关闭(不再把脏文档移走)。
+const approvedGroupCloses = new Set<string>();
+
+/** 关闭守卫确认后调用:该组面板随后被移除时关闭其全部文档。 */
+export function markEditorGroupCloseApproved(groupId: string): void {
+  approvedGroupCloses.add(groupId);
+}
 
 function isEditorGroupPanel(panel: Pick<IDockviewPanel, 'id' | 'view'>): boolean {
   return isEditorGroupId(panel.id) && panel.view?.contentComponent === EDITOR_PANEL_TYPE;
@@ -40,8 +56,9 @@ export function trackEditorGroups(api: DockviewApi): { dispose: () => void } {
       const id = panel.id;
       // 移到别的 dock 组 / 弹出 / 收回:dockview 先移除再加入,微任务后仍在 → 不是关闭
       queueMicrotask(() => {
+        const approved = approvedGroupCloses.delete(id);
         if (api.getPanel(id)) return;
-        useEditorStore.getState().removeGroup(id, 'dirty');
+        useEditorStore.getState().removeGroup(id, approved ? 'none' : 'dirty');
       });
     }),
     api.onDidActivePanelChange((panel) => {
@@ -83,6 +100,7 @@ export function reconcileEditorGroupsWithDock(api: DockviewApi): void {
         activeTabId: g.activeTabId,
         mru: groupTabMruOf(s, g.id),
         preview: groupPreviewTabIdOf(s, g.id),
+        sticky: groupStickyTabsOf(s, g.id),
       }));
     const active = rename.get(s.activeGroupId) ?? (panelIds.includes(s.activeGroupId) ? s.activeGroupId : layout[0]?.id);
     if (active !== undefined) s.restoreGroups(layout, active);
@@ -90,7 +108,16 @@ export function reconcileEditorGroupsWithDock(api: DockviewApi): void {
       // 一个编辑器面板都没有(用户关掉了):全部并入活动组,打开文件时按它补建面板(与单组时一致)
       const g = groups.find((x) => x.id === s.activeGroupId) ?? groups[0]!;
       s.restoreGroups(
-        [{ id: g.id, tabIds: g.tabIds, activeTabId: g.activeTabId, mru: groupTabMruOf(s, g.id), preview: groupPreviewTabIdOf(s, g.id) }],
+        [
+          {
+            id: g.id,
+            tabIds: g.tabIds,
+            activeTabId: g.activeTabId,
+            mru: groupTabMruOf(s, g.id),
+            preview: groupPreviewTabIdOf(s, g.id),
+            sticky: groupStickyTabsOf(s, g.id),
+          },
+        ],
         g.id,
       );
     }

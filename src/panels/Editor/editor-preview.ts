@@ -21,7 +21,7 @@ export function keepActiveEditor(): void {
   if (groupId === undefined) return;
   const s = useEditorStore.getState();
   const id = groupActiveTabIdOf(s, groupId);
-  if (id !== null) s.pinTab(id, groupId);
+  if (id !== null) s.keepTab(id, groupId);
 }
 
 /** 设置关闭 → 已有的预览 tab 全部转常驻(VSCode 同);返回取消订阅。 */
@@ -29,6 +29,6 @@ export function installEditorPreviewSettingSync(): () => void {
   return useSettingsValuesStore.subscribe(() => {
     if (isEditorPreviewEnabled()) return;
     const s = useEditorStore.getState();
-    for (const id of new Set(s.previewTabs.values())) s.pinTab(id);
+    for (const id of new Set(s.previewTabs.values())) s.keepTab(id);
   });
 }

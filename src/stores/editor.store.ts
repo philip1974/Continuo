@@ -185,10 +185,18 @@ export interface EditorGroupLayout {
   readonly mru?: readonly string[] | undefined;
   /** 组内的预览 tab(缺省 = 无,全部常驻)。BDD: src/__tests__/editor-preview-tab/ */
   readonly preview?: string | undefined;
+  /** 组内固定的 tab(缺省 = 无)。BDD: src/__tests__/editor-tab-management/ */
+  readonly sticky?: readonly string[] | undefined;
 }
 
 /** 组 id → 该组 tab 的最近使用顺序(首项 = 活动 tab)。BDD: src/__tests__/editor-close-mru/ */
 export type EditorTabMru = ReadonlyMap<string, readonly string[]>;
+
+/**
+ * 组 id → 该组固定(pin / sticky)的 tab,按组内顺序;恒为该组 tab 列表的前缀(VSCode EditorGroupModel 的 sticky 区:固定的
+ * 编辑器总在最左)。不在表里的组没有固定 tab。BDD: src/__tests__/editor-tab-management/
+ */
+export type EditorStickyTabs = ReadonlyMap<string, readonly string[]>;
 
 /**
  * 组 id → 该组的预览 tab(VSCode preview editor:每组至多一个,标题斜体,以预览方式再打开别的文件时原位替换它)。
@@ -694,8 +702,15 @@ type EditorState = {
   tabMru: EditorTabMru;
   /** 各组的预览 tab(见 EditorPreviewTabs;变化时 bump chromeVersion)。 */
   previewTabs: EditorPreviewTabs;
+  /** 各组的固定 tab(见 EditorStickyTabs;变化时 bump chromeVersion)。 */
+  stickyTabs: EditorStickyTabs;
   /** 最近活动的编辑器组:打开文件落在这里。 */
   activeGroupId: string;
+  /**
+   * 编辑器组的最近使用顺序(首项 = 活动组;由 withTabMru 随 activeGroupId / 组增删维护)。活动组被关闭后落到其中下一个
+   *(VSCode editorPart mostRecentActiveGroups)。BDD: src/__tests__/editor-tab-management/
+   */
+  groupMru: readonly string[];
   mode: EditorMode;
   /**
    * 递增 token:每次"请求 editor 在 dock 内激活"时 +1。即便 activeTabId 不变
@@ -731,16 +746,33 @@ type EditorState = {
    */
   splitGroup: (sourceGroupId: string, newGroupId: string, tabId?: string | null) => boolean;
   /**
-   * 移除组(其 dock 面板被关掉):只在该组的文档 —— keep 'all' 全部移到相邻组;'dirty' 只移脏的、干净的关闭。
-   * 唯一的组不移除。
+   * 移除组(其 dock 面板被关掉):只在该组的文档 —— keep 'all' 全部移到最近使用的组;'dirty' 只移脏的、干净的关闭;'none' 全部关闭
+   *(已确认过保存 / 不保存)。唯一的组不移除。
    */
-  removeGroup: (groupId: string, keep: 'dirty' | 'all') => void;
+  removeGroup: (groupId: string, keep: 'dirty' | 'all' | 'none') => void;
   /** 会话恢复:按布局分配已打开的文档(未分配的进活动组;不存在的文档与空组丢弃)。 */
   restoreGroups: (layout: readonly EditorGroupLayout[], activeGroupId: string) => void;
   /** 会话恢复:设置组 groupId 的 tab MRU(缺省 = 默认顺序);活动 tab 始终居首,不在组里的 id 丢弃。 */
   restoreTabMru: (groupId: string, mru?: readonly string[]) => void;
+  /** 会话恢复:组的最近使用顺序(活动组仍居首,不存在的组丢弃)。 */
+  restoreGroupMru: (ids: readonly string[] | undefined) => void;
+  /** 会话恢复:组 groupId 里固定的 tab(按给定顺序移到最左;不在组里的丢弃)。 */
+  restoreStickyTabs: (groupId: string, ids: readonly string[] | undefined) => void;
   /** 预览 tab 转为常驻(双击 tab / workbench.action.keepEditor);groupId 缺省 = 所有组。不是预览 tab → no-op。 */
-  pinTab: (id: string, groupId?: string) => void;
+  keepTab: (id: string, groupId?: string) => void;
+  /**
+   * 固定 tab(workbench.action.pinEditor):移到组内固定区末尾,预览 tab 同时转常驻。groupId 缺省 = 活动组。已固定 / 不在组里 → no-op。
+   * BDD: src/__tests__/editor-tab-management/
+   */
+  pinEditor: (id: string, groupId?: string) => void;
+  /** 取消固定(workbench.action.unpinEditor):移到第一个非固定位置。未固定 → no-op。 */
+  unpinEditor: (id: string, groupId?: string) => void;
+  /**
+   * 移动编辑器(VSCode moveEditor):同组 → 移到 index(越界收进范围;越过固定区边界时随之固定 / 取消固定);跨组 → 从 fromGroupId
+   * 移除、加入 toGroupId(缺省末尾;固定的仍固定、排在目标组固定区末尾;预览转常驻),目标组已有该文件 → 用目标组的那个。
+   * 目标组成为活动组、该 tab 在其中激活;源组因此变空 → 关闭。不进最近关闭栈。返回是否移动了。
+   */
+  moveTab: (tabId: string, fromGroupId: string, toGroupId: string, index?: number) => boolean;
   /** 会话恢复:tabId 成为组 groupId 的预览 tab(组里已有预览 tab / tab 不在组里 / 脏 → no-op)。 */
   restorePreviewTab: (groupId: string, tabId: string | undefined) => void;
   /** 文件/目录被删除后调用:精确匹配或前缀匹配的 clean tab 统一关闭,只 set 一次(chromeVersion 至多 bump 一次). */
@@ -902,7 +934,8 @@ function changeTabsWithWriteBack(
 type GroupedState = Pick<
   EditorState,
   'tabs' | 'activeTabId' | 'groups' | 'activeGroupId' | 'chromeVersion'
->;
+> &
+  Partial<Pick<EditorState, 'groupMru'>>;
 
 const EMPTY_IDS: readonly string[] = [];
 
@@ -1002,8 +1035,13 @@ function commitGroups(
     kept = keep ? [{ id: keep.id, tabIds: EMPTY_IDS, activeTabId: null }] : singleGroup(PRIMARY_EDITOR_GROUP_ID);
   }
   let active = kept.find((g) => g.id === activeGroupId);
+  // 活动组被关:落到最近使用的保留组(VSCode doRemoveGroup 激活 mostRecentActiveGroups 里的下一个)
+  for (const id of active ? EMPTY_IDS : (s.groupMru ?? EMPTY_IDS)) {
+    active = kept.find((g) => g.id === id);
+    if (active) break;
+  }
   if (!active) {
-    // 活动组被关:落到原顺序里它前面最近的保留组,否则第一个
+    // 无 MRU 记录:落到原顺序里它前面最近的保留组,否则第一个
     const order = idsOf(groups.length > 0 ? groups : prevGroups);
     const idx = order.indexOf(activeGroupId);
     for (let i = idx - 1; i >= 0 && !active; i--) active = kept.find((g) => g.id === order[i]);
@@ -1068,7 +1106,8 @@ function closeIdInGroup(g: EditorGroup, closing: string, mru: readonly string[] 
 }
 
 /** removeGroup 时移到相邻组(而不是关闭)的 tab:只在本组打开的文档里,keep='all' 全部、'dirty' 仅脏的。 */
-function groupRemovalMoves(s: Pick<EditorState, 'tabs' | 'groups'>, g: EditorGroup, keep: 'dirty' | 'all'): string[] {
+function groupRemovalMoves(s: Pick<EditorState, 'tabs' | 'groups'>, g: EditorGroup, keep: 'dirty' | 'all' | 'none'): string[] {
+  if (keep === 'none') return [];
   const exclusive = g.tabIds.filter((id) => !s.groups.some((o) => o.id !== g.id && o.tabIds.includes(id)));
   if (keep === 'all') return exclusive;
   const dirty = new Set<string>();
@@ -1160,6 +1199,109 @@ export function groupTabMruOf(s: Pick<EditorState, 'tabMru'>, groupId: string): 
   return s.tabMru?.get(groupId);
 }
 
+// ── 组 MRU / 固定 tab(BDD: src/__tests__/editor-tab-management/)──────────
+
+/** candidates 里最近使用的组(跳过 excluding;无记录 → undefined)。 */
+function mruGroupOf(
+  s: Partial<Pick<EditorState, 'groupMru'>>,
+  candidates: readonly EditorGroup[],
+  excluding: string,
+): EditorGroup | undefined {
+  for (const id of s.groupMru ?? EMPTY_IDS) {
+    if (id === excluding) continue;
+    const g = candidates.find((x) => x.id === id);
+    if (g) return g;
+  }
+  return undefined;
+}
+
+/** 组 MRU 规范化:活动组居首,其余保持原相对顺序,已不在的组剔除、新出现的组按组顺序补在末尾。无变化返回原数组。 */
+function syncGroupMru(s: Pick<EditorState, 'groups' | 'activeGroupId' | 'groupMru'>): readonly string[] {
+  const prev = s.groupMru ?? EMPTY_IDS;
+  const ids = editorGroupIdsOf(s);
+  const out: string[] = [];
+  const push = (id: string): void => {
+    if (ids.includes(id) && !out.includes(id)) out.push(id);
+  };
+  push(s.activeGroupId);
+  for (const id of prev) push(id);
+  for (const id of ids) push(id);
+  return out.length === prev.length && out.every((id, i) => id === prev[i]) ? prev : out;
+}
+
+const EMPTY_STICKY_TABS: EditorStickyTabs = new Map();
+
+/** 组 groupId 里固定的 tab(按组内顺序;无 → 空)。 */
+export function groupStickyTabsOf(s: Partial<Pick<EditorState, 'stickyTabs'>>, groupId: string): readonly string[] {
+  return s.stickyTabs?.get(groupId) ?? EMPTY_IDS;
+}
+
+/** tab 在组 groupId 里是否固定。 */
+export function isTabSticky(s: Partial<Pick<EditorState, 'stickyTabs'>>, groupId: string, tabId: string): boolean {
+  return groupStickyTabsOf(s, groupId).includes(tabId);
+}
+
+function withStickyEntry(m: EditorStickyTabs, groupId: string, ids: readonly string[]): EditorStickyTabs {
+  const next = new Map(m);
+  if (ids.length === 0) next.delete(groupId);
+  else next.set(groupId, ids);
+  return next;
+}
+
+/** 固定表规范化:剔除组已不在 / tab 已不在该组的条目(固定区仍是前缀:关闭 / 移走不改变其余 tab 的相对顺序)。 */
+function syncStickyTabs(s: Pick<EditorState, 'tabs' | 'activeTabId' | 'groups' | 'stickyTabs'>): EditorStickyTabs {
+  const prev = s.stickyTabs ?? EMPTY_STICKY_TABS;
+  if (prev.size === 0) return prev;
+  const groups = materializedGroups(s);
+  let next: Map<string, readonly string[]> | null = null;
+  for (const [gid, ids] of prev) {
+    const g = groups.find((x) => x.id === gid);
+    const kept = g ? ids.filter((id) => g.tabIds.includes(id)) : EMPTY_IDS;
+    if (kept.length === ids.length) continue;
+    next ??= new Map(prev);
+    if (kept.length === 0) next.delete(gid);
+    else next.set(gid, kept);
+  }
+  return next ?? prev;
+}
+
+/** 改名 / 另存为换 tab id 后,固定表里的旧 id 换成新 id(固定状态随文件走)。无变化返回原表。 */
+function remapStickyIds(m: EditorStickyTabs | undefined, renamed: ReadonlyMap<string, string>): EditorStickyTabs {
+  const prev = m ?? EMPTY_STICKY_TABS;
+  let next: Map<string, readonly string[]> | null = null;
+  for (const [gid, ids] of prev) {
+    if (!ids.some((id) => renamed.has(id))) continue;
+    next ??= new Map(prev);
+    next.set(gid, ids.map((id) => renamed.get(id) ?? id));
+  }
+  return next ?? prev;
+}
+
+/** 组 g 改成 tabIds 顺序后的状态片段:多组改该组;单组模式按新顺序重排 tabs。 */
+function withGroupOrder(
+  s: Pick<EditorState, 'tabs' | 'groups' | 'activeTabId'>,
+  g: EditorGroup,
+  tabIds: readonly string[],
+): Pick<EditorState, 'tabs'> | Pick<EditorState, 'groups'> {
+  if (isMultiGroup(s)) return { groups: replaceGroup(s.groups, { ...g, tabIds }) };
+  const byId = new Map<string, EditorTab>();
+  for (const t of s.tabs) byId.set(t.id, t);
+  return { tabs: tabIds.flatMap((id) => byId.get(id) ?? []) };
+}
+
+/** 在 index 处插入(越界收进 [0, 长度])。 */
+function moveIdTo(ids: readonly string[], id: string, index: number): string[] {
+  const rest = ids.filter((x) => x !== id);
+  const at = Math.min(Math.max(0, index), rest.length);
+  return [...rest.slice(0, at), id, ...rest.slice(at)];
+}
+
+/** 新加入组的 tab 的插入位置:不进固定区(VSCode:非固定编辑器打开在固定区之后)。 */
+function clampOutOfSticky(s: Partial<Pick<EditorState, 'stickyTabs'>>, groupId: string, index: number | undefined): number | undefined {
+  const n = groupStickyTabsOf(s, groupId).length;
+  return index === undefined || n === 0 ? index : Math.max(index, n);
+}
+
 // ── 预览 tab(BDD: src/__tests__/editor-preview-tab/)──────────────
 
 const EMPTY_PREVIEW_TABS: EditorPreviewTabs = new Map();
@@ -1178,14 +1320,17 @@ function withPreviewEntry(m: EditorPreviewTabs, groupId: string, tabId: string |
 }
 
 /** 预览表规范化:剔除组已不在、tab 已不在该组、或 tab 已变脏(编辑即常驻,VSCode 同)的条目。无变化返回原表。 */
-function syncPreviewTabs(s: Pick<EditorState, 'tabs' | 'activeTabId' | 'groups' | 'previewTabs'>): EditorPreviewTabs {
+function syncPreviewTabs(
+  s: Pick<EditorState, 'tabs' | 'activeTabId' | 'groups' | 'previewTabs'> & Partial<Pick<EditorState, 'stickyTabs'>>,
+): EditorPreviewTabs {
   const prev = s.previewTabs ?? EMPTY_PREVIEW_TABS;
   if (prev.size === 0) return prev;
   const groups = materializedGroups(s);
   let next: Map<string, string> | null = null;
   for (const [gid, id] of prev) {
     const inGroup = groups.find((g) => g.id === gid)?.tabIds.includes(id) === true;
-    if (inGroup && s.tabs.some((t) => t.id === id && !t.dirty)) continue;
+    // 固定的 tab 一定常驻(VSCode doStick 先 pin)
+    if (inGroup && s.tabs.some((t) => t.id === id && !t.dirty) && !isTabSticky(s, gid, id)) continue;
     next ??= new Map(prev);
     next.delete(gid);
   }
@@ -1221,7 +1366,7 @@ function previewTabsAfterReopen(s: Pick<EditorState, 'previewTabs'>, groupId: st
  * 否则同 activateInGroup。返回新组、被替换的 tab 与新预览表。
  */
 function placeNewTabInGroup(
-  s: Pick<EditorState, 'tabs' | 'previewTabs'>,
+  s: Pick<EditorState, 'tabs' | 'previewTabs'> & Partial<Pick<EditorState, 'stickyTabs'>>,
   g: EditorGroup,
   tabId: string,
   keepActive: boolean,
@@ -1231,7 +1376,7 @@ function placeNewTabInGroup(
   const activating = !(keepActive && g.activeTabId !== null);
   const replaced = opts?.preview === true ? replaceablePreviewOf(s, g.id, g.tabIds, g.activeTabId, tabId, activating) : null;
   if (replaced === null || replaced === undefined) {
-    const group = activateInGroup(g, tabId, keepActive, opts?.index);
+    const group = activateInGroup(g, tabId, keepActive, clampOutOfSticky(s, g.id, opts?.index));
     return { group, replaced: null, previewTabs: replaced === undefined ? withPreviewEntry(m, g.id, tabId) : m };
   }
   const group: EditorGroup = {
@@ -1243,8 +1388,9 @@ function placeNewTabInGroup(
 }
 
 /**
- * 每次状态变更(含外部 setState)同一次提交里维护 tabMru 与预览表(不多发通知):活动 tab / 组 / tab 增删改名·变脏(chromeVersion)/
- * tabMru / 预览表本身变了才重算(正文输入不触发)。预览表因此变化(如预览 tab 变脏转常驻)而 chromeVersion 未变 → bump。
+ * 每次状态变更(含外部 setState)同一次提交里维护 tabMru、预览表、固定表与组 MRU(不多发通知):活动 tab / 活动组 / 组 / tab 增删改名·
+ * 变脏(chromeVersion)/ 这几张表本身变了才重算(正文输入不触发)。预览表 / 固定表因此变化(如预览 tab 变脏转常驻、固定的 tab 被关)
+ * 而 chromeVersion 未变 → bump。
  */
 function withTabMru(creator: StateCreator<EditorState>): StateCreator<EditorState> {
   type Patch = EditorState | Partial<EditorState>;
@@ -1260,16 +1406,27 @@ function withTabMru(creator: StateCreator<EditorState>): StateCreator<EditorStat
           cur.chromeVersion === s.chromeVersion &&
           cur.tabs?.length === s.tabs.length &&
           cur.tabMru === s.tabMru &&
-          cur.previewTabs === s.previewTabs
+          cur.previewTabs === s.previewTabs &&
+          cur.stickyTabs === s.stickyTabs &&
+          cur.activeGroupId === s.activeGroupId &&
+          cur.groupMru === s.groupMru
         ) {
           return patch;
         }
         const tabMru = syncTabMru(cur);
         const previewTabs = syncPreviewTabs(cur);
-        if (tabMru === cur.tabMru && previewTabs === cur.previewTabs) return patch;
+        const stickyTabs = syncStickyTabs(cur);
+        const groupMru = syncGroupMru(cur);
+        if (tabMru === cur.tabMru && previewTabs === cur.previewTabs && stickyTabs === cur.stickyTabs && groupMru === cur.groupMru) {
+          return patch;
+        }
         return {
           ...patch,
           ...(tabMru === cur.tabMru ? null : { tabMru }),
+          ...(groupMru === cur.groupMru ? null : { groupMru }),
+          ...(stickyTabs === cur.stickyTabs
+            ? null
+            : { stickyTabs, ...(cur.chromeVersion === s.chromeVersion ? { chromeVersion: s.chromeVersion + 1 } : null) }),
           ...(previewTabs === cur.previewTabs
             ? null
             : { previewTabs, ...(cur.chromeVersion === s.chromeVersion ? { chromeVersion: s.chromeVersion + 1 } : null) }),
@@ -1312,7 +1469,9 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
   groups: singleGroup(PRIMARY_EDITOR_GROUP_ID),
   tabMru: EMPTY_TAB_MRU,
   previewTabs: EMPTY_PREVIEW_TABS,
+  stickyTabs: EMPTY_STICKY_TABS,
   activeGroupId: PRIMARY_EDITOR_GROUP_ID,
+  groupMru: [PRIMARY_EDITOR_GROUP_ID],
   mode: 'source',
   editorFocusPulse: 0,
   chromeVersion: 0,
@@ -1389,7 +1548,7 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
             ? replaceTabAt(s.tabs, replacedIndex, tab)
             : opts?.index === undefined
               ? appendEditorTab(s.tabs, tab)
-              : insertAt(s.tabs, tab, opts.index),
+              : insertAt(s.tabs, tab, clampOutOfSticky(s, gid, opts.index)),
         activeTabId: keepActive ? s.activeTabId : tab.id,
         editorFocusPulse: pulse,
         chromeVersion: s.chromeVersion + 1, // perf P12:新增 tab → chrome 变
@@ -1470,7 +1629,9 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       if (!isMultiGroup(s) || idx < 0) return s;
       const g = s.groups[idx]!;
       const others = s.groups.filter((x) => x.id !== groupId);
-      const target = others[Math.max(0, idx - 1)]!;
+      // 移到 / 落到最近使用的组(VSCode doRemoveGroupWithEditors 并入 mostRecentActiveGroups 里的组);无记录 → 左邻
+      const target =
+        mruGroupOf(s, others, groupId) ?? others[Math.max(0, idx - 1)]!;
       const exclusive = g.tabIds.filter((id) => !others.some((o) => o.tabIds.includes(id)));
       const move = groupRemovalMoves(s, g, keep);
       const closed = new Set(exclusive.filter((id) => !move.includes(id)));
@@ -1509,19 +1670,26 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
         tabIds: d.tabIds,
         activeTabId: d.wanted !== null && d.tabIds.includes(d.wanted) ? d.wanted : (d.tabIds[0] ?? null),
       }));
-      // 恢复布局里没有文档的组(读盘失败)丢弃;此前为恢复出的面板占位的空组同样不保留
-      const kept = groups.filter((g) => g.tabIds.length > 0);
+      // 恢复布局里没有文档的组(读盘失败)丢弃;此前为恢复出的面板占位的空组同样不保留(见下 kept)
       // 组内 MRU / 预览 tab 按布局(MRU 缺省 = 默认顺序);规范化(活动居首、剔除不在组里的 / 脏的)由 withTabMru 做
       const tabMru = new Map<string, readonly string[]>();
       const previewTabs = new Map<string, string>();
+      const stickyTabs = new Map<string, readonly string[]>();
       for (let i = 0; i < groups.length; i++) {
         const g = groups[i]!;
         if (g.tabIds.length === 0) continue;
         const l = layout.find((x) => x.id === g.id);
         tabMru.set(g.id, l?.mru ?? defaultTabMru(g.tabIds, g.activeTabId));
         if (l?.preview !== undefined) previewTabs.set(g.id, l.preview);
+        // 固定的 tab 移到组的最左(按记录顺序)
+        const sticky = [...new Set(l?.sticky ?? EMPTY_IDS)].filter((id) => g.tabIds.includes(id));
+        if (sticky.length > 0) {
+          stickyTabs.set(g.id, sticky);
+          groups[i] = { ...g, tabIds: [...sticky, ...g.tabIds.filter((id) => !sticky.includes(id))] };
+        }
       }
-      return { ...commitGroups(s, s.tabs, kept, groups[ai]!.id, kept), tabMru, previewTabs };
+      const kept = groups.filter((g) => g.tabIds.length > 0);
+      return { ...commitGroups(s, s.tabs, kept, groups[ai]!.id, kept), tabMru, previewTabs, stickyTabs };
     }),
 
   restoreTabMru: (groupId, mru) =>
@@ -1574,7 +1742,20 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
     rewriteRecentlyClosedEditors((p) => rewriteMovedPath(p, oldPath, newPath));
     // 关闭文件的撤销历史不随移动(旧路径作废;VSCode 同:移走的是另一个 URI)
     dropClosedCodeEditorStates((p) => rewriteMovedPath(p, oldPath, newPath) !== null);
-    changeTabsWithWriteBack(get, set, (cur, active) =>
+    // 固定状态随文件走:与换 id 同一次提交(否则规范化先把不在组里的旧 id 剔除)
+    const withSticky = (fn: (st: EditorState) => EditorState | Partial<EditorState>): void =>
+      set((s) => {
+        const r = fn(s);
+        if (r === s) return s;
+        const renamedIds = new Map<string, string>();
+        const after = getStateAfterRenamingPath(s.tabs, null, oldPath, newPath).tabs;
+        for (let i = 0; i < s.tabs.length && after !== s.tabs; i++) {
+          if (s.tabs[i]!.id !== after[i]!.id) renamedIds.set(s.tabs[i]!.id, after[i]!.id);
+        }
+        const stickyTabs = remapStickyIds(s.stickyTabs, renamedIds);
+        return stickyTabs === s.stickyTabs ? r : { ...r, stickyTabs };
+      });
+    changeTabsWithWriteBack(get, withSticky, (cur, active) =>
       getStateAfterRenamingPath(cur, active, oldPath, newPath),
     );
     emitPathChange({ kind: 'moved', oldPath, newPath });
@@ -1594,7 +1775,7 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       for (const [gid, ids] of s.tabMru ?? EMPTY_TAB_MRU) {
         tabMru.set(gid, ids.filter((id) => id !== newPath).map((id) => (id === oldId ? newPath : id)));
       }
-      return { ...base, tabMru };
+      return { ...base, tabMru, stickyTabs: remapStickyIds(s.stickyTabs, new Map([[oldId, newPath]])) };
     });
   },
 
@@ -1750,10 +1931,10 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       // 不 bump 则新代际不上报,main 仍按旧代际放行退出,丢失这段输入(终审 P1;dirtyGen 已在 tabChromeChanged)。
       return replaceTabBumpingChrome(s, idx, next);
     });
-    get().pinTab(id); // 保存即常驻(各组;BDD: src/__tests__/editor-preview-tab/)
+    get().keepTab(id); // 保存即常驻(各组;BDD: src/__tests__/editor-preview-tab/)
   },
 
-  pinTab: (id, groupId) =>
+  keepTab: (id, groupId) =>
     set((s) => {
       const prev = s.previewTabs ?? EMPTY_PREVIEW_TABS;
       let next: Map<string, string> | null = null;
@@ -1770,8 +1951,122 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       if (tabId === undefined || groupPreviewTabIdOf(s, groupId) !== undefined) return s;
       const g = materializedGroups(s).find((x) => x.id === groupId);
       if (!g?.tabIds.includes(tabId) || s.tabs.some((t) => t.id === tabId && t.dirty)) return s;
+      if (isTabSticky(s, groupId, tabId)) return s;
       return { previewTabs: withPreviewEntry(s.previewTabs ?? EMPTY_PREVIEW_TABS, groupId, tabId), chromeVersion: s.chromeVersion + 1 };
     }),
+
+  restoreGroupMru: (ids) =>
+    set((s) => {
+      if (ids === undefined || ids.length === 0) return s;
+      // 规范化(活动组居首、剔除不存在的组)由 withTabMru 做
+      return { groupMru: [s.activeGroupId, ...ids] };
+    }),
+
+  restoreStickyTabs: (groupId, ids) =>
+    set((s) => {
+      if (ids === undefined || ids.length === 0) return s;
+      const g = materializedGroups(s).find((x) => x.id === groupId);
+      if (!g) return s;
+      const sticky = [...new Set(ids)].filter((id) => g.tabIds.includes(id));
+      if (sticky.length === 0) return s;
+      const order = [...sticky, ...g.tabIds.filter((id) => !sticky.includes(id))];
+      return {
+        ...withGroupOrder(s, g, order),
+        stickyTabs: withStickyEntry(s.stickyTabs ?? EMPTY_STICKY_TABS, g.id, sticky),
+        previewTabs: sticky.includes(groupPreviewTabIdOf(s, g.id) ?? '') ? withPreviewEntry(s.previewTabs ?? EMPTY_PREVIEW_TABS, g.id, null) : s.previewTabs,
+        chromeVersion: s.chromeVersion + 1,
+      };
+    }),
+
+  pinEditor: (id, groupId) =>
+    set((s) => {
+      const g = materializedGroups(s).find((x) => x.id === (groupId ?? s.activeGroupId));
+      const sticky = g ? groupStickyTabsOf(s, g.id) : EMPTY_IDS;
+      if (!g || !g.tabIds.includes(id) || sticky.includes(id)) return s;
+      // 移到固定区末尾;预览 tab 同时转常驻(VSCode doStick 先 pin)
+      return {
+        ...withGroupOrder(s, g, moveIdTo(g.tabIds, id, sticky.length)),
+        stickyTabs: withStickyEntry(s.stickyTabs ?? EMPTY_STICKY_TABS, g.id, [...sticky, id]),
+        previewTabs: groupPreviewTabIdOf(s, g.id) === id ? withPreviewEntry(s.previewTabs ?? EMPTY_PREVIEW_TABS, g.id, null) : s.previewTabs,
+        chromeVersion: s.chromeVersion + 1,
+      };
+    }),
+
+  unpinEditor: (id, groupId) =>
+    set((s) => {
+      const g = materializedGroups(s).find((x) => x.id === (groupId ?? s.activeGroupId));
+      const sticky = g ? groupStickyTabsOf(s, g.id) : EMPTY_IDS;
+      if (!g || !sticky.includes(id)) return s;
+      const rest = sticky.filter((x) => x !== id);
+      // 移到第一个非固定位置(VSCode doUnstick)
+      return {
+        ...withGroupOrder(s, g, moveIdTo(g.tabIds, id, rest.length)),
+        stickyTabs: withStickyEntry(s.stickyTabs ?? EMPTY_STICKY_TABS, g.id, rest),
+        chromeVersion: s.chromeVersion + 1,
+      };
+    }),
+
+  moveTab: (tabId, fromGroupId, toGroupId, index) => {
+    let moved = false;
+    set((s) => {
+      const groups = materializedGroups(s);
+      const src = groups.find((g) => g.id === fromGroupId);
+      if (!src || !src.tabIds.includes(tabId)) return s;
+      const srcSticky = groupStickyTabsOf(s, src.id);
+      const wasSticky = srcSticky.includes(tabId);
+      if (fromGroupId === toGroupId) {
+        // 组内移动(VSCode EditorGroupModel.moveEditor):越过固定区边界随之固定 / 取消固定
+        const from = src.tabIds.indexOf(tabId);
+        const to = Math.min(Math.max(0, index ?? from), src.tabIds.length - 1);
+        if (to === from) return s;
+        const order = moveIdTo(src.tabIds, tabId, to);
+        const n = srcSticky.length;
+        const count = wasSticky ? (to <= n - 1 ? n : n - 1) : to <= n - 1 ? n + 1 : n;
+        moved = true;
+        return {
+          ...withGroupOrder(s, src, order),
+          stickyTabs: withStickyEntry(s.stickyTabs ?? EMPTY_STICKY_TABS, src.id, order.slice(0, count)),
+          ...(count > n && groupPreviewTabIdOf(s, src.id) === tabId ? { previewTabs: withPreviewEntry(s.previewTabs ?? EMPTY_PREVIEW_TABS, src.id, null) } : null),
+          chromeVersion: s.chromeVersion + 1,
+        };
+      }
+      const dst = groups.find((g) => g.id === toGroupId);
+      if (!dst) return s;
+      const dstSticky = groupStickyTabsOf(s, dst.id);
+      let dstIds: readonly string[];
+      let nextDstSticky = dstSticky;
+      if (dst.tabIds.includes(tabId)) {
+        // 目标组已有该文件:用目标组的那个(VSCode openEditor 已有编辑器分支),源是固定的 → 它也固定
+        dstIds = dst.tabIds;
+        if (wasSticky && !dstSticky.includes(tabId)) {
+          dstIds = moveIdTo(dst.tabIds, tabId, dstSticky.length);
+          nextDstSticky = [...dstSticky, tabId];
+        }
+      } else if (wasSticky) {
+        dstIds = moveIdTo([...dst.tabIds, tabId], tabId, dstSticky.length);
+        nextDstSticky = [...dstSticky, tabId];
+      } else {
+        dstIds = moveIdTo([...dst.tabIds, tabId], tabId, clampOutOfSticky(s, dst.id, index) ?? dst.tabIds.length);
+      }
+      const nextSrc = closeIdInGroup(src, tabId, groupTabMruOf(s, src.id));
+      const nextDst: EditorGroup = { id: dst.id, tabIds: dstIds, activeTabId: tabId };
+      const nextGroups = groups.map((g) => (g.id === src.id ? nextSrc : g.id === dst.id ? nextDst : g));
+      let stickyTabs = withStickyEntry(s.stickyTabs ?? EMPTY_STICKY_TABS, src.id, srcSticky.filter((x) => x !== tabId));
+      stickyTabs = withStickyEntry(stickyTabs, dst.id, nextDstSticky);
+      // 移动的编辑器在目标组常驻(VSCode 跨组移动以 pinned 打开)
+      let previewTabs = s.previewTabs ?? EMPTY_PREVIEW_TABS;
+      if (previewTabs.get(src.id) === tabId) previewTabs = withPreviewEntry(previewTabs, src.id, null);
+      if (previewTabs.get(dst.id) === tabId) previewTabs = withPreviewEntry(previewTabs, dst.id, null);
+      moved = true;
+      return {
+        ...commitGroups(s, s.tabs, nextGroups, dst.id, groups),
+        stickyTabs,
+        previewTabs,
+        editorFocusPulse: s.editorFocusPulse + 1,
+      };
+    });
+    return moved;
+  },
 
   setMode: (mode) => {
     if (get().mode === mode) return;

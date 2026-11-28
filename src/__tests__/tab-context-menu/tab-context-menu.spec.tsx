@@ -93,7 +93,7 @@ const editorTabEl = (name: string): HTMLElement =>
   Array.from(document.querySelectorAll<HTMLElement>('[role=tab]')).find((el) => el.textContent?.startsWith(name))!;
 
 describe('编辑器文件 tab 右键菜单', () => {
-  it('右键 → VSCode 同序菜单项(关闭类 + 复制路径 / 相对路径 + 在 Finder 中显示 + 向右 / 向下拆分)', () => {
+  it('右键 → VSCode 同序菜单项(关闭类 + 固定 + 复制路径 / 相对路径 + 在 Finder 中显示 + 向右 / 向下拆分 + 移到上一组 / 下一组)', () => {
     renderEditorHeader(vi.fn());
     fireEvent.contextMenu(editorTabEl('b.ts'));
     expect(labels()).toEqual([
@@ -102,11 +102,14 @@ describe('编辑器文件 tab 右键菜单', () => {
       'Close to the Right',
       'Close Saved',
       'Close All',
+      'Pin',
       'Copy Path',
       'Copy Relative Path',
       'Reveal in Finder',
       'Split Right',
       'Split Down',
+      'Move into Previous Group',
+      'Move into Next Group',
     ]);
     for (const el of items()) expect(el.classList.contains('wm-menu-item')).toBe(true);
   });

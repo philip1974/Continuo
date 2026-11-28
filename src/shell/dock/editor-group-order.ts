@@ -60,6 +60,22 @@ export interface EditorGroupNumber {
  *(VSCode 辅助窗口同样各自编号)。
  */
 export function editorGroupNumbers(api: DockLike): Map<string, EditorGroupNumber> {
+  const out = new Map<string, EditorGroupNumber>();
+  for (const ids of editorGroupWindows(api)) ids.forEach((id, i) => out.set(id, { n: i + 1, of: ids.length }));
+  return out;
+}
+
+/**
+ * groupId 所在窗口的编辑器组,按空间顺序(同 editorGroupNumbers;下一个 / 上一个编辑器跨组、移到下一组 / 上一组、合并组按它找
+ * 相邻组 —— VSCode 辅助窗口的组同样只在自己的窗口里导航)。不在 dock 里(瞬时状态)→ 主窗顺序。
+ */
+export function editorGroupsInWindowOf(api: DockLike, groupId: string): string[] {
+  const windows = editorGroupWindows(api);
+  return windows.find((ids) => ids.includes(groupId)) ?? windows[0]!;
+}
+
+/** 各窗口的编辑器组顺序:首项为主窗,其后每个 popout 子窗一项。 */
+function editorGroupWindows(api: DockLike): string[][] {
   const windows: string[][] = [mainEditorGroupOrder(api)];
   const popouts = new Map<string, IDockviewPanel[]>();
   for (const p of api.panels) {
@@ -72,7 +88,5 @@ export function editorGroupNumbers(api: DockLike): Map<string, EditorGroupNumber
     const tabs = list[0]!.api.group.panels;
     windows.push(list.sort((a, b) => tabs.indexOf(a) - tabs.indexOf(b)).map((p) => p.api.id));
   }
-  const out = new Map<string, EditorGroupNumber>();
-  for (const ids of windows) ids.forEach((id, i) => out.set(id, { n: i + 1, of: ids.length }));
-  return out;
+  return windows;
 }

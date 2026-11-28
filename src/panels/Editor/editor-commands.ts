@@ -9,13 +9,17 @@
 //   BDD: src/__tests__/workbench-missing-commands/
 // - workbench.action.reopenClosedEditor(⇧⌘T):重新打开最近关闭的编辑器(BDD: src/__tests__/editor-reopen-closed/);
 // - workbench.action.keepEditor(无默认键):活动预览 tab 转常驻(BDD: src/__tests__/editor-preview-tab/);
-// - workbench.action.nextEditor / previousEditor:编辑器文件 tab 间循环切换(活动编辑器组内);
+// - workbench.action.nextEditor / previousEditor:下一个 / 上一个编辑器(到组尾 / 组首跨到相邻的非空组,首尾相接);
+//   nextEditorInGroup / previousEditorInGroup:组内循环(BDD: src/__tests__/editor-tab-management/);
+// - 移动编辑器(moveEditorToNext/Previous/First/LastGroup、moveEditorLeft/RightInGroup)、固定(pinEditor / unpinEditor)、
+//   按序号打开(openEditorAtIndex1..9 / lastEditorInGroup)、组管理(closeAllEditors / closeAllGroups / closeEditorsAndGroup /
+//   joinTwoGroups / joinAllGroups):BDD: src/__tests__/editor-tab-management/;
 // - workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup / quickOpenLeastRecentlyUsedEditorInGroup(⌃Tab / ⌃⇧Tab):
 //   按组内最近使用顺序切换(BDD: src/__tests__/editor-recent-cycle/);
 // - workbench.action.gotoLine(⌃G,各平台同):Quick Open 预填 `:` 转到行 / 列(BDD: src/__tests__/editor-goto-line/);
 // - workbench.action.navigateBack / navigateForward(mac ⌃- / ⌃⇧-,Win/Linux Alt+← / Alt+→):后退 / 前进
 //   (BDD: src/__tests__/editor-navigation-history/);
-// - workbench.action.splitEditor(⌘\)/ splitEditorDown(无默认键)/ focusFirst·Second·ThirdEditorGroup(⌘1 / ⌘2 / ⌘3):
+// - workbench.action.splitEditor(⌘\)/ splitEditorDown(无默认键)/ focusFirst…EighthEditorGroup(⌘1 … ⌘8):
 //   编辑器组(BDD: src/__tests__/editor-groups/)。
 // - 组内关闭类(closeOtherEditors / closeEditorsToTheRight / closeUnmodifiedEditors / closeEditorsInGroup)、copyFilePath /
 //   copyRelativeFilePath / revealFileInOS、markdown.switchTo*Mode:tab 右键 / 模式切换的同一动作,作用于活动编辑器组的活动 tab
@@ -28,16 +32,31 @@
 
 import {
   editorGroupIdsOf,
+  editorGroupsOf,
   findEditorTabIndexById,
   getEffectiveMode,
   groupActiveTabIdOf,
+  groupStickyTabsOf,
+  groupTabMruOf,
   groupTabsOf,
+  isTabOpenInOtherGroup,
+  isTabSticky,
   useEditorStore,
   type EditorMode,
   type EditorTab,
 } from '@/stores/editor.store';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
-import { commandEditorGroupId, focusEditorGroup, splitEditor } from './editor-groups-actions';
+import {
+  commandEditorGroupId,
+  editorGroupsInWindow,
+  focusEditorGroup,
+  joinEditorGroups,
+  moveEditor,
+  openEditorInGroup,
+  splitEditor,
+  type MoveEditorTarget,
+} from './editor-groups-actions';
+import { markEditorGroupCloseApproved } from '@/shell/dock/editor-groups-dock-sync';
 import { requestEditorFocus } from './editor-focus-registry';
 import type { IDockviewPanel } from 'dockview-react';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
@@ -128,12 +147,90 @@ export function openGotoSymbol(): void {
   useCommandPaletteStore.getState().close();
   useQuickOpenStore.getState().openWith(GOTO_SYMBOL_PREFIX);
 }
-/** 聚焦第 N 个编辑器组(N = 1..3)的命令 id 与默认键(VSCode 同:⌘1 / ⌘2 / ⌘3,其它平台 Ctrl+1 …)。 */
+/** 聚焦第 N 个编辑器组(N = 1..8)的命令 id 与默认键(VSCode 同:⌘1 … ⌘8,其它平台 Ctrl+1 …)。 */
 export const FOCUS_EDITOR_GROUP_COMMANDS = [
-  { id: 'workbench.action.focusFirstEditorGroup', hotkey: 'mod+1', index: 1 },
-  { id: 'workbench.action.focusSecondEditorGroup', hotkey: 'mod+2', index: 2 },
-  { id: 'workbench.action.focusThirdEditorGroup', hotkey: 'mod+3', index: 3 },
+  { id: 'workbench.action.focusFirstEditorGroup', hotkey: 'mod+1', index: 1, title: 'Focus First Editor Group' },
+  { id: 'workbench.action.focusSecondEditorGroup', hotkey: 'mod+2', index: 2, title: 'Focus Second Editor Group' },
+  { id: 'workbench.action.focusThirdEditorGroup', hotkey: 'mod+3', index: 3, title: 'Focus Third Editor Group' },
+  { id: 'workbench.action.focusFourthEditorGroup', hotkey: 'mod+4', index: 4, title: 'Focus Fourth Editor Group' },
+  { id: 'workbench.action.focusFifthEditorGroup', hotkey: 'mod+5', index: 5, title: 'Focus Fifth Editor Group' },
+  { id: 'workbench.action.focusSixthEditorGroup', hotkey: 'mod+6', index: 6, title: 'Focus Sixth Editor Group' },
+  { id: 'workbench.action.focusSeventhEditorGroup', hotkey: 'mod+7', index: 7, title: 'Focus Seventh Editor Group' },
+  { id: 'workbench.action.focusEighthEditorGroup', hotkey: 'mod+8', index: 8, title: 'Focus Eighth Editor Group' },
 ] as const;
+
+/** 组内下一个 / 上一个编辑器(VSCode nextEditorInGroup / previousEditorInGroup:默认键是和弦 ⌘K ⌥⌘→ 等,不支持 → 无默认键)。 */
+export const NEXT_EDITOR_IN_GROUP_COMMAND_ID = 'workbench.action.nextEditorInGroup';
+export const PREVIOUS_EDITOR_IN_GROUP_COMMAND_ID = 'workbench.action.previousEditorInGroup';
+/** 组内最后一个编辑器(VSCode lastEditorInGroup:mac ⌃0,附加 ⌘9;Windows / Linux Alt+0)。 */
+export const LAST_EDITOR_IN_GROUP_COMMAND_ID = 'workbench.action.lastEditorInGroup';
+
+/** 按序号打开组内第 N 个编辑器(VSCode openEditorAtIndex1..9:mac ⌃1…⌃9,Windows / Linux Alt+1…Alt+9;9 = 第 9 个,不是最后一个)。 */
+export function openEditorAtIndexCommands(isMac: boolean): readonly { id: string; hotkey: string; index: number }[] {
+  return [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({
+    id: `workbench.action.openEditorAtIndex${n}`,
+    hotkey: `${isMac ? 'ctrl' : 'alt'}+${n}`,
+    index: n,
+  }));
+}
+
+/**
+ * 移动编辑器的命令(VSCode 同 id 与默认键):移到上一组 / 下一组 mac ⌃⌘← / ⌃⌘→、Windows / Linux Ctrl+Alt+← / Ctrl+Alt+→;移到第一组 /
+ * 最后一组 mac ⌃⌘1 / ⌃⌘9、Windows / Linux Shift+Alt+1 / Shift+Alt+9;组内左移 / 右移 Windows / Linux Ctrl+Shift+PageUp / PageDown,mac
+ * 是和弦 ⌘K ⇧⌘← / ⌘K ⇧⌘→(不支持 → 无默认键)。
+ */
+export function moveEditorCommands(
+  isMac: boolean,
+): readonly { id: string; to: MoveEditorTarget; title: string; titleKey: string; hotkey?: string }[] {
+  return [
+    {
+      id: 'workbench.action.moveEditorToPreviousGroup',
+      to: 'previous',
+      title: 'Move Editor into Previous Group',
+      titleKey: 'commands.editor.move_previous_group.title',
+      hotkey: isMac ? 'ctrl+mod+left' : 'ctrl+alt+left',
+    },
+    {
+      id: 'workbench.action.moveEditorToNextGroup',
+      to: 'next',
+      title: 'Move Editor into Next Group',
+      titleKey: 'commands.editor.move_next_group.title',
+      hotkey: isMac ? 'ctrl+mod+right' : 'ctrl+alt+right',
+    },
+    {
+      id: 'workbench.action.moveEditorToFirstGroup',
+      to: 'first',
+      title: 'Move Editor into First Group',
+      titleKey: 'commands.editor.move_first_group.title',
+      hotkey: isMac ? 'ctrl+mod+1' : 'shift+alt+1',
+    },
+    {
+      id: 'workbench.action.moveEditorToLastGroup',
+      to: 'last',
+      title: 'Move Editor into Last Group',
+      titleKey: 'commands.editor.move_last_group.title',
+      hotkey: isMac ? 'ctrl+mod+9' : 'shift+alt+9',
+    },
+    {
+      id: 'workbench.action.moveEditorLeftInGroup',
+      to: 'left',
+      title: 'Move Editor Left',
+      titleKey: 'commands.editor.move_left.title',
+      ...(isMac ? {} : { hotkey: 'ctrl+shift+pageup' }),
+    },
+    {
+      id: 'workbench.action.moveEditorRightInGroup',
+      to: 'right',
+      title: 'Move Editor Right',
+      titleKey: 'commands.editor.move_right.title',
+      ...(isMac ? {} : { hotkey: 'ctrl+shift+pagedown' }),
+    },
+  ];
+}
+
+/** 固定 / 取消固定编辑器(VSCode pinEditor / unpinEditor:默认键是和弦 ⌘K ⇧Enter,不支持 → 无默认键)。 */
+export const PIN_EDITOR_COMMAND_ID = 'workbench.action.pinEditor';
+export const UNPIN_EDITOR_COMMAND_ID = 'workbench.action.unpinEditor';
 
 /**
  * 保存命令当前生效绑定的显示文本(按平台:⌘S / Ctrl+S),供提示文案的 `{hotkey}` 占位(「按 {hotkey} 选择覆盖」等):
@@ -157,6 +254,11 @@ export interface EditorPanelActions {
   readonly closeActiveTab: () => boolean;
   /** 按 tab 右键「关闭其他 / 右侧 / 已保存 / 全部」同一路径关闭这些 tab(脏 tab 弹确认)。 */
   readonly closeTabs: (ids: readonly string[]) => void;
+  /**
+   * 关闭编辑器组 / 全部关闭前确认将随之关闭的文档 ids(脏的:保存 / 不保存 / 取消,多个合并一个框);true = 可以关闭
+   *(已保存或选了不保存),false = 取消 / 保存失败。
+   */
+  readonly confirmCloseDocs: (ids: readonly string[]) => Promise<boolean>;
   /**
    * 全部保存的单个 tab:失败处理同显式保存(磁盘已被外部修改 / 写保护 → 覆盖确认;其它 → 按 code 提示)。
    * allowPrompt = false(这次全部保存已弹过一个确认框)→ 确认类失败也只提示,不再弹框。返回是否弹了确认框。
@@ -316,8 +418,118 @@ export function closeActiveGroupEditors(kind: TabCloseKind): void {
   const s = useEditorStore.getState();
   const activeId = groupActiveTabIdOf(s, groupId);
   if (activeId === null) return;
-  const ids = tabCloseTargets(groupTabsOf(s, groupId), activeId, kind);
+  const ids = tabCloseTargets(closeItemsOfGroup(groupId), activeId, kind);
   if (ids.length > 0) panelActions.get(groupId)?.closeTabs(ids);
+}
+
+/** 组内 tab 的关闭类目标项(带脏 / 固定:「关闭其他 / 右侧 / 已保存 / 全部」跳过固定的,VSCode excludeSticky)。 */
+function closeItemsOfGroup(groupId: string): { id: string; dirty: boolean; sticky: boolean }[] {
+  const s = useEditorStore.getState();
+  const sticky = groupStickyTabsOf(s, groupId);
+  return groupTabsOf(s, groupId).map((t) => ({ id: t.id, dirty: t.dirty, sticky: sticky.includes(t.id) }));
+}
+
+/**
+ * ⌘W / 菜单「关闭编辑器」遇固定的活动 tab:不关闭,改打开组内最近使用的非固定编辑器;组内没有 → 按组的最近使用顺序在别的组里找;
+ * 都没有 → 不动(VSCode closeEditorHandler,preventPinnedEditorClose 默认 keyboardAndMouse)。
+ */
+export function revealNextNonStickyEditor(groupId: string): void {
+  const s = useEditorStore.getState();
+  const order = [groupId, ...s.groupMru.filter((id) => id !== groupId), ...editorGroupIdsOf(s)];
+  for (const gid of new Set(order)) {
+    const ids = groupTabsOf(s, gid).map((t) => t.id);
+    const candidates = [...(groupTabMruOf(s, gid) ?? []), ...ids];
+    const next = candidates.find((id) => ids.includes(id) && !isTabSticky(s, gid, id));
+    if (next !== undefined) {
+      openEditorInGroup(gid, next);
+      return;
+    }
+  }
+}
+
+/** 已登记的编辑器组面板动作(未挂载 → undefined)。 */
+function panelActionsOf(groupId: string): EditorPanelActions | undefined {
+  return panelActions.get(groupId);
+}
+
+/** 组里只在本组打开的文档(关掉本组即随之关闭的)。 */
+function exclusiveDocsOf(groupId: string): string[] {
+  const s = useEditorStore.getState();
+  return groupTabsOf(s, groupId)
+    .map((t) => t.id)
+    .filter((id) => !isTabOpenInOtherGroup(s, id, groupId));
+}
+
+/**
+ * 编辑器组 dock 面板的关闭守卫(dock tab × / 中键 / 面板菜单关闭 / ⌘W 关空组等所有 api.close 入口):多个组时,只在本组打开的文档里
+ * 有脏的 → 经本组面板确认(保存 / 不保存 / 取消,多个合并一个框;VSCode 关闭含脏编辑器的组逐个确认,这里按用户选定合并);确认通过 →
+ * 面板移除时这些文档全部关闭(「不保存」的可在重新打开后 ⌘Z 找回);取消 / 保存失败 → 组不关。唯一的组(文档保留)、组已不在 store
+ *(组随最后一个 tab 关闭后关面板)、没有脏文档 → 直接放行。BDD: src/__tests__/editor-groups/(close-dirty-group)
+ */
+export function editorGroupCloseGuard(groupId: string): boolean | Promise<boolean> {
+  const s = useEditorStore.getState();
+  if (!editorGroupIdsOf(s).includes(groupId) || editorGroupIdsOf(s).length < 2) return true;
+  const ids = exclusiveDocsOf(groupId);
+  flushEditorWriteBacks(ids);
+  const tabs = useEditorStore.getState().tabs;
+  const anyDirty = ids.some((id) => tabs.some((t) => t.id === id && t.dirty && !isImagePreviewPath(t.filePath)));
+  const actions = panelActionsOf(groupId);
+  if (!anyDirty || !actions) return true;
+  return actions.confirmCloseDocs(ids).then((ok) => {
+    if (ok) markEditorGroupCloseApproved(groupId);
+    return ok;
+  });
+}
+
+/**
+ * 关闭编辑器组(VSCode workbench.action.closeEditorsAndGroup,命令面板「关闭编辑器组」):关闭组内全部编辑器(含固定的),组变空后关闭;
+ * 只在本组打开的脏文档先确认(同 dock tab ×);取消 → 不动。唯一的组 → 只关闭其编辑器(组保留,同 VSCode)。
+ */
+export async function closeEditorGroup(groupId: string | undefined = commandEditorGroupId()): Promise<void> {
+  if (groupId === undefined) return;
+  const ids = groupTabsOf(useEditorStore.getState(), groupId).map((t) => t.id);
+  if (ids.length === 0) {
+    // 空组:直接关它的面板(多个组时;唯一的空组保留)
+    if (editorGroupIdsOf(useEditorStore.getState()).length > 1) getDockApi()?.getPanel(groupId)?.api.close();
+    return;
+  }
+  const actions = panelActionsOf(groupId);
+  if (actions && !(await actions.confirmCloseDocs(exclusiveDocsOf(groupId)))) return;
+  closeEditorsConfirmed([{ groupId, ids }]);
+}
+
+/**
+ * 全部关闭(VSCode closeAllEditors:各组里除固定外的编辑器;closeAllGroups:全部编辑器含固定的,随后空组关闭):随之关闭的脏文档
+ * 合并成一个确认框(VSCode AbstractCloseAllAction 跨组只问一次),取消 → 都不关。确认框在触发窗口的编辑器组面板里。
+ */
+export async function closeAllEditors(includeSticky: boolean): Promise<void> {
+  const s = useEditorStore.getState();
+  const plan = editorGroupsOf(s).map((g) => {
+    const sticky = includeSticky ? [] : groupStickyTabsOf(s, g.id);
+    return { groupId: g.id, ids: g.tabIds.filter((id) => !sticky.includes(id)) };
+  });
+  // 随之关闭的文档:它所在的每个组都要关掉它(在某组固定的仍留着)
+  const remaining = new Set<string>();
+  for (const g of editorGroupsOf(s)) {
+    const closingHere = plan.find((p) => p.groupId === g.id)?.ids ?? [];
+    for (const id of g.tabIds) if (!closingHere.includes(id)) remaining.add(id);
+  }
+  const closing = [...new Set(plan.flatMap((p) => p.ids))].filter((id) => !remaining.has(id));
+  if (closing.length === 0) return;
+  const gid = commandEditorGroupId();
+  const actions = (gid === undefined ? undefined : panelActionsOf(gid)) ?? panelActions.values().next().value;
+  if (actions && !(await actions.confirmCloseDocs(closing))) return;
+  closeEditorsConfirmed(plan);
+}
+
+/** 已确认后按组关闭(逐个 closeTab:入最近关闭栈、「不保存」的留撤销历史);之后焦点交给活动组的编辑器。 */
+function closeEditorsConfirmed(plan: readonly { readonly groupId: string; readonly ids: readonly string[] }[]): void {
+  for (const { groupId, ids } of plan) {
+    for (const id of ids) useEditorStore.getState().closeTab(id, groupId);
+  }
+  const s = useEditorStore.getState();
+  const active = groupActiveTabIdOf(s, s.activeGroupId);
+  if (active !== null) requestEditorFocus(active, s.activeGroupId);
 }
 
 /** 复制活动文件的路径(relative:相对工作区根,同 tab 右键「复制相对路径」)。 */
@@ -336,10 +548,10 @@ function revealActiveFile(): void {
 }
 
 /**
- * 在编辑器组(缺省触发窗口的编辑器组)内切到相邻文件 tab(首尾相接)并聚焦它的编辑器(VSCode nextEditor 打开时不带 preserveFocus,
- * 焦点随之进编辑器;从终端按 / 命令面板执行同样如此);组内 tab 数 < 2 → no-op。
+ * 在编辑器组(缺省触发窗口的编辑器组)内切到相邻文件 tab(首尾相接)并聚焦它的编辑器(VSCode nextEditorInGroup / previousEditorInGroup;
+ * 打开时不带 preserveFocus,焦点随之进编辑器);组内 tab 数 < 2 → no-op。
  */
-export function openAdjacentEditor(delta: 1 | -1, groupId?: string): void {
+export function openAdjacentEditorInGroup(delta: 1 | -1, groupId?: string): void {
   const gid = groupId ?? commandEditorGroupId();
   if (gid === undefined) return;
   const s = useEditorStore.getState();
@@ -351,6 +563,57 @@ export function openAdjacentEditor(delta: 1 | -1, groupId?: string): void {
   const next = tabs[(from + delta + tabs.length) % tabs.length]!.id;
   s.switchTab(next, { groupId: gid });
   requestEditorFocus(next, gid);
+}
+
+/**
+ * 下一个 / 上一个编辑器(VSCode nextEditor / previousEditor):组内切到相邻 tab;已在组尾(组首)→ 所在窗口按空间顺序的下一个(上一个)
+ * 非空组的第一个(最后一个)编辑器,首尾相接(只有一个非空组时即组内循环)。焦点随之进编辑器。
+ */
+export function openAdjacentEditor(delta: 1 | -1, groupId?: string): void {
+  const gid = groupId ?? commandEditorGroupId();
+  if (gid === undefined) return;
+  const s = useEditorStore.getState();
+  const tabs = groupTabsOf(s, gid);
+  const activeTabId = groupActiveTabIdOf(s, gid);
+  const index = activeTabId === null ? -1 : findEditorTabIndexById(tabs, activeTabId);
+  const inGroup = index < 0 ? (delta > 0 ? 0 : tabs.length - 1) : index + delta;
+  const nextInGroup = tabs[inGroup];
+  if (nextInGroup) {
+    s.switchTab(nextInGroup.id, { groupId: gid });
+    requestEditorFocus(nextInGroup.id, gid);
+    return;
+  }
+  const order = editorGroupsInWindow(gid);
+  const at = order.indexOf(gid);
+  for (let step = 1; step <= order.length; step++) {
+    const target = order[(((at + delta * step) % order.length) + order.length) % order.length]!;
+    const targetTabs = groupTabsOf(s, target);
+    if (targetTabs.length === 0) continue;
+    const next = targetTabs[delta > 0 ? 0 : targetTabs.length - 1]!.id;
+    if (target === gid && next === activeTabId) return;
+    openEditorInGroup(target, next);
+    return;
+  }
+}
+
+/** 按序号打开触发窗口的编辑器组里第 n 个(1 起)编辑器;n = Infinity → 最后一个。不存在 → no-op。 */
+export function openEditorAtIndex(n: number): void {
+  const gid = commandEditorGroupId();
+  if (gid === undefined) return;
+  const tabs = groupTabsOf(useEditorStore.getState(), gid);
+  const tab = n === Infinity ? tabs.at(-1) : tabs[n - 1];
+  if (tab) openEditorInGroup(gid, tab.id);
+}
+
+/** 固定 / 取消固定触发窗口的编辑器组的活动编辑器。 */
+function setActiveEditorSticky(sticky: boolean): void {
+  const gid = commandEditorGroupId();
+  if (gid === undefined) return;
+  const s = useEditorStore.getState();
+  const id = groupActiveTabIdOf(s, gid);
+  if (id === null) return;
+  if (sticky) s.pinEditor(id, gid);
+  else s.unpinEditor(id, gid);
 }
 
 /** 组内关闭类命令(VSCode 同名;tab 右键「关闭其他 / 关闭右侧 / 关闭已保存 / 全部关闭」)。 */
@@ -628,12 +891,117 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
       (c): CommandSpec => ({
         id: c.id,
         hotkey: c.hotkey,
-        title: ['Focus First Editor Group', 'Focus Second Editor Group', 'Focus Third Editor Group'][c.index - 1]!,
+        title: c.title,
         titleKey: `commands.editor.focus_group_${c.index}.title`,
         category: 'View',
         categoryKey: 'commands.view.category',
         fn: () => focusEditorGroup(c.index),
       }),
     ),
+    {
+      id: NEXT_EDITOR_IN_GROUP_COMMAND_ID,
+      title: 'Open Next Editor in Group',
+      titleKey: 'commands.editor.next_in_group.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => openAdjacentEditorInGroup(1),
+    },
+    {
+      id: PREVIOUS_EDITOR_IN_GROUP_COMMAND_ID,
+      title: 'Open Previous Editor in Group',
+      titleKey: 'commands.editor.previous_in_group.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => openAdjacentEditorInGroup(-1),
+    },
+    ...openEditorAtIndexCommands(isMac).map(
+      (c): CommandSpec => ({
+        id: c.id,
+        hotkey: c.hotkey,
+        title: `Open Editor at Index ${c.index}`,
+        titleKey: `commands.editor.open_at_index_${c.index}.title`,
+        category: 'View',
+        categoryKey: 'commands.view.category',
+        fn: () => openEditorAtIndex(c.index),
+      }),
+    ),
+    {
+      id: LAST_EDITOR_IN_GROUP_COMMAND_ID,
+      title: 'Open Last Editor in Group',
+      titleKey: 'commands.editor.last_in_group.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      hotkey: isMac ? 'ctrl+0' : 'alt+0',
+      ...(isMac ? { secondaryHotkeys: ['mod+9'] } : {}),
+      fn: () => openEditorAtIndex(Infinity),
+    },
+    ...moveEditorCommands(isMac).map(
+      (c): CommandSpec => ({
+        id: c.id,
+        ...(c.hotkey === undefined ? {} : { hotkey: c.hotkey }),
+        title: c.title,
+        titleKey: c.titleKey,
+        category: 'View',
+        categoryKey: 'commands.view.category',
+        fn: () => void moveEditor(c.to),
+      }),
+    ),
+    {
+      id: PIN_EDITOR_COMMAND_ID,
+      title: 'Pin Editor',
+      titleKey: 'commands.editor.pin.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => setActiveEditorSticky(true),
+    },
+    {
+      id: UNPIN_EDITOR_COMMAND_ID,
+      title: 'Unpin Editor',
+      titleKey: 'commands.editor.unpin.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => setActiveEditorSticky(false),
+    },
+    {
+      // VSCode 默认键 ⌘K ⌘W 是和弦,不支持 → 无默认键;closeAllGroups(⌘K ⇧⌘W)同
+      id: 'workbench.action.closeAllEditors',
+      title: 'Close All Editors',
+      titleKey: 'commands.editor.close_all_editors.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => void closeAllEditors(false),
+    },
+    {
+      id: 'workbench.action.closeAllGroups',
+      title: 'Close All Editor Groups',
+      titleKey: 'commands.editor.close_all_groups.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => void closeAllEditors(true),
+    },
+    {
+      id: 'workbench.action.closeEditorsAndGroup',
+      title: 'Close Editor Group',
+      titleKey: 'commands.editor.close_group.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => void closeEditorGroup(),
+    },
+    {
+      id: 'workbench.action.joinTwoGroups',
+      title: 'Join Editor Group with Next Group',
+      titleKey: 'commands.editor.join_two_groups.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => joinEditorGroups(false),
+    },
+    {
+      id: 'workbench.action.joinAllGroups',
+      title: 'Join All Editor Groups',
+      titleKey: 'commands.editor.join_all_groups.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => joinEditorGroups(true),
+    },
   ];
 }

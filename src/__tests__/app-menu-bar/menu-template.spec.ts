@@ -207,6 +207,8 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
       'workbench.action.focusFirstEditorGroup',
       'workbench.action.focusSecondEditorGroup',
       'workbench.action.focusThirdEditorGroup',
+      'workbench.action.focusFourthEditorGroup',
+      'workbench.action.focusFifthEditorGroup',
     ]);
     expect(commandsOf(submenu(top, 'menu.terminal.label'))).toEqual([
       'terminal.new',

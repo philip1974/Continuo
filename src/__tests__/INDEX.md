@@ -644,6 +644,7 @@
 
 ## [编辑器拆分(多编辑器组)](./editor-groups/README.md)
 
+- [`editor-groups-close-dirty.spec.tsx`](./editor-groups/editor-groups-close-dirty.spec.tsx)
 - [`editor-groups-commands.spec.ts`](./editor-groups/editor-groups-commands.spec.ts)
 - [`editor-groups-milkdown-sync.spec.tsx`](./editor-groups/editor-groups-milkdown-sync.spec.tsx)
 - [`editor-groups-order.spec.tsx`](./editor-groups/editor-groups-order.spec.tsx)
@@ -847,6 +848,13 @@
 ## [editor-store (M-Editor Step E1)](./editor-store/README.md)
 
 - [`editor-store.spec.ts`](./editor-store/editor-store.spec.ts)
+
+## [编辑器 tab 与编辑器组管理(移动 / 固定 / 跨组切换 / 组 MRU / 组管理命令 / 按序号直达)](./editor-tab-management/README.md)
+
+- [`pinned-tab-header.spec.tsx`](./editor-tab-management/pinned-tab-header.spec.tsx)
+- [`tab-management-commands.spec.ts`](./editor-tab-management/tab-management-commands.spec.ts)
+- [`tab-management-persist.spec.ts`](./editor-tab-management/tab-management-persist.spec.ts)
+- [`tab-management-store.spec.ts`](./editor-tab-management/tab-management-store.spec.ts)
 
 ## [双击编辑器 tab 栏空白处新建无标题文件](./editor-tabbar-new-untitled/README.md)
 

@@ -63,6 +63,18 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   // 终端获焦时也让出(commandsToSkipShell 默认含两条)→ 只有终端的子窗里键盘用户靠它到达 tab 与「更多操作」。
   'workbench.action.focusNextPart',
   'workbench.action.focusPreviousPart',
+  // 按序号打开 / 组内下一个·上一个·最后一个编辑器、移动编辑器:作用于按键所在子窗的编辑器组(commandEditorGroupId;移到相邻组
+  // 只在该子窗的组之间,见 editorGroupsInWindow)。BDD: src/__tests__/editor-tab-management/
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `workbench.action.openEditorAtIndex${n}`),
+  'workbench.action.lastEditorInGroup',
+  'workbench.action.nextEditorInGroup',
+  'workbench.action.previousEditorInGroup',
+  'workbench.action.moveEditorToPreviousGroup',
+  'workbench.action.moveEditorToNextGroup',
+  'workbench.action.moveEditorToFirstGroup',
+  'workbench.action.moveEditorToLastGroup',
+  'workbench.action.moveEditorLeftInGroup',
+  'workbench.action.moveEditorRightInGroup',
 ]);
 
 /**

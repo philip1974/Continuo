@@ -251,13 +251,15 @@ export function appMenuTemplate(
     SEPARATOR,
     command('workbench.action.nextEditor', 'menu.go.next_editor'),
     command('workbench.action.previousEditor', 'menu.go.previous_editor'),
-    // 切换组 ▸(VSCode MenubarSwitchGroupMenu 1_focus_index:只有本项目已有的第 1 / 2 / 3 组)
+    // 切换组 ▸(VSCode MenubarSwitchGroupMenu 1_focus_index:第 1 – 5 组)
     {
       label: t('menu.go.switch_group'),
       submenu: [
         command('workbench.action.focusFirstEditorGroup', 'menu.go.group_1'),
         command('workbench.action.focusSecondEditorGroup', 'menu.go.group_2'),
         command('workbench.action.focusThirdEditorGroup', 'menu.go.group_3'),
+        command('workbench.action.focusFourthEditorGroup', 'menu.go.group_4'),
+        command('workbench.action.focusFifthEditorGroup', 'menu.go.group_5'),
       ],
     },
   ];

@@ -119,6 +119,8 @@ const EditorGroupSessionSchema = z
     mruPaths: pathArray().optional(),
     /** 组内的预览 tab(缺省 = 全部常驻,旧数据同)。BDD: src/__tests__/editor-preview-tab/ */
     previewPath: pathStr().optional(),
+    /** 组内固定(pin)的 tab,按组内顺序(缺省 = 无,旧数据同)。BDD: src/__tests__/editor-tab-management/ */
+    stickyPaths: pathArray().optional(),
   })
   .strict();
 
@@ -130,6 +132,8 @@ const EditorSessionSchema = z
     mruPaths: pathArray().optional(),
     /** 单组时的预览 tab(同 EditorGroupSessionSchema.previewPath)。 */
     previewPath: pathStr().optional(),
+    /** 单组时固定的 tab(同 EditorGroupSessionSchema.stickyPaths)。 */
+    stickyPaths: pathArray().optional(),
     /** Markdown 视图模式(全局);只在非默认(source)时写。 */
     mode: z.enum(['edit', 'source', 'preview']).optional(),
     viewStates: z.array(EditorViewStateEntrySchema).max(EDITOR_VIEW_STATES_MAX).optional(),
@@ -142,6 +146,8 @@ const EditorSessionSchema = z
     groups: z.array(EditorGroupSessionSchema).max(EDITOR_GROUPS_MAX).optional(),
     /** 活动编辑器组 id(随 groups 写)。 */
     activeGroup: editorGroupId().optional(),
+    /** 编辑器组的最近使用顺序(随 groups 写;VSCode mostRecentActiveGroups)。BDD: src/__tests__/editor-tab-management/ */
+    groupMru: z.array(editorGroupId()).max(EDITOR_GROUPS_MAX).optional(),
   })
   .strict();
 

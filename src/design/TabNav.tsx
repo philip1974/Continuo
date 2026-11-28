@@ -59,6 +59,17 @@ export interface TabNavItemProps {
    * localized text (design layer has no i18n). Defaults to no tooltip.
    */
   readonly closeTitle?: string;
+  /**
+   * Pinned (sticky) tab: a pin affordance replaces the close button (VSCode pinned tabs show an "Unpin" action instead of
+   * close); clicking it calls `onUnpin`. Exposed as `data-pinned`. Defaults to `false`.
+   */
+  readonly pinned?: boolean;
+  /** Called by the pin affordance of a pinned tab. Without it a pinned tab shows no pin affordance. No default. */
+  readonly onUnpin?: () => void;
+  /** Accessible name of the pin affordance (caller supplies localized text). Defaults to `Unpin {title}` / `Unpin tab`. */
+  readonly unpinLabel?: string;
+  /** Hover tooltip of the pin affordance (caller supplies localized text). Defaults to no tooltip. */
+  readonly unpinTitle?: string;
   /** Applies a dimmed treatment for inactive or exited tabs. Defaults to `false`. */
   readonly muted?: boolean;
   /** Prevents selecting or closing this tab. Defaults to `false`. */
@@ -138,6 +149,10 @@ export function TabNavItem({
   dirty = false,
   muted = false,
   disabled = false,
+  pinned = false,
+  onUnpin,
+  unpinLabel: unpinLabelProp,
+  unpinTitle,
   title,
   onSelect,
   onMouseSelect,
@@ -171,6 +186,17 @@ export function TabNavItem({
   const handleClose = (event: MouseEvent<HTMLSpanElement>) => {
     event.stopPropagation();
     if (closable) onClose();
+  };
+  const showPin = pinned && onUnpin != null;
+  const unpinLabel =
+    unpinLabelProp != null && unpinLabelProp.length > 0
+      ? unpinLabelProp
+      : title != null && title.length > 0
+        ? `Unpin ${title}`
+        : 'Unpin tab';
+  const handleUnpin = (event: MouseEvent<HTMLSpanElement>) => {
+    event.stopPropagation();
+    if (!disabled) onUnpin?.();
   };
 
   // tab 元素自身承担按钮语义(不再是原生 button):Enter / Space 选中(焦点留在 tab,不回调 onMouseSelect);
@@ -227,6 +253,7 @@ export function TabNavItem({
       data-dirty={dirty}
       data-muted={muted}
       data-disabled={disabled}
+      data-pinned={pinned || undefined}
       title={title}
       draggable={draggable}
       onDragStart={onDragStart}
@@ -253,7 +280,23 @@ export function TabNavItem({
           aria-hidden={showDirtyDesc ? undefined : true}
         />
       ) : null}
-      {onClose != null ? (
+      {showPin ? (
+        // 固定的 tab:图钉代替关闭按钮,点击取消固定(VSCode tabActionUnpinVisibility 默认显示);同关闭按钮不可聚焦、不抢焦点。
+        <span
+          role="button"
+          className="wm-tab-nav-item__pin"
+          aria-label={unpinLabel}
+          title={unpinTitle}
+          aria-disabled={disabled || undefined}
+          onPointerDown={preventFocusSteal}
+          onMouseDown={preventFocusSteal}
+          onClick={handleUnpin}
+        >
+          <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M10.6 1.4a.75.75 0 0 1 1.06 0l2.94 2.94a.75.75 0 0 1 0 1.06l-.9.9a1.5 1.5 0 0 1-1.42.4l-2.2 2.2.2 1.73a1.5 1.5 0 0 1-.43 1.24l-.64.64a.75.75 0 0 1-1.06 0L5.9 10.28 2.28 13.9a.75.75 0 1 1-1.06-1.06L4.84 9.2 2.6 6.97a.75.75 0 0 1 0-1.06l.64-.64a1.5 1.5 0 0 1 1.24-.43l1.73.2 2.2-2.2a1.5 1.5 0 0 1 .4-1.42z" />
+          </svg>
+        </span>
+      ) : onClose != null ? (
         // 不用 design Button / 原生 button:tab 内不能有可聚焦控件(见上);只作鼠标点击目标。
         <span
           role="button"

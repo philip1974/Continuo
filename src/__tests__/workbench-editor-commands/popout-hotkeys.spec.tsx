@@ -85,6 +85,17 @@ describe('popout 子窗按键分发(只限作用于活动面板的命令)', () =
       // F6 / ⇧F6 在按键所在子窗自己的区域间循环(keyboard-focus-parity 第 6 条)
       'workbench.action.focusNextPart',
       'workbench.action.focusPreviousPart',
+      // 按序号打开 / 组内下一个·上一个·最后一个编辑器、移动编辑器:作用于该子窗的编辑器组(editor-tab-management)
+      ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `workbench.action.openEditorAtIndex${n}`),
+      'workbench.action.lastEditorInGroup',
+      'workbench.action.nextEditorInGroup',
+      'workbench.action.previousEditorInGroup',
+      'workbench.action.moveEditorToPreviousGroup',
+      'workbench.action.moveEditorToNextGroup',
+      'workbench.action.moveEditorToFirstGroup',
+      'workbench.action.moveEditorToLastGroup',
+      'workbench.action.moveEditorLeftInGroup',
+      'workbench.action.moveEditorRightInGroup',
     ]);
     expect(POPOUT_HOTKEY_COMMAND_IDS.has(NEXT_EDITOR_COMMAND_ID)).toBe(false);
     expect(POPOUT_HOTKEY_COMMAND_IDS.has(PREVIOUS_EDITOR_COMMAND_ID)).toBe(false);

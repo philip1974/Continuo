@@ -13,6 +13,7 @@ import {
   getEffectiveMode,
   groupActiveTabIdOf,
   groupPreviewTabIdOf,
+  groupStickyTabsOf,
   groupTabsOf,
   useEditorStore,
   type EditorMode,
@@ -20,7 +21,7 @@ import {
 } from '@/stores/editor.store';
 import { useEditorGroupId } from './editor-group-context';
 import { useEditorGroupNumber } from './editor-group-number';
-import { splitEditor } from './editor-groups-actions';
+import { moveEditor, splitEditor } from './editor-groups-actions';
 import { useEditorTabBarDrop } from '@/shell/dock/explorer-editor-drop';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { groupSizeMenuEntries, toggleExpandGroup } from '@/shell/dock/group-sizes';
@@ -52,7 +53,8 @@ import { tabLabelDescriptions } from './tab-label-description';
 import { CONTENT_FOCUS_TARGET_SELECTOR, focusContentTarget } from '@/lib/content-focus-target';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { commandHotkeyText, useRegisteredCommandHotkeyText, withHotkey } from '@/lib/hotkey-label';
-import { CLOSE_ACTIVE_EDITOR_COMMAND, SPLIT_EDITOR_COMMAND } from './editor-commands';
+import { CLOSE_ACTIVE_EDITOR_COMMAND, moveEditorCommands, SPLIT_EDITOR_COMMAND } from './editor-commands';
+import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import { useGitStatus } from '@/panels/Explorer/hooks/useGitStatus';
 import { fileGitDecoration, GIT_KIND_LABEL_KEY, GIT_KIND_TEXT_CLASS } from '@/panels/Explorer/git-decorations';
 import { useSettingValue } from '@/plugins/settings/values-store';
@@ -70,6 +72,8 @@ export interface TabChrome {
   readonly orphaned?: boolean;
   /** 本组的预览 tab(VSCode preview editor):标题斜体,双击转常驻。BDD: src/__tests__/editor-preview-tab/ */
   readonly preview?: boolean;
+  /** 本组固定(pin)的 tab:排在最左、图钉代替关闭按钮。BDD: src/__tests__/editor-tab-management/ */
+  readonly sticky?: boolean;
 }
 
 interface EditorHeaderProps {
@@ -82,6 +86,11 @@ interface EditorHeaderProps {
 }
 
 const EMPTY_TAB_CHROME: TabChrome[] = [];
+const EMPTY_STICKY_IDS: readonly string[] = [];
+// tab 右键「移到上一组 / 下一组」右侧显示的默认键(当前生效绑定由 commandHotkeyText 按改键跟随)
+const MOVE_EDITOR_SPECS = moveEditorCommands(detectPlatform() === 'mac');
+const MOVE_PREVIOUS_GROUP_COMMAND = MOVE_EDITOR_SPECS.find((c) => c.to === 'previous');
+const MOVE_NEXT_GROUP_COMMAND = MOVE_EDITOR_SPECS.find((c) => c.to === 'next');
 
 /**
  * 鼠标点 tab 后把焦点交给编辑区(VSCode:点编辑器 tab 即聚焦该编辑器)。等一帧:切 tab 后新编辑器在本次
@@ -211,7 +220,11 @@ export function editorTabAriaLabel(
   return label + suffix;
 }
 
-export function buildEditorTabChrome(tabs: readonly EditorTab[], previewTabId?: string): TabChrome[] {
+export function buildEditorTabChrome(
+  tabs: readonly EditorTab[],
+  previewTabId?: string,
+  stickyIds: readonly string[] = EMPTY_STICKY_IDS,
+): TabChrome[] {
   if (tabs.length === 0) return EMPTY_TAB_CHROME;
   const out = new Array<TabChrome>(tabs.length);
   for (let i = 0; i < tabs.length; i++) {
@@ -222,6 +235,7 @@ export function buildEditorTabChrome(tabs: readonly EditorTab[], previewTabId?: 
       dirty: tab.dirty,
       ...(tab.orphaned ? { orphaned: true } : {}),
       ...(tab.id === previewTabId ? { preview: true } : {}),
+      ...(stickyIds.includes(tab.id) ? { sticky: true } : {}),
     };
   }
   return out;
@@ -320,7 +334,7 @@ export const EditorHeader = memo(function EditorHeader({
   const tabsChrome = useMemo<readonly TabChrome[]>(
     () => {
       const s = useEditorStore.getState();
-      return buildEditorTabChrome(groupTabsOf(s, groupId), groupPreviewTabIdOf(s, groupId));
+      return buildEditorTabChrome(groupTabsOf(s, groupId), groupPreviewTabIdOf(s, groupId), groupStickyTabsOf(s, groupId));
     },
     // chromeVersion 作"失效键":body 用 getState() 读最新 tabs,version 变(chrome 真
     // 变)才重建对象数组。lint 看不到 body 引用 chromeVersion 故误判 unnecessary。
@@ -334,7 +348,9 @@ export const EditorHeader = memo(function EditorHeader({
   const groupNumber = useEditorGroupNumber(groupId);
   const storeSwitchTab = useEditorStore((s) => s.switchTab);
   const switchTab = useCallback((id: string) => storeSwitchTab(id, { groupId }), [storeSwitchTab, groupId]);
-  const pinTab = useEditorStore((s) => s.pinTab);
+  const keepTab = useEditorStore((s) => s.keepTab);
+  const pinEditor = useEditorStore((s) => s.pinEditor);
+  const unpinEditor = useEditorStore((s) => s.unpinEditor);
   // active tab 的派生 primitive,供右侧 action 区(打磨 R23/R45 + 性能 P14)。旧实现每次
   // store 更新都 `tabs.find(...) + JSON.stringify([filePath, dirty, effectiveMode])`
   // (O(tab 数) find + 小分配/序列化)。现复用 chromeVersion(P12 已扩展为也在
@@ -386,10 +402,13 @@ export const EditorHeader = memo(function EditorHeader({
         { label: t('shell.tab.ctx.close_saved'), onSelect: close('saved'), opensDialog: true },
         { label: t('shell.tab.ctx.close_all'), onSelect: close('all'), opensDialog: true },
         'separator',
-        // 预览 tab:「保持打开」(VSCode EditorTitleContext 3_preview keepEditor;⌘K Enter 是和弦,不显示键位)
-        ...(tab.preview
-          ? ([{ label: t('shell.tab.ctx.keep_open'), onSelect: () => pinTab(tab.id, groupId) }, 'separator'] satisfies TabMenuEntry[])
-          : []),
+        // 预览 tab:「保持打开」(VSCode EditorTitleContext 3_preview keepEditor;⌘K Enter 是和弦,不显示键位);
+        //「固定 / 取消固定」同组(3_preview order 20;⌘K ⇧Enter 是和弦,不显示键位)。BDD: src/__tests__/editor-tab-management/
+        ...(tab.preview ? ([{ label: t('shell.tab.ctx.keep_open'), onSelect: () => keepTab(tab.id, groupId) }] satisfies TabMenuEntry[]) : []),
+        tab.sticky
+          ? { label: t('shell.tab.ctx.unpin'), onSelect: () => unpinEditor(tab.id, groupId) }
+          : { label: t('shell.tab.ctx.pin'), onSelect: () => pinEditor(tab.id, groupId) },
+        'separator',
         {
           label: t('panels.explorer.ctx.copy_path'),
           onSelect: () => void copyToClipboardOrNotify(tab.filePath, copyFailed),
@@ -418,11 +437,23 @@ export const EditorHeader = memo(function EditorHeader({
           shortcut: commandHotkeyText(SPLIT_EDITOR_COMMAND),
         },
         { label: t('shell.tab.ctx.split_down'), onSelect: () => void splitEditor('down', { groupId, tabId: tab.id }) },
+        // 移到上一组 / 下一组(VSCode 在「拆分并移动 ▸」里按方向移动;这里按组的空间顺序,没有则拆出新组 —— 同命令
+        // moveEditorToPrevious/NextGroup;编辑器 tab 不能拖到别的组,菜单是鼠标入口)
+        {
+          label: t('shell.tab.ctx.move_previous_group'),
+          onSelect: () => void moveEditor('previous', { groupId, tabId: tab.id }),
+          shortcut: commandHotkeyText(MOVE_PREVIOUS_GROUP_COMMAND),
+        },
+        {
+          label: t('shell.tab.ctx.move_next_group'),
+          onSelect: () => void moveEditor('next', { groupId, tabId: tab.id }),
+          shortcut: commandHotkeyText(MOVE_NEXT_GROUP_COMMAND),
+        },
         // 「最大化组 / 取消最大化组」(VSCode toggleMaximizeEditorGroup,dock tab 菜单同一项;BDD: src/__tests__/dock-group-sizes/)
         ...dockGroupSizeMenuEntries(groupId, t),
       ];
     },
-    [onCloseTabsRequest, tabsChrome, t, groupId, pinTab],
+    [onCloseTabsRequest, tabsChrome, t, groupId, keepTab, pinEditor, unpinEditor],
   );
   const closeTitle = withHotkey(t('shell.tab.close_tooltip'), useRegisteredCommandHotkeyText(coApp.commands, CLOSE_ACTIVE_EDITOR_COMMAND.id));
 
@@ -510,10 +541,16 @@ export const EditorHeader = memo(function EditorHeader({
               title={isUntitledPath(tab.filePath) ? tabTitle : gitLabel === null ? tab.filePath : `${tab.filePath} · ${gitLabel}`}
               onSelect={() => switchTab(tab.id)}
               onMouseSelect={focusEditorContent}
-              onClose={() => onCloseRequest(tab)}
+              // 固定的 tab:图钉代替 ×(点它取消固定),中键 / Delete 不关它(VSCode preventPinnedEditorClose 默认 keyboardAndMouse);
+              // 右键「关闭」照常关。BDD: src/__tests__/editor-tab-management/
+              onClose={tab.sticky ? undefined : () => onCloseRequest(tab)}
+              pinned={tab.sticky === true}
+              onUnpin={() => unpinEditor(tab.id, groupId)}
+              unpinLabel={t('shell.tab.unpin', { title: tabTitle })}
+              unpinTitle={t('shell.tab.unpin_tooltip')}
               // 双击预览 tab → 常驻;双击常驻 tab → 切换组大小(VSCode doubleClickTabToToggleEditorGroupSizes 默认 expand;
               // BDD: src/__tests__/dock-group-sizes/)
-              onDoubleClick={tab.preview ? () => pinTab(tab.id, groupId) : () => toggleEditorGroupExpand(groupId)}
+              onDoubleClick={tab.preview ? () => keepTab(tab.id, groupId) : () => toggleEditorGroupExpand(groupId)}
               // 读屏名称:预览 tab 追加「，预览」(VSCode computeEditorAriaLabel);常驻 tab 照旧取标签内容
               // git 字母放 trailing 槽位:长标题截断时字母仍可见(VSCode tab 装饰徽标)
               trailing={
@@ -524,12 +561,13 @@ export const EditorHeader = memo(function EditorHeader({
                 ) : undefined
               }
               ariaLabel={
-                tab.preview
+                tab.preview || tab.sticky
                   ? editorTabAriaLabel(
                       tabTitle,
                       tab.orphaned ? t('panels.editor.tab_deleted') : null,
                       description ?? null,
-                      t('panels.editor.tab_preview_suffix'),
+                      // 固定的 tab 追加「，已固定」(VSCode computeEditorAriaLabel「{0}, pinned」)
+                      t(tab.preview ? 'panels.editor.tab_preview_suffix' : 'panels.editor.tab_pinned_suffix'),
                     )
                   : undefined
               }
