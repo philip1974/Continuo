@@ -9,7 +9,7 @@ import {
   prepareExplorerFileForBoot,
   writeExplorerFile,
 } from '../../../electron/main/persistence';
-import { explorerExtFilePath } from '../../../electron/main/explorer-downgrade-compat';
+import { explorerExtFilePath, stripEditorGroupPanels } from '../../../electron/main/explorer-downgrade-compat';
 import type { ExplorerPayloadV3 } from '../../../electron/shared/explorer-persistence-schema';
 import { ExplorerSchemaV3 as ExplorerSchemaV3_0215 } from './fixtures/explorer-schema-0.2.15';
 
@@ -108,7 +108,7 @@ describe('写出的 explorer.json 能被 0.2.15 读', () => {
 });
 
 describe('降级期间旧版本改过 explorer.json', () => {
-  it('旧版本改了 tab 列表 → 以 explorer.json 为准,不合并已对不上的 tab 结构(组 / 固定 / 预览 / MRU / openWindowSeqs);几何、搜索、视图状态、编码、快照照常回来', async () => {
+  it('旧版本改了某窗口的 tab 列表 → 该窗口以 explorer.json 为准,不合并已对不上的 tab 结构(组 / 固定 / 预览 / MRU);几何、搜索、视图状态、编码、快照照常回来;别的窗口不受影响', async () => {
     await writeExplorerFile(file, fullPayload());
     // 模拟 0.2.15 读-改-写(它按自己的 schema 写回整份,2 空格缩进)
     const old = ExplorerSchemaV3_0215.parse(await readJson(file));
@@ -128,8 +128,9 @@ describe('降级期间旧版本改过 explorer.json', () => {
     });
     expect(w0.windowState).toEqual(fullPayload().windows[0]!.windowState);
     expect(w0.search).toEqual(fullPayload().windows[0]!.search);
-    expect(loaded.windows[1]!.editor).toEqual({ openFilePaths: ['/ws2/x.ts'], activePath: '/ws2/x.ts' });
-    expect(loaded.openWindowSeqs).toBeUndefined();
+    // 窗口 2 的 tab 没动:预览 tab 照常回来
+    expect(loaded.windows[1]!.editor).toEqual(fullPayload().windows[1]!.editor);
+    expect(loaded.openWindowSeqs).toEqual([2, 0]);
     expect(loaded.workspaceSnapshots).toEqual(fullPayload().workspaceSnapshots);
   });
 
@@ -140,6 +141,166 @@ describe('降级期间旧版本改过 explorer.json', () => {
     await fs.writeFile(file, JSON.stringify(old, null, 2));
     const loaded = (await loadExplorer(file))!;
     expect(loaded.windows.map((w) => w.windowSeq)).toEqual([0]);
+    // 上次退出时开着的窗口只留仍在的
+    expect(loaded.openWindowSeqs).toEqual([0]);
+  });
+});
+
+/** dockview 实际写出的两组拆分 layout(左 editor、右 editor:2,活动组 = 右侧)。 */
+function splitLayout(): Record<string, unknown> {
+  const panel = (id: string, title: string) => ({
+    id,
+    contentComponent: 'editor',
+    tabComponent: 'props.defaultTabComponent',
+    params: { titleKey: 'panels.editor.title' },
+    title,
+  });
+  return {
+    version: 1,
+    grid: {
+      root: {
+        type: 'branch',
+        data: [
+          { type: 'leaf', data: { views: ['editor'], activeView: 'editor', id: '1' }, size: 476 },
+          { type: 'leaf', data: { views: ['editor:2'], activeView: 'editor:2', id: '2' }, size: 476 },
+        ],
+        size: 740,
+      },
+      width: 952,
+      height: 740,
+      orientation: 'HORIZONTAL',
+    },
+    panels: { editor: panel('editor', 'Editor'), 'editor:2': panel('editor:2', 'Editor 2') },
+    activeGroup: '2',
+  };
+}
+
+function splitPayload(): ExplorerPayloadV3 {
+  const p = fullPayload();
+  p.windows[0]!.layout = splitLayout();
+  return p;
+}
+
+type Grid = { root: { data: { data: { views: string[]; activeView: string; id: string }; size: number }[] }; width: number };
+
+describe('拆分过编辑器组的 layout', () => {
+  it('写给 0.2.15 的 layout 只有一个编辑器面板,空出的尺寸给它;仍过 0.2.15 strict schema;新版读回完整 layout', async () => {
+    await writeExplorerFile(file, splitPayload());
+    const onDisk = await readJson(file);
+    const old = ExplorerSchemaV3_0215.safeParse(onDisk);
+    expect(old.success, JSON.stringify(old.error?.issues)).toBe(true);
+    const layout = old.data!.windows[0]!.layout as { panels: Record<string, unknown>; grid: Grid; activeGroup: string };
+    expect(Object.keys(layout.panels)).toEqual(['editor']);
+    expect(layout.grid.root.data).toEqual([{ type: 'leaf', data: { views: ['editor'], activeView: 'editor', id: '1' }, size: 952 }]);
+    expect(layout.activeGroup).toBe('1');
+    expect(await loadExplorer(file)).toEqual(splitPayload());
+  });
+
+  it('0.2.15 什么都不动退出(重写面板标题 / 尺寸 / lastClosedAt / 整份格式)→ 再升级,编辑器组、固定 tab、完整 layout 都在', async () => {
+    await writeExplorerFile(file, splitPayload());
+    const old = ExplorerSchemaV3_0215.parse(await readJson(file));
+    const w0 = old.windows[0]!;
+    const layout = w0.layout as { panels: Record<string, { title: string }>; grid: Grid & { height: number } };
+    layout.panels['editor']!.title = '编辑器';
+    layout.grid.width = 1000;
+    layout.grid.height = 700;
+    layout.grid.root.data[0]!.size = 1000;
+    w0.lastClosedAt = 1_800_000_000_000;
+    old.windows[1]!.lastClosedAt = 1_800_000_000_001;
+    await fs.writeFile(file, JSON.stringify(old));
+
+    const loaded = (await loadExplorer(file))!;
+    expect(loaded.windows[0]!.layout).toEqual(splitLayout());
+    expect(loaded.windows[0]!.editor).toEqual(splitPayload().windows[0]!.editor);
+    expect(loaded.windows[0]!.lastClosedAt).toBe(1_800_000_000_000);
+    expect(loaded.windows[1]!.editor).toEqual(splitPayload().windows[1]!.editor);
+    expect(loaded.openWindowSeqs).toEqual([2, 0]);
+  });
+
+  it('0.2.15 里改了 tab → 以 0.2.15 的 tab 与 layout 为准(不还原组面板,只剩一个编辑器)', async () => {
+    await writeExplorerFile(file, splitPayload());
+    const old = ExplorerSchemaV3_0215.parse(await readJson(file));
+    old.windows[0]!.editor = { openFilePaths: ['/ws/a.ts', '/ws/e.ts'], activePath: '/ws/e.ts' };
+    await fs.writeFile(file, JSON.stringify(old, null, 2));
+
+    const loaded = (await loadExplorer(file))!;
+    expect(Object.keys((loaded.windows[0]!.layout as { panels: object }).panels)).toEqual(['editor']);
+    expect(loaded.windows[0]!.editor!.groups).toBeUndefined();
+    expect(loaded.windows[0]!.editor!.openFilePaths).toEqual(['/ws/a.ts', '/ws/e.ts']);
+  });
+
+  it('0.2.15 里挪过面板(layout 结构变了)、tab 没动 → 用 0.2.15 的 layout,编辑器组不合并(组面板已不在 layout 里)', async () => {
+    await writeExplorerFile(file, splitPayload());
+    const old = ExplorerSchemaV3_0215.parse(await readJson(file));
+    const layout = old.windows[0]!.layout as { grid: { orientation: string } };
+    layout.grid.orientation = 'VERTICAL';
+    await fs.writeFile(file, JSON.stringify(old, null, 2));
+
+    const loaded = (await loadExplorer(file))!;
+    expect(loaded.windows[0]!.layout).toEqual(layout);
+    expect(loaded.windows[0]!.editor).toEqual({
+      openFilePaths: ['/ws/a.ts', '/ws/b.ts', '/ws/c.md'],
+      activePath: '/ws/a.ts',
+      mode: 'preview',
+      viewStates: fullPayload().windows[0]!.editor!.viewStates,
+      encodings: fullPayload().windows[0]!.editor!.encodings,
+    });
+  });
+});
+
+describe('stripEditorGroupPanels(写给 0.2.15 的 layout)', () => {
+  it('没有组面板 → 原对象', () => {
+    const l = { grid: { root: { type: 'leaf', data: { views: ['editor'], activeView: 'editor', id: '1' } } }, panels: { editor: {} } };
+    expect(stripEditorGroupPanels(l)).toBe(l);
+  });
+
+  it('主编辑器被关掉、只剩组面板 → 第一个组面板顶替 `editor`,其余去掉', () => {
+    const l = splitLayout();
+    const panels = l['panels'] as Record<string, unknown>;
+    panels['editor:3'] = { id: 'editor:3', contentComponent: 'editor' };
+    delete panels['editor'];
+    const root = (l['grid'] as Grid).root;
+    root.data[0]!.data = { views: ['editor:3'], activeView: 'editor:3', id: '1' };
+    const out = stripEditorGroupPanels(l) as { panels: Record<string, { id: string }>; grid: Grid; activeGroup: string };
+    expect(Object.keys(out.panels)).toEqual(['editor']);
+    expect(out.panels['editor']!.id).toBe('editor');
+    expect(out.grid.root.data).toEqual([{ type: 'leaf', data: { views: ['editor'], activeView: 'editor', id: '1' }, size: 952 }]);
+    expect(out.activeGroup).toBe('1');
+  });
+
+  it('组面板与别的面板同组 / 在嵌套分支 / 浮动组里 → 只去掉组面板,别的面板与分支照留,空组去掉', () => {
+    const l = {
+      grid: {
+        root: {
+          type: 'branch',
+          size: 600,
+          data: [
+            { type: 'leaf', size: 300, data: { views: ['editor'], activeView: 'editor', id: '1' } },
+            {
+              type: 'branch',
+              size: 300,
+              data: [
+                { type: 'leaf', size: 200, data: { views: ['editor:2', 'search'], activeView: 'editor:2', id: '2' } },
+                { type: 'leaf', size: 400, data: { views: ['editor:3'], activeView: 'editor:3', id: '3' } },
+              ],
+            },
+          ],
+        },
+        orientation: 'HORIZONTAL',
+      },
+      floatingGroups: [{ data: { views: ['editor:4'], activeView: 'editor:4', id: '4' }, position: {} }],
+      panels: { editor: {}, 'editor:2': {}, 'editor:3': {}, 'editor:4': {}, search: {} },
+      activeGroup: '3',
+    };
+    const out = stripEditorGroupPanels(l) as typeof l;
+    expect(Object.keys(out.panels)).toEqual(['editor', 'search']);
+    expect(out.grid.root.data[1]).toEqual({
+      type: 'branch',
+      size: 300,
+      data: [{ type: 'leaf', size: 600, data: { views: ['search'], activeView: 'search', id: '2' } }],
+    });
+    expect(out.floatingGroups).toEqual([]);
+    expect(out.activeGroup).toBe('1');
   });
 });
 

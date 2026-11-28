@@ -5,9 +5,15 @@
 // 做法(对齐 VSCode 的「旧版本读不懂的状态不进它要读的文件」:VSCode 各项状态是 state.vscdb 里的独立键,旧版本只读它认识的键):
 // - explorer.json 只写 0.2.15 认识的字段(下方 LEGACY_* 白名单;守护测试拿 0.2.15 原 schema 快照校验写出的文件)。
 // - 其余字段写旁挂文件 explorer-ext.json(按 windowSeq 对应窗口段),读时合并回去。旁挂文件缺失 / 损坏 → 只用 explorer.json(丢的只是新增字段)。
-// - 旁挂文件记录写它时 explorer.json 原文的摘要。读时摘要不符 = explorer.json 被别人(旧版本)改过 / 两次写之间崩溃:
-//   只合并按路径 / 窗口独立、不会与旧版本的改动冲突的字段(几何、搜索、视图状态、编码、Markdown 模式、文件夹快照),
-//   丢掉描述 tab 结构的字段(编辑器组、MRU、预览 / 固定 tab、openWindowSeqs)—— 它们对应的是旧版本改动之前的 tab 列表。
+// - 多编辑器组的 layout(带 `editor:2` … 面板)写给 0.2.15 时去掉多出的编辑器组面板(它把它们当成内容一样的重复编辑器),
+//   空出的尺寸并给主编辑器所在的一侧;完整 layout 进旁挂文件。
+// - 旁挂文件按窗口记下写出时 explorer.json 里该窗口的 tab 列表(openFilePaths + activePath)摘要与 layout 结构摘要
+//   (只含面板 / 分组的树形,不含尺寸、标题、活动项 —— 0.2.15 什么都不动退出也会重写它们)。读时逐窗口比对:
+//   - tab 列表对得上 → 该窗口的 tab 结构字段(编辑器组、MRU、预览 / 固定 tab)照常合并;layout 结构也对得上 → 还原完整 layout;
+//     layout 结构对不上(旧版本里挪过面板)→ 用 explorer.json 的 layout,编辑器组随之不合并(组面板已不在 layout 里);
+//   - tab 列表对不上(旧版本里改过 tab)→ 以 explorer.json 为准,该窗口只合并与 tab 列表无关的字段
+//     (几何、搜索、视图状态、编码、Markdown 模式);只影响这一个窗口。
+//   旁挂文件里没有逐窗口摘要的段(本分支更早写的)退回整份原文摘要比对。openWindowSeqs 只保留 explorer.json 里仍在的窗口。
 // BDD: src/__tests__/explorer-downgrade-compat/
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -18,9 +24,14 @@ const LEGACY_TOP_KEYS = new Set(['version', 'workspace', 'pinned', 'nextWindowSe
 const LEGACY_WINDOW_KEYS = new Set(['windowSeq', 'workspace', 'explorer', 'layoutUi', 'editor', 'layout', 'lastClosedAt']);
 const LEGACY_EDITOR_KEYS = new Set(['openFilePaths', 'activePath']);
 
-/** 描述 tab 结构的字段:explorer.json 被旧版本改过时与它的 tab 列表不再对应,不合并。 */
-const STRUCTURAL_TOP_KEYS = new Set(['openWindowSeqs']);
+/** 描述 tab 结构的字段:该窗口的 tab 列表被旧版本改过时不再对应,不合并。 */
 const STRUCTURAL_EDITOR_KEYS = new Set(['mruPaths', 'previewPath', 'stickyPaths', 'groups', 'activeGroup', 'groupMru']);
+/** 编辑器组字段:与 layout 里的组面板对应,layout 没能还原时不合并。 */
+const GROUP_EDITOR_KEYS = new Set(['groups', 'activeGroup', 'groupMru']);
+const NO_KEYS: ReadonlySet<string> = new Set();
+
+const PRIMARY_EDITOR_PANEL = 'editor';
+const EDITOR_GROUP_PANEL_RE = /^editor:\d+$/;
 
 const EXT_VERSION = 1 as const;
 
@@ -30,6 +41,10 @@ interface ExtWindow {
   windowSeq: number;
   fields: Obj;
   editor?: Obj;
+  /** 同次写进 explorer.json 的该窗口 tab 列表摘要(见 tabsDigest)。 */
+  tabs?: string;
+  /** explorer.json 里的 layout 去掉了编辑器组面板:完整 layout 与写出的 layout 的结构摘要(见 layoutShapeDigest)。 */
+  layout?: { full: Obj; shape: string };
 }
 
 /** 旁挂文件内容。 */
@@ -63,6 +78,164 @@ function partition(src: Obj, legacyKeys: ReadonlySet<string>): { legacy: Obj; ex
   return { legacy, extra };
 }
 
+/** 窗口 tab 列表摘要:explorer.json 里该窗口的 openFilePaths + activePath(0.2.15 读写的就是这两项)。 */
+function tabsDigest(editor: unknown): string {
+  const e = isObj(editor) ? editor : {};
+  return hashExplorerText(JSON.stringify([e['openFilePaths'] ?? null, e['activePath'] ?? null]));
+}
+
+/** dockview 序列化 grid 节点里各 leaf 的面板 id。 */
+function leafViews(node: unknown): string[] {
+  if (!isObj(node)) return [];
+  if (node['type'] === 'leaf') {
+    const data = node['data'];
+    return isObj(data) && Array.isArray(data['views']) ? data['views'].filter((v): v is string => typeof v === 'string') : [];
+  }
+  return Array.isArray(node['data']) ? node['data'].flatMap(leafViews) : [];
+}
+
+function shapeOfNode(node: unknown): unknown {
+  if (!isObj(node)) return null;
+  if (node['type'] === 'leaf') return leafViews(node);
+  return Array.isArray(node['data']) ? node['data'].map(shapeOfNode) : null;
+}
+
+const groupViews = (list: unknown): unknown =>
+  Array.isArray(list) ? list.map((g) => (isObj(g) ? leafViews({ type: 'leaf', data: g['data'] }) : null)) : null;
+
+/**
+ * layout 结构摘要:分组树形(方向 + 各组面板 id 顺序)、浮动 / popout 组的面板、面板 id 与类型。
+ * 不含尺寸、标题、参数、活动面板 / 活动组、组 id —— 0.2.15 什么都不动退出也会按自己的方式重写它们(如编辑器标题)。
+ */
+export function layoutShapeDigest(layout: unknown): string {
+  const l = isObj(layout) ? layout : {};
+  const grid = isObj(l['grid']) ? l['grid'] : {};
+  const panels = isObj(l['panels']) ? l['panels'] : {};
+  const shape = {
+    o: grid['orientation'] ?? null,
+    root: shapeOfNode(grid['root']),
+    floating: groupViews(l['floatingGroups']),
+    popout: groupViews(l['popoutGroups']),
+    panels: Object.keys(panels)
+      .sort()
+      .map((id) => [id, isObj(panels[id]) ? (panels[id]['contentComponent'] ?? null) : null]),
+  };
+  return hashExplorerText(JSON.stringify(shape));
+}
+
+/** 从 grid 子树去掉 drop 里的面板;整棵子树空了 → null。空出的尺寸并给含 keep 面板的兄弟(没有就给相邻的)。 */
+function pruneGridNode(node: unknown, drop: ReadonlySet<string>, keep: string): Obj | null {
+  if (!isObj(node)) return null;
+  if (node['type'] === 'leaf') {
+    const data = isObj(node['data']) ? node['data'] : {};
+    const views = leafViews(node);
+    const kept = views.filter((v) => !drop.has(v));
+    if (kept.length === 0) return null;
+    if (kept.length === views.length) return node;
+    const activeView = kept.includes(data['activeView'] as string) ? data['activeView'] : kept[0];
+    return { ...node, data: { ...data, views: kept, activeView } };
+  }
+  if (!Array.isArray(node['data'])) return node;
+  const children = node['data'] as unknown[];
+  const out: Obj[] = [];
+  let freed = 0;
+  let changed = false;
+  for (const child of children) {
+    const pruned = pruneGridNode(child, drop, keep);
+    if (pruned !== child) changed = true;
+    if (pruned === null) {
+      const size = isObj(child) ? child['size'] : undefined;
+      if (typeof size === 'number' && Number.isFinite(size)) freed += size;
+      continue;
+    }
+    out.push(pruned);
+  }
+  if (out.length === 0) return null;
+  if (!changed) return node;
+  if (freed > 0) {
+    let i = out.findIndex((c) => leafViews(c).includes(keep));
+    if (i < 0) i = 0;
+    const target = out[i]!;
+    if (typeof target['size'] === 'number') out[i] = { ...target, size: target['size'] + freed };
+  }
+  return { ...node, data: out };
+}
+
+/** layout 里的各组(grid leaf + 浮动 / popout 组):组 id 与面板 id。 */
+function layoutGroups(layout: Obj): { id: unknown; views: string[] }[] {
+  const out: { id: unknown; views: string[] }[] = [];
+  const walk = (node: unknown): void => {
+    if (!isObj(node)) return;
+    if (node['type'] === 'leaf') out.push({ id: isObj(node['data']) ? node['data']['id'] : undefined, views: leafViews(node) });
+    else if (Array.isArray(node['data'])) node['data'].forEach(walk);
+  };
+  walk(isObj(layout['grid']) ? layout['grid']['root'] : undefined);
+  for (const key of ['floatingGroups', 'popoutGroups']) {
+    const list = layout[key];
+    if (Array.isArray(list)) for (const g of list) if (isObj(g)) walk({ type: 'leaf', data: g['data'] });
+  }
+  return out;
+}
+
+/**
+ * 写给 0.2.15 的 layout:只留一个编辑器面板(`editor`;没有它时把第一个组面板改名成 `editor`),去掉其余 `editor:N`。
+ * 0.2.15 不认识编辑器组,会把这些面板当成内容一样的重复编辑器显示。没有组面板 → 原对象返回。
+ */
+export function stripEditorGroupPanels(layout: Obj): Obj {
+  const panels = isObj(layout['panels']) ? layout['panels'] : null;
+  if (panels === null) return layout;
+  const groupIds = Object.keys(panels).filter((id) => EDITOR_GROUP_PANEL_RE.test(id));
+  if (groupIds.length === 0) return layout;
+  const grid = isObj(layout['grid']) ? layout['grid'] : null;
+  const order = layoutGroups(layout).flatMap((g) => g.views);
+  // 主编辑器面板不在(用户关掉了第一个组):第一个组面板顶替它的 id。
+  const rename = Object.hasOwn(panels, PRIMARY_EDITOR_PANEL)
+    ? null
+    : (order.find((v) => groupIds.includes(v)) ?? groupIds[0]!);
+  const drop = new Set(groupIds.filter((id) => id !== rename));
+  const renameView = (v: unknown): unknown => (v === rename ? PRIMARY_EDITOR_PANEL : v);
+  const renameNode = (node: unknown): unknown => {
+    if (rename === null || !isObj(node)) return node;
+    if (node['type'] === 'leaf') {
+      const data = isObj(node['data']) ? node['data'] : {};
+      return { ...node, data: { ...data, views: leafViews(node).map(renameView), activeView: renameView(data['activeView']) } };
+    }
+    return Array.isArray(node['data']) ? { ...node, data: node['data'].map(renameNode) } : node;
+  };
+
+  const out: Obj = { ...layout };
+  const nextPanels: Obj = {};
+  for (const [id, panel] of Object.entries(panels)) {
+    if (drop.has(id)) continue;
+    if (id === rename) nextPanels[PRIMARY_EDITOR_PANEL] = isObj(panel) ? { ...panel, id: PRIMARY_EDITOR_PANEL } : panel;
+    else nextPanels[id] = panel;
+  }
+  out['panels'] = nextPanels;
+  if (grid !== null) {
+    // 主编辑器只在浮动 / popout 组里、grid 里全是组面板 → grid 留空分支。
+    const root = pruneGridNode(grid['root'], drop, rename ?? PRIMARY_EDITOR_PANEL);
+    out['grid'] = { ...grid, root: renameNode(root ?? { ...(isObj(grid['root']) ? grid['root'] : {}), data: [] }) };
+  }
+  for (const key of ['floatingGroups', 'popoutGroups'] as const) {
+    const list = layout[key];
+    if (!Array.isArray(list)) continue;
+    out[key] = list.flatMap((g) => {
+      if (!isObj(g) || !isObj(g['data'])) return [g];
+      const pruned = pruneGridNode({ type: 'leaf', data: g['data'] }, drop, PRIMARY_EDITOR_PANEL);
+      if (pruned === null) return [];
+      return [{ ...g, data: (renameNode(pruned) as Obj)['data'] }];
+    });
+  }
+  // 活动组被去掉了 → 改指主编辑器所在的组。
+  const groups = layoutGroups(out);
+  if (layout['activeGroup'] !== undefined && !groups.some((g) => g.id === layout['activeGroup'])) {
+    const primary = groups.find((g) => g.views.includes(PRIMARY_EDITOR_PANEL));
+    if (primary?.id !== undefined) out['activeGroup'] = primary.id;
+    else delete out['activeGroup'];
+  }
+  return out;
+}
+
 /** 拆成 0.2.15 能读的 explorer.json 内容与新增字段(无新增字段时 ext 为 null)。 */
 export function splitExplorerPayload(payload: ExplorerPayloadV3): {
   legacy: ExplorerPayloadV3;
@@ -78,8 +251,22 @@ export function splitExplorerPayload(payload: ExplorerPayloadV3): {
       lw['editor'] = e.legacy;
       editorExtra = e.extra;
     }
-    if (extra || editorExtra) {
-      extWindows.push({ windowSeq: w.windowSeq, fields: extra ?? {}, ...(editorExtra ? { editor: editorExtra } : {}) });
+    let layout: ExtWindow['layout'];
+    if (isObj(lw['layout'])) {
+      const stripped = stripEditorGroupPanels(lw['layout']);
+      if (stripped !== lw['layout']) {
+        layout = { full: lw['layout'], shape: layoutShapeDigest(stripped) };
+        lw['layout'] = stripped;
+      }
+    }
+    if (extra || editorExtra || layout) {
+      extWindows.push({
+        windowSeq: w.windowSeq,
+        fields: extra ?? {},
+        ...(editorExtra ? { editor: editorExtra } : {}),
+        tabs: tabsDigest(lw['editor']),
+        ...(layout ? { layout } : {}),
+      });
     }
     return lw;
   });
@@ -106,10 +293,15 @@ export function parseExplorerExt(text: string): ExplorerExtFile | null {
   for (const w of json['windows']) {
     if (!isObj(w) || !Number.isSafeInteger(w['windowSeq']) || !isObj(w['fields'])) return null;
     if (w['editor'] !== undefined && !isObj(w['editor'])) return null;
+    if (w['tabs'] !== undefined && typeof w['tabs'] !== 'string') return null;
+    const layout = w['layout'];
+    if (layout !== undefined && !(isObj(layout) && isObj(layout['full']) && typeof layout['shape'] === 'string')) return null;
     windows.push({
       windowSeq: w['windowSeq'] as number,
       fields: w['fields'],
       ...(w['editor'] ? { editor: w['editor'] } : {}),
+      ...(typeof w['tabs'] === 'string' ? { tabs: w['tabs'] } : {}),
+      ...(isObj(layout) ? { layout: { full: layout['full'] as Obj, shape: layout['shape'] as string } } : {}),
     });
   }
   return { version: EXT_VERSION, legacyHash: json['legacyHash'], top: json['top'], windows };
@@ -125,14 +317,21 @@ function assignNew(target: Obj, src: Obj, legacyKeys: ReadonlySet<string>, skip:
 
 /**
  * 把旁挂文件的新增字段合并进 explorer.json 解析出的 JSON(尚未过 schema:调用方对合并结果做一次整体校验,不合法再单独校验
- * explorer.json —— 常见路径只校验一次)。`exact` = 旁挂文件记录的摘要与 explorer.json 原文一致;否则不合并 tab 结构字段。
+ * explorer.json —— 常见路径只校验一次)。逐窗口比对 tab 列表 / layout 结构摘要决定合并哪些 tab 结构字段(见文件头);
+ * `exact` = 旁挂文件记录的整份原文摘要与 explorer.json 一致,只给没有逐窗口摘要的段用。
  * 外形不对(非 v3 对象)→ 原样返回。
  */
 export function mergeExplorerExt(base: unknown, ext: ExplorerExtFile, exact: boolean): unknown {
   if (!isObj(base) || base['version'] !== 3 || !Array.isArray(base['windows'])) return base;
-  const none = new Set<string>();
   const merged = { ...base };
-  assignNew(merged, ext.top, LEGACY_TOP_KEYS, exact ? none : STRUCTURAL_TOP_KEYS);
+  assignNew(merged, ext.top, LEGACY_TOP_KEYS, NO_KEYS);
+  // 上次退出时开着的窗口:只留 explorer.json 里仍在的(旧版本可能裁掉了窗口段)。
+  if (!exact && Array.isArray(merged['openWindowSeqs'])) {
+    const seqs = new Set((base['windows'] as unknown[]).map((w) => (isObj(w) ? w['windowSeq'] : undefined)));
+    const kept = (merged['openWindowSeqs'] as unknown[]).filter((seq) => seqs.has(seq));
+    if (kept.length > 0) merged['openWindowSeqs'] = kept;
+    else delete merged['openWindowSeqs'];
+  }
   const extBySeq = new Map<number, ExtWindow>();
   for (const w of ext.windows) if (!extBySeq.has(w.windowSeq)) extBySeq.set(w.windowSeq, w);
   merged['windows'] = (base['windows'] as unknown[]).map((w) => {
@@ -141,10 +340,16 @@ export function mergeExplorerExt(base: unknown, ext: ExplorerExtFile, exact: boo
     if (!e) return w;
     extBySeq.delete(e.windowSeq); // 同一 windowSeq 的重复段只补首个(与 findWindowEntryBySeq 命中首个一致)
     const out = { ...w };
-    assignNew(out, e.fields, LEGACY_WINDOW_KEYS, none);
+    assignNew(out, e.fields, LEGACY_WINDOW_KEYS, NO_KEYS);
+    const tabsMatch = e.tabs !== undefined ? e.tabs === tabsDigest(w['editor']) : exact;
+    let layoutRestored = true;
+    if (e.layout) {
+      layoutRestored = tabsMatch && e.layout.shape === layoutShapeDigest(w['layout']);
+      if (layoutRestored) out['layout'] = e.layout.full;
+    }
     if (e.editor && isObj(out['editor'])) {
       const editor = { ...out['editor'] };
-      assignNew(editor, e.editor, LEGACY_EDITOR_KEYS, exact ? none : STRUCTURAL_EDITOR_KEYS);
+      assignNew(editor, e.editor, LEGACY_EDITOR_KEYS, !tabsMatch ? STRUCTURAL_EDITOR_KEYS : layoutRestored ? NO_KEYS : GROUP_EDITOR_KEYS);
       out['editor'] = editor;
     }
     return out;

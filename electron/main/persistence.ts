@@ -403,7 +403,7 @@ const MAX_EXPLORER_FILE_BYTES = 16 * 1024 * 1024;
  */
 export async function writeExplorerFile(filePath: string, payload: ExplorerPayloadV3): Promise<void> {
   // 降级兼容(见 explorer-downgrade-compat):explorer.json 只写 0.2.15 认识的字段,新增字段写旁挂 explorer-ext.json(带
-  // explorer.json 原文摘要)。先写旁挂再写 explorer.json:两次写之间崩溃 → 摘要不符,读时只丢 tab 结构字段,不丢会话。
+  // 逐窗口 tab 列表 / layout 结构摘要)。先写旁挂再写 explorer.json:两次写之间崩溃 → 对不上的窗口只丢 tab 结构字段,不丢会话。
   const { legacy, ext } = splitExplorerPayload(payload);
   const text = JSON.stringify(legacy, null, 2);
   assertExplorerTextFits(filePath, text);
