@@ -15,6 +15,7 @@ import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
 import { openTreeItem } from './helpers/explorer';
 import { EDITOR_UNSAVED_CHANGES_SELECTOR, openWorkspaceFile } from './helpers/editor';
+import { capturePixels, colorDistance, parseRgb } from './helpers/pixels';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const ADAPTER = path.join(REPO, 'scripts/debug-spike/.adapter/js-debug/src/dapDebugServer.js');
@@ -55,7 +56,7 @@ const style = (el: Locator, pseudo?: string) =>
 
 const CV_TS = ['function add(a: number, b: number) {', '  const sum = a + b;', '  return sum;', '}', 'add(1, 2);', ''].join('\n');
 
-test('强制颜色:断点红点、出现处(点线)与匹配括号(实线)、缩进参考线仍可见', async ({ window, workspaceRoot }) => {
+test('强制颜色:断点红点、出现处(点线)与匹配括号(实线)、缩进参考线仍可见', async ({ electronApp, window, workspaceRoot }) => {
   await writeFile(path.join(workspaceRoot, 'src/cv.ts'), CV_TS);
   await openWorkspaceFile(window, ['src', 'cv.ts']);
   const line = (n: number) => window.locator('.cm-line').nth(n);
@@ -87,6 +88,31 @@ test('强制颜色:断点红点、出现处(点线)与匹配括号(实线)、缩
   expect(await marker.evaluate((n) => getComputedStyle(n).getPropertyValue('--indent-marker-active-bg-color').trim())).toBe(
     'CanvasText',
   );
+  // 像素:第 2–3 行缩进区里参考线是连续竖线(不是只在行间露出的小点 —— 强制颜色的文字底板会盖住 z-index:-1 的 ::before)
+  const canvas = parseRgb(await systemColor(window, 'Canvas'));
+  const textLeft = await line(1).evaluate((n) => {
+    const walker = document.createTreeWalker(n, NodeFilter.SHOW_TEXT);
+    let text = walker.nextNode();
+    while (text && !/\S/.test(text.textContent ?? '')) text = walker.nextNode();
+    const at = text!.textContent!.search(/\S/);
+    const r = document.createRange();
+    r.setStart(text!, at);
+    r.setEnd(text!, at + 1);
+    return r.getBoundingClientRect().left;
+  });
+  const [b2, b3] = [(await line(1).boundingBox())!, (await line(2).boundingBox())!];
+  const clip = { x: b2.x, y: Math.ceil(b2.y), width: Math.floor(textLeft - b2.x) - 1, height: Math.floor(b3.y + b3.height - Math.ceil(b2.y)) };
+  const px = await capturePixels(electronApp, window, clip);
+  let rows = 0;
+  for (let y = 0; y < px.height; y++) {
+    for (let x = 0; x < px.width; x++) {
+      if (colorDistance(px.at(x, y), canvas) > 48) {
+        rows++;
+        break;
+      }
+    }
+  }
+  expect(rows / px.height).toBeGreaterThan(0.9);
   await shot(window.locator('.cm-editor').first(), 'editor-forced-bracket');
 });
 

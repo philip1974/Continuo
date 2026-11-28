@@ -55,19 +55,26 @@
   `--md-outline` 对 container-low ≥ 3:1
 - 终端 `HC_DARK_THEME` / `HC_LIGHT_THEME` 背景 = 对应 `--md-surface`;窗口底色常量同
 
-### 4. HC 专有边框(`hc-tokens.spec.ts` 静态守护 `src/styles/high-contrast.css`)
+### 4. HC 专有边框(`hc-tokens.spec.ts` / `hc-rules.spec.ts` 静态守护 `src/styles/high-contrast.css`;`tests/e2e/high-contrast-polish.spec.ts` 计算样式 + 像素)
 
 全部规则限定 `:root:is(.hc-black, .hc-light)`,未分层(压过 design 的 components 层 / utilities):
 
 - 选中 / 当前 / 按下 / 菜单高亮 / design `data-active`:1px solid `--md-contrast-active-border`(内嵌);悬停 1px dashed;
   键盘焦点 2px solid `--md-focus-ring`
-- dock:tab 间 `--md-contrast-border` 分隔;活动组的活动 tab 1px solid、非活动组的活动 tab 1px dotted(VSCode 同)
-- 输入框 / 分段控件 / 按钮(ghost 除外)/ 对话框 / 通知:`--md-contrast-border` 边框
+- dock:tab 间 `--md-contrast-border` 分隔;活动组的活动 tab 1px solid、非活动组的活动 tab 1px dotted(VSCode 同);tab 键盘焦点
+  2px `--md-focus-ring`(dockview `::after` 加粗,内层 role=tab 的选中轮廓让位,不叠双层框)
+- 输入框 / 分段控件 / 按钮 / 对话框 / 通知:`--md-contrast-border` 边框。ghost 文字按钮只在对话框(`.wm-modal-content`)与
+  `role="toolbar"` 里画(那里它是次要动作按钮「取消 / 不保存 / 拒绝 / 放弃我的更改」,VSCode `button.secondaryBorder` =
+  contrastBorder);列表项 / 标题栏式的 ghost(Welcome 动作、最近文件夹、Outline 标题、调用栈卡片)对应 VSCode 列表项 / 链接,
+  只有悬停 / 焦点轮廓;纯图标按钮(`.wm-icon-button`,VSCode toolbar action)只有 `toolbar.hoverOutline`
 - 链接下划线(`a[href]`、Milkdown 正文链接)
-- CodeMirror:当前行无底色、`--md-contrast-active-border` 边框;行号 = 前景,当前行号 = contrast-active;选区淡底 + 边框;
+- CodeMirror:当前行无底色、`--md-contrast-active-border` 边框(代码编辑器失焦也画:VSCode
+  `editor.renderLineHighlightOnlyWhenFocus` 默认 false;Milkdown 内嵌代码块只在可编辑且该代码块获焦时画,只读预览不画 ——
+  VSCode Markdown 预览没有当前行;光标在调试执行行上时执行行淡底不被当前行的透明底盖掉);行号 = 前景,当前行号 = contrast-active;选区淡底 + 边框;
   查找匹配 dashed / 当前匹配 2px solid;出现处高亮 dotted;括号匹配 contrast-border 边框;调试执行行边框;冲突比较
   diff 用边框代替色块(VSCode `diffEditor.inserted/removedTextBorder`)
-- Milkdown:代码块 / 引用 / 表格边框、查找匹配同编辑器
+- Milkdown:代码块 / 表格边框、查找匹配同编辑器;引用只一条前景色竖条(Crepe `blockquote::before` 改色,VSCode
+  `textBlockQuote.border`);分隔线前景色(VSCode Markdown 预览 `hr { border-bottom: 1px solid }`),选中时 contrastActiveBorder
 
 ## 刻意差异
 

@@ -12,7 +12,8 @@ codicon 字形(前景色)代替纯色块、高对比度主题改画 contrastBord
    正常模式下箭头里的红点外描一圈画布色(红 / 黄两色亮度接近,色盲下难分)。
 2. **编辑器出现处 / 括号 / 缩进参考线**(`code-editor-theme.ts`,VSCode HC `editor.selectionHighlightBorder` dotted、
    `editorBracketMatch.border` 实线):强制颜色下 `.cm-selectionMatch` 1px 点线 `CanvasText`、`.cm-matchingBracket` 1px 实线
-   `CanvasText`;缩进参考线普通 `GrayText`、当前块 `CanvasText`(保住渐变)。@media 块里的规则都挂在主题类下(不出现
+   `CanvasText`;缩进参考线普通 `GrayText`、当前块 `CanvasText`(保住渐变),`::before` 的 `z-index` 由库的 `-1` 提到 `0`
+   (否则 Chromium 强制颜色下垫在行文字后的 Canvas 底板把参考线盖得只剩行间小点;e2e 像素采样守护)。@media 块里的规则都挂在主题类下(不出现
    `@media (…).cm-…` 这种把 at-rule 当选择器前缀的无效规则 —— EditorView.theme 在 @media 里不支持 `&`)。
 3. **toast 等级图标**(VSCode 通知 codicon error / warning / info;success 圆圈对勾):每个等级一个形状不同的 SVG
    (描边 `currentColor`,`aria-hidden`),替代只靠颜色区分的 6px 实心圆点。

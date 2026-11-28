@@ -52,10 +52,15 @@
 :root:is(.hc-black, .hc-light) .wm-segmented,
 :root:is(.hc-black, .hc-light) .wm-switch,
 :root:is(.hc-black, .hc-light) .wm-button:not([data-variant="ghost"]),
+:root:is(.hc-black, .hc-light) :is(.wm-modal-content, [role="toolbar"]) .wm-button[data-variant="ghost"],
 :root:is(.hc-black, .hc-light) .cm-editor .cm-textfield,
 :root:is(.hc-black, .hc-light) .cm-editor .cm-button {
   border-color: var(--md-contrast-border);
 }
+/* ↑ ghost 文字按钮:对话框 / 工具栏里它是次要动作按钮(取消 / 不保存 / 拒绝 / 放弃我的更改),VSCode 用 secondary button,
+ * HC 下 button.secondaryBorder = contrastBorder;其它位置的 ghost(Welcome / 最近文件夹列表项、Outline 标题栏、调用栈卡片)
+ * 对应 VSCode 的列表项 / 链接 / 标题,HC 下只有悬停 / 焦点轮廓,不画常驻边框。纯图标工具栏动作是 .wm-icon-button
+ *(VSCode toolbar action:只有 toolbar.hoverOutline),不受影响。 */
 /* 校验失败保持错误色描边(inputValidation.errorBorder) */
 :root:is(.hc-black, .hc-light) .wm-input[aria-invalid="true"] {
   border-color: var(--md-error);
@@ -85,6 +90,16 @@
 :root:is(.hc-black, .hc-light) .dockview-theme-abyss .dv-tabs-and-actions-container {
   border-bottom: 1px solid var(--md-contrast-border);
 }
+/* tab 键盘焦点:dockview.css 的 ::after 只有 1px,HC 下加粗到 2px focusBorder(同其它控件的 HC 焦点;VSCode tab
+ * outline-offset -2px),内层 role=tab 的选中轮廓在获焦时让给它,不叠成双层框。 */
+:root:is(.hc-black, .hc-light) .dockview-theme-abyss .dv-tab:has(:focus-visible)::after,
+:root:is(.hc-black, .hc-light) .dockview-theme-abyss .dv-tab:focus-visible::after {
+  outline-width: 2px !important;
+  outline-offset: -2px;
+}
+:root:is(.hc-black, .hc-light) .dockview-theme-abyss .dv-tab:has(:focus-visible) [role="tab"] {
+  outline: none;
+}
 :root:is(.hc-black, .hc-light) [role="tab"] > .bg-accent {
   background-color: var(--md-contrast-active-border);
 }
@@ -101,11 +116,18 @@
 }
 
 /* ── CodeMirror(代码编辑器 / Markdown Source / Markdown 代码块 / 冲突比较)── */
-/* 当前行:无底色,contrastActiveBorder 边框(editor.lineHighlightBorder hcDark #f38518 / hcLight contrastBorder)。 */
-:root:is(.hc-black, .hc-light) .cm-editor .cm-activeLine {
-  background-color: transparent;
+/* 当前行:无底色,contrastActiveBorder 边框(editor.lineHighlightBorder hcDark #f38518 / hcLight contrastBorder)。
+ * - 代码编辑器 / Markdown Source / 冲突比较:失焦也画(VSCode editor.renderLineHighlightOnlyWhenFocus 默认 false);
+ * - Milkdown 内嵌代码块(每个代码块一个 CodeMirror,都有自己的「当前行」):编辑时只在该代码块获焦时画,否则每个代码块
+ *   第 1 行都带框;只读预览不画(VSCode Markdown 预览没有当前行)。
+ * - 调试执行行保留自己的淡底(不被这里的透明底盖掉),边框由下面的执行行规则画。 */
+:root:is(.hc-black, .hc-light) .cm-editor:not(.milkdown .cm-editor) .cm-activeLine,
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror:not([contenteditable="false"]) .cm-editor.cm-focused .cm-activeLine {
   outline: 1px solid var(--md-contrast-active-border);
   outline-offset: -1px;
+}
+:root:is(.hc-black, .hc-light) .cm-editor .cm-activeLine:not(.cm-debug-exec-line) {
+  background-color: transparent;
 }
 /* 行号 = 前景(editorLineNumber.foreground hcDark 白 / hcLight #292929),当前行号 = contrastActiveBorder。 */
 :root:is(.hc-black, .hc-light) .cm-editor .cm-gutters {
@@ -173,8 +195,21 @@
 :root:is(.hc-black, .hc-light) .milkdown .ProseMirror th {
   border: 1px solid var(--md-contrast-border);
 }
-:root:is(.hc-black, .hc-light) .milkdown .ProseMirror blockquote {
-  border-left: 3px solid var(--md-on-surface);
+/* 引用竖条:Crepe 自带 blockquote::before(4px 圆角竖条,--crepe-color-selected 低对比)改前景色,只此一条
+ *(VSCode textBlockQuote.border hcDark 白 / hcLight #292929)。 */
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror blockquote::before {
+  background: var(--md-on-surface);
+}
+/* 分隔线:Crepe 是 outline 色 80% 透明的 1px 内容区底色(HC 下约 1.35:1)→ 前景色(VSCode Markdown 预览
+ * hr { border-bottom: 1px solid }(currentColor));选中时 contrastActiveBorder。 */
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror hr {
+  background-color: var(--md-on-surface);
+}
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror hr.ProseMirror-selectednode {
+  background-color: var(--md-contrast-active-border);
+}
+:root:is(.hc-black, .hc-light) .milkdown .ProseMirror hr.ProseMirror-selectednode::before {
+  background-color: transparent;
 }
 :root:is(.hc-black, .hc-light) .milkdown .ProseMirror :not(pre) > code {
   outline: 1px solid var(--md-contrast-border);

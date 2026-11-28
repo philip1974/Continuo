@@ -97,6 +97,8 @@ describe.each(['dark', 'light'] as const)('%s:强制颜色下的出现处 / 括�
     expect(vars).toMatch(/--indent-marker-bg-color: GrayText/);
     expect(vars).toMatch(/--indent-marker-active-bg-color: CanvasText/);
     expect(bodyOf(fc, '.cm-indent-markers::before')).toMatch(/forced-color-adjust: none/);
+    // 库的 z-index:-1 会被强制颜色的文字底板(backplate)盖成小点 → 提到 0
+    expect(bodyOf(fc, '.cm-indent-markers::before')).toMatch(/z-index: 0/);
   });
 
   it('@media 块里的规则都挂在主题类下(没有把「@media (…)」当选择器前缀的无效规则)', () => {

@@ -68,7 +68,9 @@ function chromeTheme(dark: boolean): Extension {
         // editorIndentGuide.activeBackground1 比普通线更亮);forced-color-adjust: none 保住系统色渐变。颜色属性设在行元素本身
         //(行内 --indent-markers 渐变在该元素上解析 var()),不与库 baseTheme 在编辑器根上的 &light / &dark 比优先级。
         '.cm-indent-markers': { '--indent-marker-bg-color': 'GrayText', '--indent-marker-active-bg-color': 'CanvasText' },
-        '.cm-indent-markers::before': { forcedColorAdjust: 'none' },
+        // 库给 ::before 设 z-index:-1(画在行文字下);强制颜色下 Chromium 在行文字后垫一块 Canvas 底板(backplate),
+        // 把负层级的参考线盖得只剩行间小点 → 提到 0(仍在缩进空白里,不压文字)。
+        '.cm-indent-markers::before': { forcedColorAdjust: 'none', zIndex: '0' },
         // 查找选项 toggle 勾选态(同 forced-colors.css 的 [aria-pressed=true]:内嵌 2px Highlight 轮廓)
         '.cm-panel label.cm-search-option:has(input:checked)': { outline: '2px solid Highlight', outlineOffset: '-2px' },
       },
