@@ -11,6 +11,7 @@ import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import type { Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
+import { logTags } from './codemirror-log-tags';
 import { codeMirrorFind } from './codemirror-find';
 import { isDarkTheme, type ResolvedTheme } from '../../../electron/shared/window-background';
 
@@ -221,6 +222,15 @@ const codeHighlightStyle = HighlightStyle.define([
   { tag: [t.atom, t.bool, t.special(t.variableName)], color: 'var(--md-syntax-constant)' },
   { tag: [t.processingInstruction, t.string, t.inserted], color: 'var(--md-syntax-string)' },
   { tag: t.invalid, color: 'var(--md-syntax-invalid)' },
+  // 日志(Log 语言;VSCode 默认主题对 log.tmLanguage 的 scope:级别 / 日期 / 常量 / 字符串 / 异常)。父 tag 的颜色不贴日志语义的在此细分。
+  { tag: logTags.verbose, color: 'var(--md-syntax-comment)' },
+  { tag: logTags.debug, color: 'var(--md-syntax-function)' },
+  { tag: logTags.info, color: 'var(--md-syntax-string)' },
+  { tag: logTags.warning, color: 'var(--md-syntax-type)' },
+  { tag: logTags.error, color: 'var(--md-syntax-name)', fontWeight: 'bold' },
+  { tag: logTags.date, color: 'var(--md-syntax-comment)' },
+  { tag: logTags.exceptionType, color: 'var(--md-syntax-name)', fontStyle: 'italic' },
+  { tag: logTags.stackFrame, color: 'var(--md-syntax-comment)', fontStyle: 'italic' },
 ]);
 
 const HIGHLIGHT: Extension = syntaxHighlighting(codeHighlightStyle);

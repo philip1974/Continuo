@@ -51,6 +51,11 @@
    中间、`}` 所在末行)都有效,不只在区域首行;最内层已折叠 → 折叠外一层;多光标各自折叠(同一区域只折一次);被折叠内容里的
    光标移到折叠起点(首行行尾),不藏在占位符后面;不在任何区域里 → 不动。展开:光标在折叠占位所在行即展开(多光标各自)。
 
+6. **⌘D / ⇧⌘L 在大文档里不卡**(添加下一个匹配 / 选择所有匹配;⌘F2 同后者):搜索按块分片,与 ⌘F 匹配计数同一时间片(8ms)——
+   按键当下先扫一个时间片,小文档就此扫完,行为与 CodeMirror 原命令逐项相同(同一结果、同一事务:整词、绕回、跳过已选、滚到新匹配、
+   超过 1000 个匹配不做);扫不完的在后续宏任务里接着扫,期间界面照常响应,扫完时文档 / 选区都没变才套用(期间任何改动作废这次
+   搜索);同一状态下重复按不重复开扫描。此前对不再出现的词在 8.7 MB 日志里一次扫整篇,卡约 0.5s。
+
 ## 模块
 
 | 文件 | 职责 |
@@ -58,6 +63,7 @@
 | `src/panels/Editor/editor-text-commands.ts` | 命令表(id / 标题 / 默认键)、命令 spec、取目标视图并执行 |
 | `src/panels/Editor/codemirror-text-commands.ts` | 命令 id → CodeMirror 命令(引擎 chunk,CodeEditor 挂载时登记);在上方插入行等补充命令 |
 | `src/panels/Editor/codemirror-basic-setup.ts` | 从 basicSetup 键表去掉改由注册表分发的键 |
+| `src/panels/Editor/codemirror-occurrence-commands.ts` | ⌘D / ⇧⌘L 的分片搜索版本(语义同 @codemirror/search) |
 | `src/lib/editor-text-focus.ts` | `editorTextFocus` 判定(按键是否落在 CodeEditor 正文) |
 | `src/plugins/command-palette/useCommandHotkeys.ts` | 分发 / 冲突判定按 `when` 过滤与排序 |
 
@@ -65,5 +71,6 @@
 
 - `text-commands-registry.spec.ts`:命令 id / 标题 / 默认键、命令面板可搜到、改键 / 解绑
 - `text-commands-dispatch.spec.ts`:`editorTextFocus` 分发(编辑器 / 终端 / 输入框 / Milkdown 代码块 / 组字)、⇧⌘Enter 区分、冲突不误报
-- `text-commands-run.spec.ts`:作用于活动编辑器组的视图、各命令效果、无编辑器静默、CodeMirror 键表去掉这些键
+- `text-commands-run.spec.ts`:作用于活动编辑器组的视图、各命令效果、无编辑器静默、CodeMirror 键表去掉这些键;⌘D 经注册表走分片搜索
 - `text-commands-fold.spec.ts`:折叠包住光标的最内层区域(嵌套 / 首末行 / 多光标 / 光标不藏)、展开占位行
+- `occurrence-commands-sliced.spec.ts`:小文档与 CodeMirror 原命令随机对照逐项相同(含跨块边界);大文档按键当下只扫一个时间片、之后扫完套用;期间状态变了作废

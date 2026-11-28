@@ -54,6 +54,8 @@ wsTest('工作区外日志被外部追加 → 约 1s 内显示;切到别的 tab 
   await expect(statusBar(window)).toBeVisible({ timeout: 10_000 });
   await finderDrop(window, statusBar(window), [path.join(outside, 'app.log')]);
   await expect(cm(window)).toContainText('first line', { timeout: 10_000 });
+  // .log 按 Log 语言着色(级别关键字是单独的着色片段;纯文本不会切出 span)
+  await expect(cm(window).locator('span', { hasText: /^INFO$/ })).toHaveCount(1, { timeout: 10_000 });
 
   appendFileSync(path.join(outside, 'app.log'), '2026-11-28 10:00:01 WARN second line\n');
   await expect(cm(window)).toContainText('second line', { timeout: 2_000 });

@@ -62,12 +62,17 @@ Code and data ported or copied from <https://github.com/microsoft/vscode> (© Mi
 - `src/shell/screencast/screencast-store.ts` — screencast-mode keyboard overlay state (when to clear, the 20-key limit) ported from `ToggleScreencastModeAction` in `src/vs/workbench/browser/actions/developerActions.ts`.
 - `src/shell/screencast/screencast-keys.ts` — which keys / command titles the screencast-mode overlay shows, ported from the `onKeyDown` handler of the same action.
 - `src/shell/screencast/screencast.css` — `.screencast-keyboard` / `.screencast-mouse` styles ported from `src/vs/workbench/browser/actions/media/actions.css` (colors replaced by theme tokens).
+- `src/panels/Editor/codemirror-log-language.ts` — log-file highlighting rules ported from `extensions/log/syntaxes/log.tmLanguage.json` (itself converted from vscode-logfile-highlighter, see below); the `.log` / `*.log.?` file association from `extensions/log/package.json`.
 
 ## CodeMirror (codemirror/search) · MIT License
 
 Code copied from <https://github.com/codemirror/search> (`@codemirror/search`, © Marijn Haverbeke and others) where the package does not export it. Full license text: [MIT License text (CodeMirror)](#mit-license-text-codemirror).
 
 - `src/panels/Editor/codemirror-find.ts` — `announceMatch` and the replacement-string handling (`unquote` + regexp `getReplacement`) copied from `src/search.ts`; `lastMatchIn` ported from `RegExpQuery.prevMatchInRange` in the same file.
+
+## vscode-logfile-highlighter · MIT License
+
+The log-file grammar that VSCode ships (`extensions/log/syntaxes/log.tmLanguage.json`) is converted from <https://github.com/emilast/vscode-logfile-highlighter> (Copyright (c) 2015 emilast); its rules are ported in `src/panels/Editor/codemirror-log-language.ts`. Full license text: [MIT License text (vscode-logfile-highlighter)](#mit-license-text-vscode-logfile-highlighter).
 
 ## vscode-js-debug · MIT License
 
@@ -150,4 +155,30 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+```
+
+## MIT License text (vscode-logfile-highlighter)
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2015 emilast
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```

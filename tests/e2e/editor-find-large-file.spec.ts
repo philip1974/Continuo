@@ -15,13 +15,13 @@ const KEY_BUDGET_MS = 150;
 const LINES = 100_000;
 const NEEDLE = 'needle-xyz';
 
-function bigLog(): string {
+function bigLog(lines = LINES): string {
   const out: string[] = [];
-  for (let i = 0; i < LINES; i++) {
+  for (let i = 0; i < lines; i++) {
     out.push(
       `${String(i).padStart(6, '0')} INFO 2026-11-27T12:00:00.000Z worker-${i % 16} heartbeat ok latency=${i % 997}ms queue=${i % 31} payload=abcdefghij`,
     );
-    if (i === LINES - 10) out.push(`${String(i).padStart(6, '0')} WARN ${NEEDLE} found once`);
+    if (i === lines - 10) out.push(`${String(i).padStart(6, '0')} WARN ${NEEDLE} found once`);
   }
   return out.join('\n') + '\n';
 }
@@ -110,6 +110,56 @@ test('10 万行文件:查找条开着时输入查询 / 正文打字 / 回车下�
       expect(enter).toBeLessThan(KEY_BUDGET_MS);
       expect(editing).toBeLessThan(KEY_BUDGET_MS);
       expect(absent).toBeLessThan(KEY_BUDGET_MS);
+    } finally {
+      await closeDiscardingUnsaved(app);
+    }
+  } finally {
+    rmSync(ud, { recursive: true, force: true });
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+// ⌘D / ⇧⌘L 对不再出现的词(BDD: src/__tests__/editor-text-commands/ 第 6 条):修前 CodeMirror 一次扫整篇,8.7 MB 日志卡约 0.5s;
+// 修后分片搜索,按键期间最长帧间隔在上限内,结果不变(没有别的匹配 → 仍是一个选区)。8 万行 ≈ 8.4 MB。
+test('8 万行日志:选中只出现一次的词后 ⌘D / ⇧⌘L 每键 < 150ms,结果仍是一个选区', async () => {
+  test.setTimeout(180_000);
+  const ud = mkdtempSync(path.join(tmpdir(), 'ui210-ud-'));
+  const ws = mkdtempSync(path.join(tmpdir(), 'ui210-ws-'));
+  try {
+    writeFileSync(path.join(ws, 'big.log'), bigLog(80_000));
+    seedExplorerJson(ud, { root: ws });
+    const app = await launchContinuo(ud);
+    try {
+      const win = await app.firstWindow();
+      await win.waitForLoadState('domcontentloaded');
+      const cdp = await win.context().newCDPSession(win);
+      await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+      await win.locator('text=big.log').first().click();
+      await expect(win.locator('.cm-content')).toBeVisible({ timeout: 30_000 });
+      await win.locator('.cm-content').click();
+      // 经查找选中唯一出现的词,Esc 关查找条(选区留在匹配上)
+      await win.keyboard.press('ControlOrMeta+KeyF');
+      await win.keyboard.type(NEEDLE);
+      const count = win.locator('.cm-search .cm-search-count');
+      await expect(count).toHaveText(/^\D*\b1\b\D*$/, { timeout: 10_000 });
+      await win.keyboard.press('Enter');
+      await win.keyboard.press('Escape');
+      // 状态栏选区项:多个选区时显示「N 个选区」
+      const status = win.locator('[data-statusbar-selection]');
+      const selectedText = () => win.evaluate(() => window.getSelection()?.toString() ?? '');
+      await expect.poll(selectedText).toBe(NEEDLE);
+
+      await startFrameMonitor(win);
+      await win.keyboard.press('ControlOrMeta+KeyD');
+      const addNext = await maxFrameGap(win);
+      await startFrameMonitor(win);
+      await win.keyboard.press('ControlOrMeta+Shift+KeyL');
+      const selectAll = await maxFrameGap(win);
+      console.log(`[editor-find-large-file] max key ms: cmd+d=${addNext} cmd+shift+l=${selectAll}`);
+      await expect.poll(selectedText).toBe(NEEDLE);
+      await expect(status).not.toHaveText(/^\d+ (selections|选择|선택 항목)/);
+      expect(addNext).toBeLessThan(KEY_BUDGET_MS);
+      expect(selectAll).toBeLessThan(KEY_BUDGET_MS);
     } finally {
       await closeDiscardingUnsaved(app);
     }

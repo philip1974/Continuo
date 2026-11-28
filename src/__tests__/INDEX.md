@@ -355,6 +355,7 @@
 ## [code-editor-language](./code-editor-language/README.md)
 
 - [`code-editor-language.spec.tsx`](./code-editor-language/code-editor-language.spec.tsx)
+- [`log-and-json-lines.spec.tsx`](./code-editor-language/log-and-json-lines.spec.tsx)
 
 ## [code-editor-theme](./code-editor-theme/README.md)
 
@@ -890,6 +891,7 @@
 
 ## [常用编辑器(CodeMirror)命令进命令注册表](./editor-text-commands/README.md)
 
+- [`occurrence-commands-sliced.spec.ts`](./editor-text-commands/occurrence-commands-sliced.spec.ts)
 - [`text-commands-dispatch.spec.ts`](./editor-text-commands/text-commands-dispatch.spec.ts)
 - [`text-commands-fold.spec.ts`](./editor-text-commands/text-commands-fold.spec.ts)
 - [`text-commands-registry.spec.ts`](./editor-text-commands/text-commands-registry.spec.ts)

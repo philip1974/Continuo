@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // BDD: editor-text-commands 第 2 / 3 条 —— 作用于触发窗口活动编辑器组的 CodeMirror 视图、各命令效果、无编辑器静默、
 // 按键经注册表分发(CodeMirror 键表不再处理这些键)。见同目录 README。
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, renderHook } from '@testing-library/react';
 import { EditorView, keymap } from '@codemirror/view';
 import { EditorSelection, EditorState } from '@codemirror/state';
@@ -124,6 +124,21 @@ describe('作用于活动编辑器组的活动文本编辑器', () => {
     v.dispatch({ selection: EditorSelection.cursor(1) });
     await run('editor.action.selectHighlights');
     expect(sel(v)).toHaveLength(3);
+  });
+
+  it('⌘D 经注册表走分片搜索:大文档里按键当下不扫完整篇,之后的宏任务里扫完再加选区(第 6 条)', async () => {
+    const doc = `needle ${'lorem ipsum '.repeat(20_000)}needle`;
+    const v = mount('/w/big.log', doc, 'editor', 0, 6);
+    // 时钟每读一次前进 100ms:每个时间片只扫一块就让出
+    let clock = 0;
+    const now = vi.spyOn(performance, 'now').mockImplementation(() => (clock += 100));
+    try {
+      await run('editor.action.addSelectionToNextFindMatch');
+      expect(sel(v)).toEqual([[0, 6]]);
+      await vi.waitFor(() => expect(sel(v)).toEqual([[0, 6], [doc.length - 6, doc.length]]));
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it('选中行(连按向下扩展),撤销光标', async () => {

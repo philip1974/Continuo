@@ -10,6 +10,17 @@
     后续代码照常高亮);`.tsx` → TypeScript + JSX;`.js` / `.jsx` → JavaScript + JSX;`.mjs` / `.cjs` → JavaScript。
   - `.json` / `.jsonc` / `.json5` → JSON(lang-json 语法不含注释:`//`、`/* */` 不着色,其余照常高亮);`.css`、`.html` / `.htm`;
     `.md` / `.markdown` / `.mdx` 与 Markdown Source 模式 → Markdown + 文首 YAML frontmatter。以上同步给出。
+  - JSON 家族(对齐 VSCode `extensions/json`):`.webmanifest` / `.har` / `.geojson` / `.ipynb` / `.bowerrc` / `.jscsrc` / `.jslintrc` /
+    `.vuerc`,及 JSON with Comments 的 `.eslintrc` / `.babelrc` / `.jshintrc` / `.jsfmtrc` / `.swcrc` / `.hintrc` → JSON(同步);
+    `composer.lock` / `.watchmanconfig` → JSON(按文件名)。`.jsonl` / `.ndjson`(JSON Lines,每行一个值)→ 用 JSON 语法着色、逐行解析
+    出各个对象(多个顶层值经错误恢复,不整篇报错;编辑器无 JSON 校验),语言名 `jsonl`:不提供 JSON 格式化(VSCode 的 JSON 语言功能
+    同样不含 jsonl)。
+  - 日志(VSCode 内置 Log 语言,`extensions/log`):`.log` 与 `*.log.?`(轮转出的 `app.log.1`;只认一个字符的后缀,同 VSCode)→ Log,
+    按需加载。规则移植自 `log.tmLanguage.json`(同位置按规则顺序、取最早开始的匹配):日期 / 时间、级别关键字
+    (TRACE·verbose / DEBUG / INFO·NOTICE / WARN / ERROR·FATAL·FAIL,含 `[warn]` 形式、`error:` 形式与时间戳后的单字母级别)、
+    GUID / 哈希 / 数字 / 布尔 / `0x…` / URL / 带点的名字(常量)、引号字符串、`…Exception` 类型名、`at …` 栈帧行。颜色走语义 token
+    (`--md-syntax-*`,亮 / 暗 / 两套高对比度):错误红色粗体、警告黄、信息绿、调试蓝、日期 / verbose 注释色。语言名 `log`
+    (格式化等命令显示该名)。
   - 其余按 `@codemirror/language-data` 的语言表(与 Markdown 编辑模式代码块同源)按扩展名 / 文件名匹配,另补该表认不出的常见文件:
     `Dockerfile.*` / `*.dockerfile` / `Containerfile` → Dockerfile;`.env` / `.env.*` → Properties;
     `.bashrc` / `.zshrc` / `.profile` / `*.zsh` 等 → Shell;`Makefile` / `GNUmakefile` / `*.mk` → Shell(语言表无 Makefile 语法,
@@ -23,9 +34,12 @@
 | File | Role |
 |---|---|
 | `src/panels/Editor/CodeEditor.tsx` | `pickLanguage`(同步可得的语言)、`languageDescriptionFor`(语言表匹配 + 补充文件名)、懒加载后 reconfigure 语言 Compartment |
+| `src/panels/Editor/codemirror-log-language.ts` | Log 语言(StreamLanguage;移植 VSCode log.tmLanguage.json) |
+| `src/panels/Editor/codemirror-log-tags.ts` / `code-editor-theme.ts` | 日志 tag 与语义配色 |
 
 ## Specs
 
 | File | 覆盖 |
 |---|---|
 | `code-editor-language.spec.tsx` | .ts 泛型箭头函数无解析错误且后续 token 正常;各扩展名对应的 TS / JSX 配置;常见语言 / 补充文件名匹配;懒加载后高亮生效;加载中改名 / 卸载不串台 |
+| `log-and-json-lines.spec.tsx` | Log 的文件匹配(`.log` / `*.log.?`)、各规则着色、加载后语言名与四套主题配色;JSON 家族扩展名 / 文件名;jsonl 逐行解析且语言名 jsonl |

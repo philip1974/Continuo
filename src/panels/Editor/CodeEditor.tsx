@@ -19,12 +19,12 @@ import { Compartment, EditorState, StateEffect, type Extension } from '@codemirr
 import { keymap, scrollPastEnd, type ViewUpdate } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
-import { json } from '@codemirror/lang-json';
+import { json, jsonLanguage } from '@codemirror/lang-json';
 import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { markdown } from '@codemirror/lang-markdown';
 import { yamlFrontmatter } from '@codemirror/lang-yaml';
-import { indentUnit, LanguageDescription } from '@codemirror/language';
+import { indentUnit, LanguageDescription, LanguageSupport } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
@@ -132,6 +132,11 @@ const jsx = () => javascript({ jsx: true });
 const plainJs = () => javascript();
 const ts = () => javascript({ typescript: true });
 const jsonLang = () => json();
+// JSON Lines(VSCode jsonl 语言:.jsonl / .ndjson,每行一个 JSON 值):用 JSON 语法着色(多个顶层值经错误恢复逐个解析,折叠按每个
+// 对象),但语言名是 jsonl —— 不提供 JSON 格式化(整篇不是一个 JSON 值,格式化必报语法错误;VSCode 的 JSON 语言功能也不含 jsonl)。
+// 编辑器本身没有 JSON 校验,不会整篇报错。
+const jsonLinesLanguage = jsonLanguage.configure({}, 'jsonl');
+const jsonLinesLang = () => new LanguageSupport(jsonLinesLanguage);
 const htmlLang = () => html();
 
 /** 同步给出的内置语言(扩展名 → 工厂;markdown 源码模式的 frontmatter 配置在此)。不在表内的交给语言表。 */
@@ -150,6 +155,23 @@ const BUILTIN_LANGUAGES = new Map<string, () => Extension>([
   ['json', jsonLang],
   ['jsonc', jsonLang],
   ['json5', jsonLang],
+  // VSCode extensions/json 归到 JSON / JSON with Comments 的其它扩展名
+  ['webmanifest', jsonLang],
+  ['har', jsonLang],
+  ['geojson', jsonLang],
+  ['ipynb', jsonLang],
+  ['bowerrc', jsonLang],
+  ['jscsrc', jsonLang],
+  ['jslintrc', jsonLang],
+  ['vuerc', jsonLang],
+  ['eslintrc', jsonLang],
+  ['babelrc', jsonLang],
+  ['jshintrc', jsonLang],
+  ['jsfmtrc', jsonLang],
+  ['swcrc', jsonLang],
+  ['hintrc', jsonLang],
+  ['jsonl', jsonLinesLang],
+  ['ndjson', jsonLinesLang],
   ['css', () => css()],
   ['html', htmlLang],
   ['htm', htmlLang],
@@ -163,11 +185,24 @@ const BUILTIN_LANGUAGES = new Map<string, () => Extension>([
  * Makefile:表内无 Makefile 语法,recipe 行本就是 shell,取 Shell 最接近。
  */
 const FILENAME_ALIASES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^(?:composer\.lock|\.watchmanconfig)$/i, 'JSON'],
   [/^(?:dockerfile|containerfile)(?:\..+)?$|\.(?:dockerfile|containerfile)$/i, 'Dockerfile'],
   [/^\.env(?:\..+)?$/i, 'Properties files'],
   [/^\.(?:bashrc|bash_profile|bash_login|bash_logout|profile|zshrc|zshenv|zprofile|zlogin|zlogout)$|\.zsh$/i, 'Shell'],
   [/^(?:gnu)?makefile$|\.mk$/i, 'Shell'],
 ];
+
+/**
+ * 日志(VSCode 内置 Log 语言,extensions/log/package.json:`.log` 与 `*.log.?`,如轮转出的 app.log.1)。语法见
+ * codemirror-log-language(按需加载)。语言表里没有日志语言。
+ */
+const LOG_LANGUAGE = LanguageDescription.of({
+  name: 'Log',
+  alias: ['log'],
+  extensions: ['log'],
+  filename: /\.log\..$/i,
+  load: () => import('./codemirror-log-language').then((m) => m.logLanguageSupport()),
+});
 
 /**
  * 需按语言表(@codemirror/language-data,与 Markdown 代码块同源)懒加载的语言;同步内置语言 / 认不出 → null。
@@ -180,6 +215,7 @@ export function languageDescriptionFor(fileName: string): LanguageDescription | 
   for (const [pattern, name] of FILENAME_ALIASES) {
     if (pattern.test(base)) return LanguageDescription.matchLanguageName(languages, name, false);
   }
+  if (LanguageDescription.matchFilename([LOG_LANGUAGE], lowerIfNeeded(base))) return LOG_LANGUAGE;
   return (
     LanguageDescription.matchFilename(languages, base) ??
     LanguageDescription.matchFilename(languages, lowerIfNeeded(base))

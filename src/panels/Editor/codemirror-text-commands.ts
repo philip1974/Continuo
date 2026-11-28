@@ -44,6 +44,7 @@ import {
   selectSelectionMatches,
 } from '@codemirror/search';
 import { findNextMatch, findPreviousMatch, openFindPanel, openReplacePanel } from './codemirror-find';
+import { addSelectionToNextFindMatch, selectHighlights } from './codemirror-occurrence-commands';
 import { MARKDOWN_SOURCE_ATTR, TEXT_EDITOR_ATTR } from '@/lib/editor-text-focus';
 import { registerTextCommandRunner } from './editor-text-commands';
 import {
@@ -144,13 +145,6 @@ export const foldEnclosing: Command = (view) => {
   return true;
 };
 
-/** 选择所有匹配:空选区先取光标处单词(VSCode 同;CodeMirror 的 selectSelectionMatches 要求已有选区)。 */
-const selectHighlights: Command = (view) => {
-  const { selection } = view.state;
-  if (selection.ranges.length === 1 && selection.main.empty) selectNextOccurrence(view);
-  return selectSelectionMatches(view);
-};
-
 const RUNNERS: Readonly<Record<string, Command>> = {
   'editor.action.commentLine': toggleComment,
   'editor.action.blockComment': toggleBlockComment,
@@ -163,7 +157,8 @@ const RUNNERS: Readonly<Record<string, Command>> = {
   'editor.action.insertLineBefore': insertLineBefore,
   'editor.action.indentLines': indentMore,
   'editor.action.outdentLines': indentLess,
-  'editor.action.addSelectionToNextFindMatch': selectNextOccurrence,
+  // ⌘D / ⇧⌘L:大文档分片搜索、不卡主线程(小文档与 CodeMirror 原命令相同),见 codemirror-occurrence-commands
+  'editor.action.addSelectionToNextFindMatch': addSelectionToNextFindMatch,
   'editor.action.selectHighlights': selectHighlights,
   // 更改所有匹配项(⌘F2):VSCode CompatChangeAll 与 selectHighlights 同一实现(multiCursorController.selectAll)
   'editor.action.changeAll': selectHighlights,
@@ -195,13 +190,15 @@ const RUNNERS: Readonly<Record<string, Command>> = {
 };
 
 /**
- * basicSetup 键表里改由注册表分发的命令(其键从键表去掉):selectSelectionMatches / selectLine / foldCode 由 selectHighlights /
+ * basicSetup 键表里改由注册表分发的命令(其键从键表去掉):selectNextOccurrence / selectSelectionMatches 由分片的
+ * addSelectionToNextFindMatch / selectHighlights 取代,selectLine / foldCode 由
  * expandLineSelection / foldEnclosing 取代,openSearchPanel(⌘F)由 openFindPanel 取代,findNext / findPrevious(⌘G / F3)由
  * findNextMatch / findPreviousMatch 取代,selectParentSyntax(⌘I)由扩展选区(⌃⇧⌘→)取代 —— ⌘I 归触发建议(VSCode),
  * nextDiagnostic(F8)由 nextProblem(无诊断时提示)取代。
  */
 export const ROUTED_KEYMAP_COMMANDS: ReadonlySet<Command> = new Set([
   ...Object.values(RUNNERS),
+  selectNextOccurrence,
   selectSelectionMatches,
   selectLine,
   foldCode,
