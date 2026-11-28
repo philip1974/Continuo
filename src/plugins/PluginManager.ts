@@ -19,6 +19,7 @@ import { createScopedAppController, type ScopedAppController } from './scoped-ap
 import type { CoApp, PluginManifest } from './types';
 import { codedError, errorCodeOf, errorMessage } from '../../electron/shared/error-message';
 import { coApi } from '@/lib/co-api';
+import { thrownI18nOf } from '@/lib/localize-error';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 
@@ -160,6 +161,8 @@ export interface PluginError {
   readonly message: string;
   /** 按 code 本地化用的插值参数(如 IMPORT_UNBUNDLED 的 specifier、INCOMPATIBLE_VERSION 的版本)。 */
   readonly params?: Readonly<Record<string, string>>;
+  /** 错误自带的 catalog key(插件代码抛出的 PermissionError 等,配 params 插值);有则优先按它本地化。 */
+  readonly i18nKey?: string;
   /** 出错位置 `<相对插件目录的文件>:<行>:<列>`(堆栈 / 语法诊断;BDD: plugin-dev-experience)。 */
   readonly location?: string;
   /** manifest SCHEMA_ERROR 的字段级问题(逐条按 code 本地化)。 */
@@ -237,12 +240,17 @@ type DirRejection =
       readonly params: Readonly<Record<string, string>>;
     };
 
-/** 目录准入:main 判定的跳过原因优先,其次 manifest schema + minLMVersion(admitManifest)。 */
+/**
+ * 目录准入:manifest 本身不合法(非法 JSON / schema 错误)优先 —— main 的跳过判定读的正是 manifest 的 main / id,manifest 坏了
+ * 那些判定按默认值得出(如 JSON 损坏时按默认 main.js 报「入口不可用」),原因会指错;其次 main 判定的跳过原因,最后 minLMVersion。
+ */
 export function admitPluginDir(dir: PluginDirInfo, appVersion: string): ManifestAdmission | DirRejection {
+  const admission = admitManifest(dir.manifestText, appVersion);
+  if (!admission.ok && (admission.code === 'INVALID_JSON' || admission.code === 'SCHEMA_ERROR')) return admission;
   if (dir.skip) {
     return { ok: false, code: dir.skip.code, message: SKIP_MESSAGES[dir.skip.code](dir.skip.params), params: dir.skip.params };
   }
-  return admitManifest(dir.manifestText, appVersion);
+  return admission;
 }
 
 /** 准入失败 → 结构化 PluginError(界面按 code / params / issues 本地化)。 */
@@ -336,7 +344,14 @@ function rawManifestId(manifestText: string): unknown {
 /** 插件代码(构造 / onload)抛出的错误 → PluginError,带插件帧位置(sourceURL,见 plugin-source-url)。 */
 function thrownPluginError(err: unknown, id: string): PluginError {
   const location = pluginLocationFromStack((err as { stack?: unknown } | null)?.stack, id);
-  return { code: errorCodeOf(err), message: errorMessage(err), ...(location ? { location } : {}) };
+  // 带 catalog key 的错误(PermissionError:未声明 / 用户拒绝)保留 key 与参数,插件行 / 通知与命令路径同一本地化文案。
+  const keyed = thrownI18nOf(err);
+  return {
+    code: errorCodeOf(err),
+    message: errorMessage(err),
+    ...(keyed ? { i18nKey: keyed.i18nKey, ...(keyed.params ? { params: keyed.params } : {}) } : {}),
+    ...(location ? { location } : {}),
+  };
 }
 
 function activationAbortedError(id: string): Error {
@@ -605,6 +620,7 @@ export class PluginManager {
    * 同一原因不重复记。
    */
   private setInvalidDirs(list: readonly InvalidPluginItem[]): void {
+    const previous = this.invalidDirs;
     this.invalidDirs = list;
     const present = new Set<string>();
     for (const item of list) {
@@ -620,6 +636,11 @@ export class PluginManager {
       );
     }
     for (const dir of [...this.loggedInvalid.keys()]) if (!present.has(dir)) this.loggedInvalid.delete(dir);
+    // 无效目录不再是无效行(被删除 / 改成别的目录名)且没有登记成插件 → 一并移除宿主为它建的默认通道(只有「未加载」日志),
+    // 同卸载移除该插件全部通道;修好后登记成插件的保留(插件沿用同一默认通道)。
+    for (const item of previous) {
+      if (!present.has(item.dir) && !this.entries.has(item.dir)) removePluginOutputChannels(item.dir);
+    }
   }
 
   /** 只登记为「等待别处授权」的条目改由本窗口激活(弹授权):盘上仍启用且无停用意图时。 */
@@ -645,8 +666,11 @@ export class PluginManager {
   async handleDirChanged(id: string): Promise<void> {
     const scanning = this.untilScanned();
     if (scanning) await scanning;
-    if (this.entries.has(id)) return this.reload(id);
-    return this.rescanUnregistered();
+    if (!this.entries.has(id)) return this.rescanUnregistered();
+    // 已登记插件的目录整个消失(监视器转 tombstone 时也广播):不报错、不停用 —— 仍按 tombstone 等重新部署后热重载。
+    await this.withLifecycleLock(id, () => this.reloadLocked(id, { missingOk: true }));
+    // 同一 id 的无效目录(声明了该 id 却准入失败的另一目录)被删 / 修好,也落在这次广播上 → 刷新无效行。
+    if (this.invalidDirs.length > 0) await this.rescanUnregistered();
   }
 
   /** 重新扫描:登记未登记的合格插件 + 刷新无效插件行。串行(同一时刻只跑一次)。 */
@@ -826,7 +850,7 @@ export class PluginManager {
     return this.withLifecycleLock(id, () => this.reloadLocked(id));
   }
 
-  private async reloadLocked(id: string): Promise<void> {
+  private async reloadLocked(id: string, opts: { readonly missingOk?: boolean } = {}): Promise<void> {
     const entry = this.entries.get(id);
     if (!entry) throw new Error(`Plugin ${id} not found`);
     // 已卸载、拆除尚在排队(如扫描前排队的文件变化随后收到卸载广播):目录已删 / 将删,拆除由排队的卸载负责 → 不重载、不报错。
@@ -841,7 +865,10 @@ export class PluginManager {
       const declared = rawManifestId(d.manifestText);
       return declared === id || (d.id === id && typeof declared !== 'string');
     });
-    if (own.length === 0) throw new Error(`Plugin ${id} no longer exists in plugins dir`);
+    if (own.length === 0) {
+      if (opts.missingOk) return;
+      throw new Error(`Plugin ${id} no longer exists in plugins dir`);
+    }
     const selected = selectPluginDirs(own, this.app.version).get(id);
     // 没有合格目录 → 取按同一偏好排第一的声明目录的准入失败原因(它声明了该 id 却没被选中,准入必然失败)。
     const rejection = selected
@@ -1172,6 +1199,7 @@ export class PluginManager {
         this.setStatus(entry, 'failed', {
           code: 'PERMISSION_DENIED',
           message: auth.deniedPerms.join(', '),
+          params: { perms: auth.deniedPerms.join(', ') },
         });
         return;
       }

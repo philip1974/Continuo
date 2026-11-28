@@ -32,7 +32,7 @@ afterEach(() => {
 
 describe('localizePluginError', () => {
   it.each([
-    [{ code: 'PERMISSION_DENIED', message: 'fs, network' }, 'Required permissions denied: fs, network', '所需权限已被拒绝：fs, network'],
+    [{ code: 'PERMISSION_DENIED', message: 'fs, network', params: { perms: 'fs, network' } }, 'Required permissions denied: fs, network', '所需权限已被拒绝：fs, network'],
     [{ code: 'IMPORT_FAILED', message: 'SyntaxError' }, 'Failed to load the plugin entry: SyntaxError', '插件入口加载失败：SyntaxError'],
     [{ code: 'RENDER_FAILED', message: 'boom' }, 'UI failed to render: boom', '界面渲染出错：boom'],
     [{ code: 'EXCEPTION', message: 'kaput' }, 'Activation failed: kaput', '激活失败：kaput'],

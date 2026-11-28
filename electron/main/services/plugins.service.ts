@@ -673,10 +673,88 @@ export async function readPluginMainByDir(
   return mainText;
 }
 
-/** 语法检查子进程的时限与 stderr 收集上限。 */
+/** 语法检查子进程的时限;stderr 逐行流式解析,每行只留前 SYNTAX_LINE_HEAD_MAX 个字符、最多 SYNTAX_LINES_MAX 行。 */
 const SYNTAX_CHECK_TIMEOUT_MS = 10_000;
-const SYNTAX_CHECK_STDERR_MAX = 64 * 1024;
+const SYNTAX_LINE_HEAD_MAX = 1024;
+const SYNTAX_LINES_MAX = 256;
 const SYNTAX_MESSAGE_MAX = 512;
+
+/** stderr 的一行:开头一段(找 `[stdin]:<行>` / `SyntaxError:`)+ 是否是 `^` 指示行及首个 `^` 的位置(整行流式统计)。 */
+interface SyntaxStderrLine {
+  head: string;
+  /** 行未超过 SYNTAX_LINE_HEAD_MAX(head 即整行)。 */
+  complete: boolean;
+  /** 行内只有空白与 `^` 且至少一个 `^`(caret 指示行)。 */
+  caretOnly: boolean;
+  /** 首个 `^` 的下标(0 起;无 → -1)。 */
+  firstCaret: number;
+  length: number;
+}
+
+/**
+ * `node --check` stderr 的流式解析器:不保留整行原文。长行(压缩成一行的打包产物)的出错行与 `^` 指示行可达数百 KiB,
+ * 旧实现截在 64 KiB 后 `^` 行 / SyntaxError 行丢失,报成第 1 列或拿不到位置;这里逐字符统计,内存有界。
+ */
+export class SyntaxCheckStderr {
+  private readonly lines: SyntaxStderrLine[] = [];
+  private cur: SyntaxStderrLine | null = null;
+
+  push(chunk: string): void {
+    for (let i = 0; i < chunk.length; i += 1) {
+      const ch = chunk[i]!;
+      if (ch === '\n') {
+        this.endLine();
+        continue;
+      }
+      if (this.cur === null) {
+        if (this.lines.length >= SYNTAX_LINES_MAX) return; // 行数上限:其余丢弃
+        this.cur = { head: '', complete: true, caretOnly: true, firstCaret: -1, length: 0 };
+      }
+      const line = this.cur;
+      if (line.length < SYNTAX_LINE_HEAD_MAX) line.head += ch;
+      else line.complete = false;
+      if (ch === '^') {
+        if (line.firstCaret < 0) line.firstCaret = line.length;
+      } else if (ch !== ' ' && ch !== '\t' && ch !== '\r') {
+        line.caretOnly = false;
+      }
+      line.length += 1;
+    }
+  }
+
+  private endLine(): void {
+    if (this.lines.length >= SYNTAX_LINES_MAX) return;
+    const line = this.cur ?? { head: '', complete: true, caretOnly: true, firstCaret: -1, length: 0 };
+    if (line.head.endsWith('\r')) line.head = line.head.slice(0, -1);
+    this.lines.push(line);
+    this.cur = null;
+  }
+
+  /**
+   * `[stdin]:<行>` / 出错行原文 / `^^^` 指示列 / 空行 / `SyntaxError: <消息>`。解析不出行号 → null。
+   * 长行时两处会缺:Node 的 `^` 行最多约 1020 列(更靠后的位置只有空格、没有 `^`);子进程 stderr 是管道,超过 64 KiB 的输出
+   * 在退出时丢失(SyntaxError 行跟在整行原文之后)。缺 `^` → 不给列号;缺 SyntaxError 行 → 消息为空(renderer 用 import 的报错)。
+   */
+  result(): IpcPluginSyntaxError | null {
+    if (this.cur !== null) this.endLine();
+    const lines = this.lines;
+    const at = lines.findIndex((l) => l.complete && /^\[stdin\]:\d+$/.test(l.head));
+    if (at < 0) return null;
+    const messageLine = lines.find((l, i) => i > at && l.head.startsWith('SyntaxError: '));
+    // 有 SyntaxError 行,或缺它但出错行原文是长行(后面的输出随管道截断丢失)才认作语法错误;别的输出 → null。
+    if (messageLine === undefined && lines[at + 1]?.complete !== false) return null;
+    const line = Number(lines[at]!.head.slice('[stdin]:'.length));
+    if (!Number.isSafeInteger(line) || line < 1) return null;
+    const caret = lines[at + 2];
+    // 找不到 `^` 指示行(输出被截断 / 格式变了)→ 只给行号,不编造第 1 列。
+    const column = caret !== undefined && caret.caretOnly && caret.firstCaret >= 0 ? caret.firstCaret + 1 : undefined;
+    return {
+      line,
+      ...(column !== undefined ? { column } : {}),
+      message: messageLine ? messageLine.head.slice('SyntaxError: '.length).slice(0, SYNTAX_MESSAGE_MAX) : '',
+    };
+  }
+}
 
 /**
  * 按 ESM 语法检查源码,**不执行**(BDD: plugin-dev-experience):以 Node 模式起一个 Electron 子进程跑
@@ -702,7 +780,7 @@ export function checkModuleSyntax(
       resolve(null);
       return;
     }
-    let stderr = '';
+    const stderr = new SyntaxCheckStderr();
     let settled = false;
     const finish = (value: IpcPluginSyntaxError | null) => {
       if (settled) return;
@@ -716,34 +794,19 @@ export function checkModuleSyntax(
     }, opts.timeoutMs ?? SYNTAX_CHECK_TIMEOUT_MS);
     timer.unref?.();
     child.stderr?.setEncoding('utf8');
-    child.stderr?.on('data', (chunk: string) => {
-      if (stderr.length < SYNTAX_CHECK_STDERR_MAX) stderr += chunk.slice(0, SYNTAX_CHECK_STDERR_MAX - stderr.length);
-    });
+    child.stderr?.on('data', (chunk: string) => stderr.push(chunk));
     child.on('error', () => finish(null));
-    child.on('close', (code) => finish(code === 0 ? null : parseSyntaxCheckOutput(stderr)));
+    child.on('close', (code) => finish(code === 0 ? null : stderr.result()));
     child.stdin?.on('error', () => {});
     child.stdin?.end(source);
   });
 }
 
-/**
- * `node --check` 的 stderr:`[stdin]:<行>` / 出错行原文 / `^^^` 指示列 / 空行 / `SyntaxError: <消息>`。
- * 解析不出行号或 SyntaxError → null。
- */
+/** 整段 `node --check` stderr → 语法错误位置(同 SyntaxCheckStderr)。 */
 export function parseSyntaxCheckOutput(stderr: string): IpcPluginSyntaxError | null {
-  const lines = stderr.split(/\r?\n/);
-  const at = lines.findIndex((l) => /^\[stdin\]:\d+$/.test(l));
-  const messageLine = lines.find((l) => l.startsWith('SyntaxError: '));
-  if (at < 0 || messageLine === undefined) return null;
-  const line = Number(lines[at]!.slice('[stdin]:'.length));
-  const caret = lines[at + 2] ?? '';
-  const caretAt = caret.indexOf('^');
-  if (!Number.isSafeInteger(line) || line < 1) return null;
-  return {
-    line,
-    column: caretAt >= 0 && /^\s*\^+\s*$/.test(caret) ? caretAt + 1 : 1,
-    message: messageLine.slice('SyntaxError: '.length).slice(0, SYNTAX_MESSAGE_MAX),
-  };
+  const parser = new SyntaxCheckStderr();
+  parser.push(stderr);
+  return parser.result();
 }
 
 /** 同时进行的语法检查子进程上限(超出 → 不诊断,返回 null;只在入口 import 报 SyntaxError 时才调用)。 */
@@ -2098,10 +2161,14 @@ export function createPluginsWatcher(
     // 清理陈旧键:记录所属目录现在(manifest 可解析)声明的是别的 id → 该记录不再代表任何目录。
     // 目录暂时消失 / manifest 缺失或损坏 / main 暂不可 stat 时转为 tombstone 保留:重建后 main 已变仍要触发
     // 热重载(rm -rf 后重新部署、编辑器 unlink+write 保存),与旧版同口径。
+    // 转 tombstone 时也广播一次:schema 错 / 版本过高 / 目录名不一致的目录在这里是「有效记录」(manifest 可解析、main 在),
+    // 删掉目录后 renderer 要据此刷新无效插件行(BDD: plugin-dev-experience);已登记插件收到后不报错、不停用。
     for (const [pluginId, prev] of active) {
       if (chosen.has(pluginId)) continue;
       active.delete(pluginId);
-      if (!isStale(pluginId, prev)) addMissing(pluginId, prev);
+      if (isStale(pluginId, prev)) continue; // 目录改声明了别的 id:新 id 那边会广播
+      addMissing(pluginId, prev);
+      fire(pluginId);
     }
     // tombstone 的陈旧判定只可能发生在本轮枚举到(manifestCache 有条目)的目录上 → 按目录索引查,
     // 不遍历全部 tombstone。

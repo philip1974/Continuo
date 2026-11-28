@@ -160,10 +160,10 @@ export function isSkippedPluginDir(d: IpcPluginDirEntry): d is IpcSkippedPluginD
   return 'skip' in d && d.skip !== undefined;
 }
 
-/** CHECK_MAIN_SYNTAX 的结果:1 起的行列号 + V8 的语法错误消息。 */
+/** CHECK_MAIN_SYNTAX 的结果:1 起的行列号 + V8 的语法错误消息(拿不到可靠列号时不带 column)。 */
 export interface IpcPluginSyntaxError {
   readonly line: number;
-  readonly column: number;
+  readonly column?: number;
   readonly message: string;
 }
 

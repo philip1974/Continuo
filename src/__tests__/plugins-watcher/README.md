@@ -55,6 +55,8 @@
   新 id → 新 id fire 一次;记录只有在每个候选目录都声明了别的 id 时才算陈旧
 - 记录所属目录改声明别的 id → 旧 id 的记录清理;目录暂时消失 / manifest 缺失 / main 暂不可 stat 时保留记录,
   重建后 main 已变仍 fire
+- 记录转为缺失记录(目录 / manifest 消失)时 fire 一次(plugin-dev-experience:schema 错 / 版本过高 / 目录名不一致的目录
+  在 watcher 看来是有效记录,删除后 renderer 据此移除无效插件行);之后缺失期间不再 fire,已登记插件收到后不报错、不停用
 - 缺失记录(tombstone)不限时保留:缺失再久,重建(main 已变)仍 fire;只按容量淘汰(记录总数超上限
   2×目录枚举上限时淘汰最早缺失的),每轮只按本轮出现的目录查 tombstone,不遍历全部缺失记录
 - 缺失记录所属目录重建后改声明别的 id → 该缺失记录清理

@@ -1,7 +1,7 @@
 // 插件激活 / 渲染失败的可读文案(插件行、失败通知、市场卡片共用;BDD: src/__tests__/plugin-failure-notify/、
 // src/__tests__/plugin-dev-experience/)。对齐 VSCode 扩展视图显示可读的激活失败原因,不把原始错误码(`PERMISSION_DENIED: fs`)给用户看。
 
-import { t, type TranslationKey } from '@/i18n';
+import { t, tWithFallback, type TranslationKey } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import type { ManifestIssue } from './manifest';
 import type { PluginError } from './PluginManager';
@@ -18,9 +18,13 @@ export function localizeManifestIssue(issue: ManifestIssue): string {
 
 function reasonOf(error: PluginError): string {
   const p = error.params ?? {};
+  // 错误自带 catalog key(激活期插件代码抛的 PermissionError:未声明 / 用户拒绝)→ 与命令路径(localizeThrown)同一文案。
+  if (error.i18nKey !== undefined) return tWithFallback(error.i18nKey, error.message || error.code, p);
   switch (error.code) {
     case 'PERMISSION_DENIED':
-      return t('plugins_tab.error.permission_denied', { perms: error.message });
+      // 激活前的权限门:params.perms 是被拒的权限列表。插件代码抛的 PERMISSION_DENIED(吊销等,不带 perms)→ 按原文显示。
+      if (p.perms !== undefined) return t('plugins_tab.error.permission_denied', { perms: p.perms });
+      break;
     case 'IMPORT_FAILED':
       return t('plugins_tab.error.import_failed', { message: error.message });
     case 'IMPORT_SYNTAX_ERROR':

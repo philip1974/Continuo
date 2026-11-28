@@ -236,4 +236,48 @@ describe('输出面板', () => {
     act(() => appendToOutputChannel('a', 'y\n'));
     expect(body.scrollTop).toBe(10);
   });
+
+  it('智能滚动:高频写入时向上滚轮即锁定(同帧的程序滚动回声不解锁);滚回底部解锁', () => {
+    ensureOutputChannel('a', 'Alpha', null);
+    const view = render(<Output />);
+    const body = view.container.querySelector<HTMLElement>('[data-output-channel]')!;
+    let height = 500;
+    Object.defineProperty(body, 'scrollHeight', { configurable: true, get: () => height });
+    Object.defineProperty(body, 'clientHeight', { configurable: true, get: () => 100 });
+    const lockButton = () => view.getByRole('button', { name: /Turn Auto Scrolling (On|Off)/ });
+    act(() => appendToOutputChannel('a', 'x\n'));
+    expect(body.scrollTop).toBe(500);
+
+    // 用户向上滚轮与下一次写入落在同一帧:程序滚动的 scroll 事件(仍在底部)排在滚轮之后才派发。
+    fireEvent.wheel(body, { deltaY: -120 });
+    fireEvent.scroll(body);
+    expect(lockButton().getAttribute('aria-pressed')).toBe('true');
+    body.scrollTop = 300; // 滚轮动画随后把视图往上带
+    fireEvent.scroll(body);
+    height = 800;
+    act(() => appendToOutputChannel('a', 'y\n'));
+    expect(body.scrollTop).toBe(300); // 已锁定:写入不再拉回底部
+    expect(lockButton().getAttribute('aria-pressed')).toBe('true');
+
+    // 向下滚轮滚回底部 → 解锁,之后写入照常跟到底
+    fireEvent.wheel(body, { deltaY: 120 });
+    body.scrollTop = 700;
+    fireEvent.scroll(body);
+    expect(lockButton().getAttribute('aria-pressed')).toBe('false');
+    height = 900;
+    act(() => appendToOutputChannel('a', 'z\n'));
+    expect(body.scrollTop).toBe(900);
+  });
+
+  it('智能滚动:滚动区聚焦时按 ↑ / PageUp / Home 即锁定', () => {
+    ensureOutputChannel('a', 'Alpha', null);
+    const view = render(<Output />);
+    const body = view.container.querySelector<HTMLElement>('[data-output-channel]')!;
+    Object.defineProperty(body, 'scrollHeight', { configurable: true, get: () => 500 });
+    Object.defineProperty(body, 'clientHeight', { configurable: true, get: () => 100 });
+    act(() => appendToOutputChannel('a', 'x\n'));
+    fireEvent.keyDown(body, { key: 'PageUp' });
+    fireEvent.scroll(body);
+    expect(view.getByRole('button', { name: 'Turn Auto Scrolling On' }).getAttribute('aria-pressed')).toBe('true');
+  });
 });

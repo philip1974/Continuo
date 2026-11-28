@@ -125,6 +125,29 @@ describe('入口语法检查:给出行列号且不执行插件代码', () => {
     });
     expect(parseSyntaxCheckOutput('Error: something else')).toBeNull();
   });
+
+  it('长行(压缩成一行的打包产物):出错位置远在 64 KiB 之后 → 仍给出准确行号,不编造第 1 列', async () => {
+    const prefix = 'var a = 1;'.repeat(20_000); // 200,000 字符:Node 的 `^` 行画不到这么远,stderr 管道也只留前 64 KiB
+    const r = await checkModuleSyntax(`// header\n${prefix}let = = 1;\n`);
+    expect(r).toMatchObject({ line: 2 });
+    expect(r).not.toHaveProperty('column');
+    // 位置在 `^` 行能画到的范围内(约 1020 列以内)→ 列号照给
+    const near = 'var a = 1;'.repeat(50);
+    const r2 = await checkModuleSyntax(`${near}let = = 1;\n`);
+    const short = await checkModuleSyntax('let = = 1;\n');
+    expect(r2).toEqual({ line: 1, column: near.length + short!.column!, message: short!.message });
+  });
+
+  it('找不到 `^` 指示行(输出被截断 / 格式不同)→ 只给行号,不编造第 1 列', () => {
+    expect(parseSyntaxCheckOutput("[stdin]:4\nlet = = 1;\n\nSyntaxError: Unexpected token '='\n")).toEqual({
+      line: 4,
+      message: "Unexpected token '='",
+    });
+    expect(parseSyntaxCheckOutput("[stdin]:4\nlet = = 1;\n   x^\n\nSyntaxError: Unexpected token '='\n")).not.toHaveProperty('column');
+    // 出错行原文是长行、其后的输出丢失 → 仍给行号(消息空,renderer 用 import 的报错);短行却没有 SyntaxError 行 → 不认
+    expect(parseSyntaxCheckOutput(`[stdin]:7\n${'x'.repeat(70_000)}`)).toEqual({ line: 7, message: '' });
+    expect(parseSyntaxCheckOutput('[stdin]:7\nfoo\n')).toBeNull();
+  });
 });
 
 describe('文件监视:运行中新放入 / 无效 / 修好的插件目录广播', () => {
@@ -166,5 +189,18 @@ describe('文件监视:运行中新放入 / 无效 / 修好的插件目录广播
     await w.tick();
     await w.tick();
     expect(fn.mock.calls).toEqual([['a'], ['a']]);
+  });
+
+  it('schema 错 / 版本过高 / 目录名不一致的目录被删除 → 各广播一次(renderer 据此移除无效行)', async () => {
+    plugin('schema', { id: 'schema', name: 'S', version: 'not-semver' });
+    plugin('newer', { id: 'newer', name: 'N', version: '1.0.0', minLMVersion: '99.0.0' });
+    plugin('wrongname', { id: 'com.x.real', name: 'W', version: '1.0.0' });
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    for (const d of ['schema', 'newer', 'wrongname']) rmSync(join(tmp, d), { recursive: true, force: true });
+    await w.tick();
+    await w.tick();
+    expect([...fn.mock.calls].sort()).toEqual([['com.x.real'], ['newer'], ['schema']]);
   });
 });

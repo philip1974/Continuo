@@ -179,3 +179,119 @@ test('app.output.appendLine 出现在输出面板对应通道;sourceURL 断点�
     await closeDiscardingUnsaved(app);
   }
 });
+
+// 第六十八轮 A 组审计:高频写输出时滚轮锁定、激活期权限错误本地化、manifest 非法 JSON 的原因、删除无效目录、长行语法错误位置。
+test.describe('插件开发体验(第六十八轮)', () => {
+  const SPAM = 'com.e2e.spam';
+  const PERM = 'com.e2e.perm';
+  const JSONBAD = 'com.e2e.jsonbad';
+  const LONG = 'com.e2e.long';
+
+  // 每 2ms 写 20 行(onunload 停止)。
+  const SPAM_MAIN = `const { Plugin } = globalThis.co;
+export default class Spam extends Plugin {
+  onload() {
+    let n = 0;
+    this.timer = setInterval(() => {
+      for (let i = 0; i < 20; i += 1) this.app.output.appendLine('spam line ' + n++);
+    }, 2);
+  }
+  onunload() {
+    clearInterval(this.timer);
+  }
+}
+`;
+  // onload 里调用未声明的 fs 权限(只读一个不存在的路径;权限门先拒绝,不会真的读)。
+  const PERM_MAIN = `const { Plugin } = globalThis.co;
+export default class Perm extends Plugin {
+  async onload() {
+    await this.app.fs.readFile('/nonexistent-pdx');
+  }
+}
+`;
+
+  test.beforeEach(() => {
+    writePlugin(SPAM, { id: SPAM, name: 'PDX Spam', version: '1.0.0' }, SPAM_MAIN);
+    writePlugin(PERM, { id: PERM, name: 'PDX Perm', version: '1.0.0' }, PERM_MAIN);
+    // 非法 JSON + 非默认 main;目录里没有 main.js(旧实现按默认 main.js 报「入口不可用」)
+    writePlugin(JSONBAD, `{ "id": "${JSONBAD}", "name": "PDX Json", "version": "1.0.0", "main": "dist/index.js", `);
+    // 第 2 行是 20 万字符的长行,语法错误在行尾(位置远超 64 KiB)
+    writePlugin(LONG, { id: LONG, name: 'PDX Long', version: '1.0.0' }, `// header\n${'var a = 1;'.repeat(20_000)}let = = 1;\n`);
+    writeFileSync(path.join(ud, 'plugins', '_enabled.json'), JSON.stringify([GOOD, THROWS, SYNTAX, BAD, SPAM, PERM, LONG]));
+  });
+
+  test('高频写入(每 2ms 20 行)时向上滚轮即锁定自动滚动,滚回底部解锁', async () => {
+    test.setTimeout(90_000);
+    const { app, win } = await launch();
+    try {
+      await win.evaluate(() => globalThis.__continuoTest!.executeCommand('workbench.view.output'));
+      const picker = win.locator('[data-output-channel-picker]');
+      await expect(picker).toBeVisible({ timeout: 15_000 });
+      await picker.click();
+      await win.getByRole('menuitemradio', { name: 'PDX Spam' }).click();
+      const body = win.locator(`[data-output-channel="plugin:${SPAM}"]`);
+      await expect(body).toContainText('spam line', { timeout: 10_000 });
+      const lock = body.locator('xpath=..').locator('button[aria-pressed]');
+      await expect(lock).toHaveAttribute('aria-pressed', 'false');
+      await expect
+        .poll(() => body.evaluate((el) => el.scrollHeight > el.clientHeight * 4))
+        .toBe(true);
+      const distanceFromBottom = () => body.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+
+      await body.hover();
+      await win.mouse.wheel(0, -600);
+      await expect(lock).toHaveAttribute('aria-pressed', 'true', { timeout: 2_000 });
+      await win.waitForTimeout(500); // 写入持续进行
+      await expect(lock).toHaveAttribute('aria-pressed', 'true');
+      expect(await distanceFromBottom()).toBeGreaterThan(100); // 没被拉回底部
+
+      // 向下滚到底 → 解锁,之后跟随到底
+      await expect(async () => {
+        await win.mouse.wheel(0, 10_000_000);
+        await expect(lock).toHaveAttribute('aria-pressed', 'false', { timeout: 500 });
+      }).toPass({ timeout: 15_000 });
+      await win.waitForTimeout(300);
+      expect(await distanceFromBottom()).toBeLessThan(40);
+    } finally {
+      await closeDiscardingUnsaved(app);
+    }
+  });
+
+  test('onload 抛的未声明权限错误本地化;非法 JSON 报 manifest 错误;长行语法错误只给行号;删除无效目录行与通道消失', async () => {
+    test.setTimeout(90_000);
+    const { app, win } = await launch();
+    try {
+      await openSettingsTab(win, PLUGINS_TAB);
+      const section = userSection(win);
+      const perm = section.locator('[data-code="PERMISSION_NOT_DECLARED"]');
+      await expect(perm).toContainText('manifest.json', { timeout: 15_000 });
+      await expect(perm).not.toContainText('is not declared: add'); // 不是 PermissionError 的英文 message 原文
+
+      const json = section.locator(`[data-plugin-invalid="${JSONBAD}"]`);
+      await expect(json.locator('[data-code="INVALID_JSON"]')).toBeVisible();
+      await expect(json.locator('[data-code="PLUGIN_MAIN_UNAVAILABLE"]')).toHaveCount(0);
+
+      const long = section.locator('[data-code="IMPORT_SYNTAX_ERROR"]').filter({ hasText: /main\.js:2(?!\d)/ });
+      await expect(long).toHaveCount(1, { timeout: 15_000 });
+      await expect(long).not.toContainText(/main\.js:2:/);
+
+      // 无效插件的默认输出通道在下拉里;删掉目录 → 无效行与通道一并消失
+      await win.evaluate(() => globalThis.__continuoTest!.executeCommand('workbench.view.output'));
+      const picker = win.locator('[data-output-channel-picker]');
+      await expect(picker).toBeVisible({ timeout: 10_000 });
+      await picker.click();
+      await expect(win.getByRole('menuitemradio', { name: 'PDX Bad' })).toHaveCount(1);
+      await win.keyboard.press('Escape');
+      rmSync(path.join(ud, 'plugins', BAD), { recursive: true, force: true });
+      await openSettingsTab(win, PLUGINS_TAB);
+      await expect(section.locator(`[data-plugin-invalid="${BAD}"]`)).toHaveCount(0, { timeout: 15_000 });
+      await expect(section.locator(`[data-plugin-invalid="${JSONBAD}"]`)).toBeVisible(); // 其它无效行不受影响
+      await win.evaluate(() => globalThis.__continuoTest!.executeCommand('workbench.view.output'));
+      await picker.click();
+      await expect(win.getByRole('menuitemradio', { name: 'PDX Spam' })).toHaveCount(1);
+      await expect(win.getByRole('menuitemradio', { name: 'PDX Bad' })).toHaveCount(0);
+    } finally {
+      await closeDiscardingUnsaved(app);
+    }
+  });
+});

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent, type WheelEvent } from 'react';
 import { Button, EmptyState, IconButton, MenuItem } from '@/design';
 import { useT } from '@/i18n';
 import { DropdownMenu } from '@/lib/dropdown-menu';
@@ -19,11 +19,13 @@ const LOCKED_ICON = <LockIcon size={14} locked />;
 const UNLOCKED_ICON = <LockIcon size={14} locked={false} />;
 /** 离底部不超过这么多像素算「在底部」(智能滚动:滚回底部即恢复自动滚动)。 */
 const BOTTOM_SLACK_PX = 4;
+/** 让视图往上滚的按键(滚动区聚焦时):按下即锁定自动滚动。 */
+const UP_SCROLL_KEYS: ReadonlySet<string> = new Set(['ArrowUp', 'PageUp', 'Home']);
 
 /**
  * 输出面板(BDD: src/__tests__/plugin-output-channel/)。对齐 VSCode 输出视图(src/vs/workbench/contrib/output/browser/
  * outputView.ts、output.contribution.ts):标题栏的通道下拉切换通道,「清除输出」,「自动滚动」开关(锁);内容变化时
- * 未锁定则滚到最后一行,手动向上滚即锁定、滚回底部即解锁(output.smartScroll)。没有任何通道时只显示空状态。
+ * 未锁定则滚到最后一行,手动向上滚即锁定、滚回底部即解锁(output.smartScroll;高频写入时也成立)。没有任何通道时只显示空状态。
  */
 export function Output() {
   const t = useT();
@@ -35,25 +37,39 @@ export function Output() {
   const [menuOpen, setMenuOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
-  /** 本组件自己触发的滚动(不当作用户滚动去锁定)。 */
-  const programmatic = useRef(false);
+  /**
+   * 本组件最近一次程序滚动后的 scrollTop(用户输入后清空)。其 scroll 事件回声只用来区分「程序滚到底」与「用户滚到底」,
+   * 不再像旧实现那样吞掉下一个 scroll 事件:高频写入时程序滚动与用户滚轮落在同一帧,被吞的就是用户那一下。
+   */
+  const programmaticTop = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     const body = bodyRef.current;
     if (!body || !autoScroll) return;
-    programmatic.current = true;
     body.scrollTop = body.scrollHeight;
+    programmaticTop.current = body.scrollTop;
   }, [snapshot.version, autoScroll, active?.id]);
 
   const onScroll = () => {
     const body = bodyRef.current;
     if (!body) return;
-    if (programmatic.current) {
-      programmatic.current = false;
-      return;
-    }
+    // 程序滚到底的回声:不据此改锁(用户刚滚轮上滚锁定时,同帧排队的这个回声仍停在底部,不能把锁解掉)。
+    if (programmaticTop.current !== null && body.scrollTop === programmaticTop.current) return;
     const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight <= BOTTOM_SLACK_PX;
     setOutputAutoScroll(atBottom);
+  };
+
+  // 用户滚动意图直接看输入事件,不等 scroll 事件:Chromium 的滚轮 / 键盘滚动是动画,下一次写入的程序滚动会取消它,
+  // scroll 事件里根本看不到「离开底部」。往上滚的输入 → 立即锁定(保留回声标记:同帧排队的回声停在底部,不能把锁解掉);
+  // 其余滚动输入 → 清掉回声标记,之后的 scroll 事件按位置判定(滚回底部即解锁)。
+  const lockOrRelease = (up: boolean, target: HTMLElement) => {
+    if (up && target.scrollTop > 0) setOutputAutoScroll(false);
+    else programmaticTop.current = null;
+  };
+  const onWheel = (e: WheelEvent<HTMLDivElement>) => lockOrRelease(e.deltaY < 0, e.currentTarget);
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => lockOrRelease(UP_SCROLL_KEYS.has(e.key), e.currentTarget);
+  const onPointerDown = () => {
+    programmaticTop.current = null;
   };
 
   if (active === null) {
@@ -127,6 +143,9 @@ export function Output() {
       <div
         ref={bodyRef}
         onScroll={onScroll}
+        onWheel={onWheel}
+        onPointerDown={onPointerDown}
+        onKeyDown={onKeyDown}
         role="document"
         aria-label={active.name}
         data-output-channel={active.id}

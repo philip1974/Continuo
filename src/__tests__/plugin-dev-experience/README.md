@@ -25,6 +25,12 @@
   (失败显示在插件自己的行上)。
 - `SCHEMA_ERROR` 带字段级问题(`parseManifest` 的 `issues`:`path` + 归一化的 `code` + 参数),逐条按 code 本地化;
   manifest 校验文案不再有中文硬编码(id 规则的英文兜底 + `id_format` 本地化)。
+- 准入原因的优先级:manifest 本身不合法(`INVALID_JSON` / `SCHEMA_ERROR`)优先于 main 判定的跳过原因 —— main 的「入口不可用 /
+  目录名不一致」读的正是 manifest 的 `main` / `id`,manifest 坏了它们按默认值判出(如 JSON 损坏时按默认 `main.js` 报「入口不可用」),
+  会指错原因;manifest 合法时 main 的跳过原因优先于 `INCOMPATIBLE_VERSION`。
+- 删除无效插件目录 → 无效行消失(main 监视器在记录转缺失时也广播,见 plugins-watcher;同 id 已登记时广播落在已登记 id 上,
+  热重载后同样刷新无效行),并移除宿主为它建的默认输出通道(plugin-output-channel)。已登记插件的目录整个消失 → 不报错、不停用,
+  按 tombstone 等重新部署后热重载(与旧行为一致)。
 - `PluginFailureNotifier` 对无效行通知一次(按目录 + 原因签名去重;原因变了再通知;消失后再出现再通知)。
 
 ### 运行中新放入 / 修好的插件无需重载窗口(`main-side.spec.ts`、`manager.spec.ts`、`plugin-reload-gate`)
@@ -46,6 +52,9 @@
   ≤ 16 MiB;data: / 带 scheme / 绝对路径 / 越界 / 超限 / 不存在一律原样。
 - 入口 import 报 `SyntaxError` → 经 `CHECK_MAIN_SYNTAX` 在 main 侧以 Electron-as-Node `--input-type=module --check` 检查(V8 只编译
   **不执行**;干净环境变量,不继承 NODE_OPTIONS),得到 1 起的行列号 → `IMPORT_SYNTAX_ERROR` + `location`。
+  stderr 逐行流式解析(每行只留开头、行数有上限)。长行(压缩成一行的打包产物):Node 的 `^` 指示行最多画约 1020 列、子进程
+  stderr 管道超过 64 KiB 的部分随退出丢失 → 找不到 `^` 时只给行号(`main.js:2`,不编造第 1 列);SyntaxError 行丢失时消息用
+  import 的报错。
 - 入口 import 了相对 / 裸模块 → `IMPORT_UNBUNDLED`(`params.specifier`、`kind`),本地化提示须打包成单文件 ESM(README 附 esbuild / vite 示例)。
 - 构造 / onload / 模块顶层抛错 → error 带堆栈里本插件最靠栈顶的帧位置(`main.js:3:9`);插件行与通知显示「原因(位置)」。
 
@@ -54,3 +63,6 @@
 - manifest 未声明 → `PermissionError` `code: 'PERMISSION_NOT_DECLARED'`,消息指明在 `manifest.json` 的 `permissions` 里加什么;
   已声明但用户拒绝 → `code: 'PERMISSION_DENIED'`,指向「设置 › 插件」。二者带 `i18nKey` + `params.permission`,`localizeThrown` 据此按
   `plugin_permission.*` 三语本地化(`errors.<CODE>` 文案不得含占位符);不带 key 的 `PERMISSION_DENIED`(停用吊销等)仍显示原 message。
+- 构造 / onload 里抛出的这类错误:插件行 error 保留 `i18nKey` + `params`(`thrownPluginError`),插件行 / 失败通知 / 输出通道按它
+  本地化,与命令路径(`localizeThrown`)同一文案(`manager.spec.ts`)。「所需权限已被拒绝:{perms}」只用于激活前权限门
+  (`params.perms` = 被拒权限列表);不带 key 也不带 perms 的 `PERMISSION_DENIED` → 「激活失败:原文」。

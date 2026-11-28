@@ -258,10 +258,11 @@ describe('createPluginsWatcher', () => {
     rmSync(join(tmp, 'e', 'manifest.json'));
     touch('e', 'main.js', Date.now() + 5000);
     await w.tick();
-    expect(fn).not.toHaveBeenCalled();
+    await w.tick();
+    expect(fn.mock.calls).toEqual([['e']]); // 转缺失记录时广播一次(无效插件行据此刷新;已登记插件收到不停用)
     writeFileSync(join(tmp, 'e', 'manifest.json'), JSON.stringify({ id: 'e', name: 'E', version: '0.1.0' }));
     await w.tick(); // mtimes 里 e 仍是删除前的值 → 本轮检测到 main 已变
-    expect(fn).toHaveBeenCalledWith('e');
+    expect(fn.mock.calls).toEqual([['e'], ['e']]);
   });
 
   // perf:超大 manifest 不会自己变小 —— 按 stat 签名缓存「跳过」,签名不变不再每轮 open+fstat + 打告警
@@ -525,11 +526,12 @@ describe('createPluginsWatcher', () => {
     await w.tick();
     rmSync(join(tmp, 'g'), { recursive: true, force: true });
     await w.tick();
-    expect(fn).not.toHaveBeenCalled();
+    await w.tick();
+    expect(fn.mock.calls).toEqual([['g']]); // 消失时广播一次,之后不再重复
     makeDir('g', { id: 'g', name: 'G', version: '0.1.0' });
     touch('g', 'main.js', Date.now() + 5000);
     await w.tick();
-    expect(fn).toHaveBeenCalledWith('g');
+    expect(fn.mock.calls).toEqual([['g'], ['g']]);
   });
 
   it('目录改声明新 id 后,旧 id 的记录被清理:每次改 id 各 fire 一次新 id,之后 main 变化只报当前 id', async () => {
@@ -565,7 +567,7 @@ describe('createPluginsWatcher', () => {
     makeDir('u', { id: 'u', name: 'U', version: '0.1.0' });
     touch('u', 'main.js', Date.now() + 5000);
     await w.tick();
-    expect(fn.mock.calls).toEqual([['u']]);
+    expect(fn.mock.calls).toEqual([['u'], ['u']]); // 消失一次 + 重建一次
   });
 
   it('缺失记录数有上界:超过容量时淘汰最早缺失的记录,较新的缺失记录保留', async () => {
@@ -578,6 +580,8 @@ describe('createPluginsWatcher', () => {
       rmSync(join(tmp, id), { recursive: true, force: true });
       await w.tick();
     }
+    expect(fn.mock.calls).toEqual([['m1'], ['m2'], ['m3']]); // 各自消失时广播一次
+    fn.mockClear();
     for (const id of ['m1', 'm2', 'm3']) {
       makeDir(id, { id, name: 'M', version: '0.1.0' });
       touch(id, 'main.js', Date.now() + 5000);
@@ -600,7 +604,7 @@ describe('createPluginsWatcher', () => {
     await w.tick(); // 目录 d 改声明 new.id:fire new.id,old.id 缺失记录陈旧 → 清理
     makeDir('e', { id: 'old.id', name: 'E', version: '0.1.0' });
     await w.tick(); // old.id 记录已清理 → 在新目录首次出现:同样 fire(新出现的 id 一律广播)
-    expect(fn.mock.calls).toEqual([['new.id'], ['old.id']]);
+    expect(fn.mock.calls).toEqual([['old.id'], ['new.id'], ['old.id']]); // 首个:old.id 转缺失记录
   });
 
   // 安全:旧安装的插件目录可能带符号链接。watcher 读 manifest(算 hash、取 id)前与列举同口径校验

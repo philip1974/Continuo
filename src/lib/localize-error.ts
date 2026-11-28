@@ -68,12 +68,24 @@ export function localizeErrorByCode(code: string, message?: string | null, param
 export function localizeThrown(err: unknown): string {
   const message = errorMessage(err);
   // 错误自带 catalog key(如 PermissionError 的「manifest 未声明」/「用户拒绝」,带 params)→ 按它本地化。
-  const i18nKey = (err as { i18nKey?: unknown } | null | undefined)?.i18nKey;
-  if (typeof i18nKey === 'string' && i18nKey.length > 0 && i18nKey.length <= 128) {
-    return tWithFallback(i18nKey, message, stringParamsOf(err));
-  }
+  const keyed = thrownI18nOf(err);
+  if (keyed) return tWithFallback(keyed.i18nKey, message, keyed.params);
   const code = (err as { code?: unknown } | null | undefined)?.code;
   return typeof code === 'string' ? localizeErrorByCode(code, message) : message;
+}
+
+/**
+ * 错误自带的 catalog key 与插值参数(PermissionError 的 i18nKey / params;key 须是 1–128 字符的字符串)。localizeThrown 与
+ * 插件激活失败(PluginManager 存进 PluginError,plugin-error-text 按它本地化)共用,保证两条路径文案一致。
+ */
+export function thrownI18nOf(err: unknown): { readonly i18nKey: string; readonly params?: Readonly<Record<string, string>> } | null {
+  const i18nKey = (err as { i18nKey?: unknown } | null | undefined)?.i18nKey;
+  if (typeof i18nKey !== 'string' || i18nKey.length === 0 || i18nKey.length > 128) return null;
+  const raw = stringParamsOf(err);
+  if (raw === undefined) return { i18nKey };
+  const params: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) params[k] = String(v);
+  return { i18nKey, params };
 }
 
 /**

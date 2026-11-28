@@ -34,7 +34,7 @@ function installApi(installFromGit: ReturnType<typeof vi.fn>): void {
   captureLmApi();
 }
 
-const listItem = (id: string, status: string, error?: { code: string; message: string }) => ({
+const listItem = (id: string, status: string, error?: { code: string; message: string; params?: Record<string, string> }) => ({
   id,
   manifest: { id, name: id.toUpperCase(), version: '1.0.0' },
   status,
@@ -73,7 +73,7 @@ describe('市场卡片安装', () => {
     await waitFor(() => expect(container.textContent).toContain('已安装 A v1.0.0'));
     expect(container.textContent).not.toContain('已启用');
 
-    setList([listItem('a', 'failed', { code: 'PERMISSION_DENIED', message: 'fs' })]);
+    setList([listItem('a', 'failed', { code: 'PERMISSION_DENIED', message: 'fs', params: { perms: 'fs' } })]);
     const alert = Array.from(container.querySelectorAll('[role=alert]')).find((n) =>
       (n.textContent ?? '').includes('所需权限已被拒绝：fs'),
     );

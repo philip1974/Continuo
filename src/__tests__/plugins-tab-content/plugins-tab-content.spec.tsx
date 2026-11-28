@@ -547,7 +547,7 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
         plugin({
           id: 'a',
           status: 'failed',
-          error: { code: 'PERMISSION_DENIED', message: 'fs, network' },
+          error: { code: 'PERMISSION_DENIED', message: 'fs, network', params: { perms: 'fs, network' } },
         }),
       ],
     };

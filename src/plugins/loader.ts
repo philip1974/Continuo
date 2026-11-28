@@ -75,8 +75,8 @@ async function importFailure(opts: LoadPluginModuleOpts, err: unknown): Promise<
       return {
         ok: false,
         code: 'IMPORT_SYNTAX_ERROR',
-        message: diag.message,
-        location: `${mainFileName(opts.manifest.main)}:${diag.line}:${diag.column}`,
+        message: diag.message || message, // 长行时诊断可能只有位置(消息随输出截断丢失)→ 用 import 的报错
+        location: `${mainFileName(opts.manifest.main)}:${diag.line}${diag.column !== undefined ? `:${diag.column}` : ''}`,
       };
     }
   }

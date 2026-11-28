@@ -251,12 +251,33 @@ describe('同一插件:事件与 init 激活经生命周期锁排序', () => {
 
 describe('接线', () => {
   it('reload 失败 → onError(reload),不抛', async () => {
+    const onError = vi.fn();
+    let onChanged!: (id: string) => void;
+    const boom = new Error('reload boom');
+    wirePluginEvents(
+      {
+        handleDirChanged: () => Promise.reject(boom),
+        handleUninstalled: async () => {},
+        handleEnabledChanged: async () => {},
+        adoptInstalled: async () => true,
+      },
+      { onChanged: (cb) => (onChanged = cb), onEnabledChanged: () => {}, onInstalled: () => {}, onUninstalled: () => {} },
+      onError,
+    );
+    onChanged(B);
+    await flushMacrotasks(2);
+    expect(onError).toHaveBeenCalledWith('reload', boom);
+  });
+
+  it('已登记插件的目录整个消失(监视器转 tombstone 也广播)→ 不报错、不停用,等重新部署后热重载', async () => {
     const w = makeWindow({ dirs: [B] });
     await flushMacrotasks(3);
-    w.gone.add(B); // 目录已不在:热重载抛 no longer exists
+    w.gone.add(B);
     w.emitChanged(B);
     await flushMacrotasks(3);
-    expect(w.onError).toHaveBeenCalledWith('reload', expect.any(Error));
+    expect(w.onError).not.toHaveBeenCalled();
+    expect(status(w, B)).toBe('enabled');
+    expect(unloaded).toEqual([]);
   });
 
   it('未登记的 id(运行中新放入的插件)→ 重新扫描登记,不报错(plugin-dev-experience)', async () => {
